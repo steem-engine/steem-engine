@@ -1,0 +1,8 @@
+[Text]
+Description=This patch applies to the Automation version of this game, there are other versions that work without a patch. This game doesn't work on a real STE, although it used to on Steem due to inaccurate emulation. Anyway, the emulation has improved to a point where this game freezes up (yay), so you need this patch to be able to play it.
+ApplyWhen=It freezes up.
+Version=Works on Steem v3.2
+PatchAuthor=Russell Hayward
+
+[Patch]
+06EFF4=$4e71

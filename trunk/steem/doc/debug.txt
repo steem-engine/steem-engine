@@ -1,0 +1,37 @@
+-------- STEEM DEBUG BUILD --------
+
+The Steem debug build, unlike the user build, is NOT idiot-proof.  It was cobbled together to help us write Steem and not for other people.  Unless you know what you are doing you might cause unpredictable results.  Try to click in the wrong place and the whole thing might die. It is recommended that you use the user build for normal use because it is faster, smaller and more stable.
+
+The debug build provides facilities for browsing memory and tracing through statements.  These are not always 100% accurate and such things as trace exceptions, PC-relative addressing, 68030 opcodes and IO addresses can give inaccurate displays.  These do not always indicate faults in the emulator, you should always triple-check any apparent CPU bugs.
+
+We are very busy debugging programs and improving Steem so we don't have much time to fix faults with the debugger or improve it. If there is some extra logging you really want us to implement, we can do, but this is about all.  Unfortunately, we can't release Steem's source code at the moment, so that makes debugging even more difficult for the rest of the world.
+
+Having said all that, we will be hugely grateful if anybody plays with the debug build and unearths one of those elusive CPU bugs.  We'll credit your work on the program & the website.
+
+---- KEYBOARD SHORTCUTS ----
+
+When you run the debug build there are new shortcut actions added for Trace, Step Over, Run to/for, Run to RTE and Toggle Suspend Logging, just set up the keyboard combination you want in the shortcuts dialog.
+
+---- SECRET ADDRESSES ----
+
+There are 2 secret IO addresses in the debug build which will help you to debug programs you write, or to write test programs.
+
+Poke any byte into FFC123 - this will stop the emulation running so you can trace through.
+
+Poke a long into FFC1F0 - this will log a string pointed to by the long from ST memory.  The string MUST be null-terminated to avoid disaster.
+
+Poke any byte into FFC1F4 - this will wipe the logfile.
+
+---- BACKDOORS ----
+
+If you are writing programs for the ST then you may be interested in some extra information you can access while running Steem, see this file for full details:
+
+http://steem.atari.st/emudtect.s
+
+---- FULL INSTRUCTIONS FOR USE ----
+
+...will not be provided.  Just play with it!
+
+
+Enjoy,
+Anthony Hayward
