@@ -1,0 +1,906 @@
+{\rtf1\ansi\ansicpg1252\uc1 \deff0\deflang1033\deflangfe1033{\fonttbl{\f0\froman\fcharset0\fprq2{\*\panose 02020603050405020304}Times New Roman;}{\f15\fswiss\fcharset0\fprq2{\*\panose 020b0604030504040204}Tahoma;}
+{\f16\froman\fcharset238\fprq2 Times New Roman CE;}{\f17\froman\fcharset204\fprq2 Times New Roman Cyr;}{\f19\froman\fcharset161\fprq2 Times New Roman Greek;}{\f20\froman\fcharset162\fprq2 Times New Roman Tur;}
+{\f21\froman\fcharset186\fprq2 Times New Roman Baltic;}{\f106\fswiss\fcharset238\fprq2 Tahoma CE;}{\f107\fswiss\fcharset204\fprq2 Tahoma Cyr;}{\f109\fswiss\fcharset161\fprq2 Tahoma Greek;}{\f110\fswiss\fcharset162\fprq2 Tahoma Tur;}
+{\f111\fswiss\fcharset186\fprq2 Tahoma Baltic;}}{\colortbl;\red0\green0\blue0;\red0\green0\blue255;\red0\green255\blue255;\red0\green255\blue0;\red255\green0\blue255;\red255\green0\blue0;\red255\green255\blue0;\red255\green255\blue255;
+\red0\green0\blue128;\red0\green128\blue128;\red0\green128\blue0;\red128\green0\blue128;\red128\green0\blue0;\red128\green128\blue0;\red128\green128\blue128;\red192\green192\blue192;}{\stylesheet{\widctlpar\adjustright \fs20\cgrid \snext0 Normal;}{
+\s1\keepn\widctlpar\adjustright \cgrid \sbasedon0 \snext0 heading 1;}{\*\cs10 \additive Default Paragraph Font;}{\s15\qc\widctlpar\adjustright \cgrid \sbasedon0 \snext15 Title;}{\s16\widctlpar\adjustright \cbpat9 \f15\fs20\cgrid \sbasedon0 \snext16 
+Document Map;}}{\info{\title PASTI}{\author jorge}{\operator jorge}{\creatim\yr2004\mo9\dy12\hr15\min2}{\revtim\yr2004\mo9\dy12\hr15\min2}{\version2}{\edmins0}{\nofpages27}{\nofwords4388}{\nofchars25015}{\*\company  }{\nofcharsws30720}{\vern113}}
+\widowctrl\ftnbj\aenddoc\formshade\viewkind1\viewscale100\pgbrdrhead\pgbrdrfoot \fet0\sectd \linex0\endnhere\sectdefaultcl {\*\pnseclvl1\pnucrm\pnstart1\pnindent720\pnhang{\pntxta .}}{\*\pnseclvl2\pnucltr\pnstart1\pnindent720\pnhang{\pntxta .}}
+{\*\pnseclvl3\pndec\pnstart1\pnindent720\pnhang{\pntxta .}}{\*\pnseclvl4\pnlcltr\pnstart1\pnindent720\pnhang{\pntxta )}}{\*\pnseclvl5\pndec\pnstart1\pnindent720\pnhang{\pntxtb (}{\pntxta )}}{\*\pnseclvl6\pnlcltr\pnstart1\pnindent720\pnhang{\pntxtb (}
+{\pntxta )}}{\*\pnseclvl7\pnlcrm\pnstart1\pnindent720\pnhang{\pntxtb (}{\pntxta )}}{\*\pnseclvl8\pnlcltr\pnstart1\pnindent720\pnhang{\pntxtb (}{\pntxta )}}{\*\pnseclvl9\pnlcrm\pnstart1\pnindent720\pnhang{\pntxtb (}{\pntxta )}}\pard\plain 
+\s15\qc\widctlpar\outlinelevel0\adjustright \cgrid {PASTI
+\par }\pard\plain \widctlpar\adjustright \fs20\cgrid {
+\par }\pard \widctlpar\outlinelevel0\adjustright {PASTI is a package for preservation and access of Atari ST copy protected disks.
+\par }\pard \widctlpar\adjustright {
+\par The package has two different and separate components. The first part is an FDC emulation library, currently provided as a Windows DLL, for plugging into emulators. Th
+e second part consists on tools for producing the copy protected disk images on different platforms and hardware combinations.
+\par 
+\par \page PASTI DLL is a Windows DLL implementing full Atari ST FDC emulation supporting both unprotected and copy protected disk images. Pasti Dll was designed for extending an Atari ST emulator. In this documentation, \ldblquote DLL\rdblquote 
+ refers to Pasti Dll and \ldblquote Application\rdblquote  to the emulator.
+\par 
+\par }\pard\plain \s1\keepn\widctlpar\outlinelevel0\adjustright \cgrid {INTRODUCTION
+\par }\pard\plain \widctlpar\adjustright \fs20\cgrid {
+\par PASTI DLL declares several functions. But there is only one central function for the actual I/O.The others are for initialization, configuration, managing disk images, debugging, etc; and most of them are optional.
+\par 
+\par The main process of interacting with the Dll is as follows:
+\par 
+\par The application calls Pasti whenever the ST cpu access one of the I/O ports relevant to the disk drive (Dma and Sound chips).
+\par 
+\par The application pass the following data to the Dll:
+\par 
+\par - The I/O address being accessed.
+\par - If it was a read or a write, or an update.
+\par - If it's a write, the data being written.
+\par - A free running 68000 cycle counter. This doesn't have to be cycles since power up or reset. Only the difference from the previous call is relevant.
+\par 
+\par Pasti will return the following data:
+\par 
+\par - If it was a read, the data read from the port.
+\par - The state of the Fdc Intrq signal going to the MFP.
+\par - Wether a DMA transfer should be performed, and if so, the transfer details (direction, address and length).
+\par - When the application should call Pasti again.
+\par 
+\par Most operation are delayed and not triggered immediately. The exact delay depends on the c
+onfiguration. So Pasti should be called again for the actual processing. This can be done by scheduling a seudo-interrupt, or just by calling Pasti periodically frequently enough.
+\par 
+\par The only other mandatory Pasti calls are the initialization one and the function for loading a disk image file. All others are optional.
+\par 
+\par There are calls for configuring the timing emulation. At maximum accuracy, all processing is done as in a real system. At maximum speed, processing is done as quickly (in the ST realm) as possi
+ble. Some delays are always introduced, because otherwise nothing, not even TOS will work.
+\par 
+\par Most aspects related to disk activity delays can be configured individually. For example, you can configure accurate/fast seeks, accurate/fast sector reading, etc.
+\par 
+\par Note that the terms "delay", "slow", "fast" here are not real time ones. But they refer to the ST timing world only. Pasti doesn't know, neither cares about real time.
+\par 
+\par 
+\par }\pard \qc\widctlpar\outlinelevel0\adjustright {\fs24 DEVELOPER NOTES.
+\par }\pard \widctlpar\adjustright {
+\par }\pard\plain \s1\keepn\widctlpar\outlinelevel0\adjustright \cgrid {EMULATOR TIMING ACCURACY
+\par }\pard\plain \widctlpar\adjustright \fs20\cgrid {
+\par Pasti depends on the application to be able to implement accurate timing. Two parameters implemented by the application are relevant.
+\par 
+\par One is the cycle counter passed to the dll at every I/O call. This value should be as accurate as possible. An emulator normally maintains an accurate cycle counter, so this shouldn\rquote t be a problem. Pasti will handle rollover of the counter.
+\par 
+\par The other is the \ldblquote update\rdblquote  timing. The dll I/O central function returns a value, in ST cycles, when the application should call the I/O function again for an update. The applica
+tion should try to respect this timing as closely as possible. However, there is no need to be precise at the cycle level.
+\par 
+\par Ideally, the application should schedule a pseudo unmaskable interrupt and call the dll at the closest instruction border. It is possible to use a simpler scheme, and call an \ldblquote update\rdblquote 
+ periodically. Most emulators implement a periodic processing at every scan line, which can be used for calling a Pasti update. Although not as accurate as a timed pseudo interrupt, this will be enough for
+ most purposes. If you use this scheme, just make sure to set the corresponding flag at the dll initialization call.
+\par 
+\par The dll ignores updates made too early or unneeded. So there is no harm in calling an update besides a small performance hit.
+\par 
+\par 
+\par }\pard\plain \s1\keepn\widctlpar\outlinelevel0\adjustright \cgrid {LOADING AND SAVING IMAGES
+\par }\pard\plain \widctlpar\adjustright \fs20\cgrid {
+\par Images can be loading by passing the filename, or by memory (preloaded). In either case the Dll will maintain a full copy of the image in memory. Images can also be saved to a file, or to memory.
+\par 
+\par Changes to the disk image are performed in memory. No change is committed to the actual file until (and only if) saveImg is called.
+\par 
+\par The Dll doesn\rquote t keep record of the filename, neither the exact type for unprotected images. The saveImg function can be used to convert between MSA and ST images.
+\par 
+\par 
+\par }\pard\plain \s1\keepn\widctlpar\outlinelevel0\adjustright \cgrid {UNPROTECTED DISK IMAGES
+\par }\pard\plain \widctlpar\adjustright \fs20\cgrid {
+\par Pasti supports standard unprotected disk images in ST or MSA format. An emulator with an internal FDC emulator for standard images might prefer to use Pasti for copy-protected images only.
+\par 
+\par However it is recommended to let the user
+ choose between these two options. One to use Pasti for copy-protected disk images only, and the other to use Pasti for all the images supported. This is important for software with multiple disks where one disk is copy-protected and the other is not. Eit
+her when one disk is in one drive and the other is in the second, or when one is inserted after the other; problems might arise if FDC emulation is switched between Pasti and the emulator\rquote s internal one without resetting emulation.
+\par 
+\par 
+\par }\pard\plain \s1\keepn\widctlpar\outlinelevel0\adjustright \cgrid {END USER DIALOGS
+\par }\pard\plain \widctlpar\adjustright \fs20\cgrid {
+\par A few
+ end user dialogs are implemented. They break the Dll philosophy of not being OS specific and not interacting directly with the user. However, they are completely optional and under the application control. The full functionality can be implemented withou
+t using these dialogs. Nevertheless, they are very handy for quick development. Specially when a newer version of the Dll is released, these dialogs allow access to new features without the need of updating dialogs and resources by the application.
+\par 
+\par It is recommended to implement user access to all the dialogs.
+\par 
+\par 
+\par }\pard\plain \s1\keepn\widctlpar\outlinelevel0\adjustright \cgrid {CALLBACKS
+\par }\pard\plain \widctlpar\adjustright \fs20\cgrid {
+\par The Dll can optionally call application\rquote s callbacks under specific events. They are not mandatory. Most of the functionality of the callbacks, except logging, can be obtained without callbacks.
+\par 
+\par 
+\par }\pard\plain \s1\keepn\widctlpar\outlinelevel0\adjustright \cgrid {DEBUGGING FACILITIES
+\par }\pard\plain \widctlpar\adjustright \fs20\cgrid {
+\par Several debugging features are available. There are functions for retrieving the FDC and drives states. FDC breakpoints can be enabled. When a breakpoint match is detected, the application will be notified.
+\par 
+\par All the debugging features might be unavailable in a specific Dll version. The initialization function reports on the availability of the debugging features or not. 
+\par 
+\par 
+\par }\pard\plain \s1\keepn\widctlpar\outlinelevel0\adjustright \cgrid {DELAYED LOAD IMAGES
+\par }\pard\plain \widctlpar\adjustright \fs20\cgrid {
+\par TOS relies on the time it takes to swap a disk to detect media changes. In the emula
+tor world, is possible to eject and insert a new disk instantaneously. If a new disk is inserted without any delay since ejecting the previous one, media change detection will not work. In most emulators media change still works because either the FDC is 
+not emulated accurately or either because a hack is implemented at the BIOS/TOS level.
+\par 
+\par Pasti implements a parameter when loading disk images to enable or disable a delay. The delay is always performed on ST time, never on real time. For strict emulation is
+ recommended to normally enable the delay. However this might create a problem in a couple of situations.
+\par 
+\par On power up sequence the delay is not needed and should be disabled. Enabling the delay will make boot time slightly longer. When Power Up is signale
+d to Pasti, Pasti kills any pending media change delays. So the emulator only needs to disable the delay if a disk is inserted after Power Up, but before starting the emulation (user stops emulation, makes a cold reset, inserts new disk, restart emulation
+).
+\par 
+\par The other problematic situation is when a disk is changed while emulation is stopped very close to a disk access. This should normally happen only when using a debugger, but might be possible on other situations. If emulation is restarted and the softwa
+re tries to access the disk before the delay is over, it will find an empty drive. This is actually correct behavior, but the user perception is that something went wrong.
+\par 
+\par Suppose emulation is stopped with a debugger when calling TOS for a disk access. The user swaps disks, waits a long while and then restarts emulation. In the emulator realm no time have elapsed and the delay is still active, but the user normally doesn
+\rquote t perceive this real time vs. emulator time difference. Note that this situation is possible (but not very likely) even when not using a debugger.
+\par 
+\par One possible solution is to disable the delay when a disk is changed while emulation is stopped. But this might be worse from the user point of view. Beginner users might like to stop emulation 
+before swapping disks, and then media change detection will not work. So this should be used only if emulation is stopped inside a debugger.
+\par 
+\par Note that there is no ideal solution. In a real ST is not possible to change disks without delays, and if you coul
+d, you would break media change detection. This will happen, for example, if you change disks when interrupts are disabled. The recommended workaround is one of the followings:
+\par 
+\par Always enable the delay except on power up. The problem is only likely to arise when using a debugger, which is normally an advanced usage. Advanced users will understand what is happening.
+\par 
+\par Let the user specify if a delay is performed or not.
+\par 
+\par Let the user know visually, while the delay is active, that a disk in being inserted but not yet completely loaded.
+\par 
+\par Hacks at the Bios level are not recommended unless the user has the option to disable it.
+\par 
+\par 
+\par }\pard\plain \s1\keepn\widctlpar\outlinelevel0\adjustright \cgrid {CPU EMULATION ISSUES
+\par }\pard\plain \widctlpar\adjustright \fs20\cgrid {
+\par Notes about CPU issues that are important for copy-protected software.
+\par 
+\par Some protections play tricks with the CPU instruction prefetch queue. At least a partial implementation of the prefetch is needed.
+\par 
+\par Trace and Illegal exception must be implemented accurately. It is a very common anti-hacking technique in many protections.
+\par 
+\par Address error exception is also sometimes used by some protections. The exception frame must be accurate.
+\par 
+\par Timing is not very critical for protections. Many protections are not sensitive to timing at all. And the ones that are sensitive to timing are not very strict at the CPU cycle level.
+\par 
+\par 
+\par }\pard\plain \s1\keepn\widctlpar\outlinelevel0\adjustright \cgrid {DMA ARBITRATION
+\par }\pard\plain \widctlpar\adjustright \fs20\cgrid {
+\par The DMA emulation implemented by Pasti might conflict with emulators that support hard disk access at the hardware level. A DMA arbitration interface will be implemented in future releases.
+\par 
+\par 
+\par }\pard \qc\widctlpar\outlinelevel0\adjustright {\page }{\fs24 Beta 0.2 RELEASE NOTES
+\par }\pard \widctlpar\adjustright {
+\par }\pard \widctlpar\outlinelevel0\adjustright {The DLL issues a warning banner at startup.
+\par }\pard \widctlpar\adjustright {
+\par }\pard \widctlpar\outlinelevel0\adjustright {FDC format command not implemented.
+\par }\pard \widctlpar\adjustright {
+\par }\pard \widctlpar\outlinelevel0\adjustright {Copy protected images cannot be saved.
+\par }\pard \widctlpar\adjustright {
+\par }\pard \widctlpar\outlinelevel0\adjustright {Save state partially implemented. Will fail if an FDC operation is in progress. Loading state saved with a different version of the Dll is not supported.
+\par }\pard \widctlpar\adjustright {
+\par Unprotected images with more than 83 tracks are not supported.
+\par 
+\par Breakpoints depending on the status register are not implemented. Breakpoints are triggered at command issue time only.
+\par 
+\par PastiGetBootSector not implemented.
+\par 
+\par PastiDlgFileProps shows a dummy dialog, the actual file is not tested.
+\par 
+\par }\pard \widctlpar\outlinelevel0\adjustright {Os callbacks not implemented.
+\par }\pard \widctlpar\adjustright {\page 
+\par }\pard \widctlpar\outlinelevel0\adjustright {BOOL pastiIo( int mode, struct pastiIOINFO *);
+\par }\pard \widctlpar\adjustright {
+\par Main I/O processing function. Called by the application when the emulated CPU accesses the DMA or the SOUND chip. Also called by scheduled updates. The DLL expects the correct I/O access size.
+\par 
+\par Parameters:
+\par 
+\par mode
+\par }\pard \fi720\widctlpar\adjustright {Possible values are:
+\par 
+\par PASTI_IOREAD\tab \tab CPU reads an I/O port.
+\par PASTI_IOWRITE\tab CPU writes to an I/O port.
+\par PASTI_IOUPD\tab \tab Scheduled update.
+\par }\pard \widctlpar\adjustright {
+\par struct pastiIOINFO
+\par \{
+\par \tab unsigned addr;
+\par \tab unsigned data;
+\par 
+\par \tab long stPC;\tab \tab \tab // Only for debugging
+\par \tab long cycles;\tab \tab \tab // Current ST main clock cycles counter
+\par 
+\par \tab long updateCycles;\tab \tab // Need update after these cycles
+\par 
+\par \tab BOOL intrqState;
+\par \tab BOOL haveXfer;
+\par \tab BOOL brkHit;
+\par 
+\par \tab struct pastiDMAXFERINFO xferInfo;
+\par \};
+\par 
+\par addr
+\par \tab I/O address being accessed. Ignored for an update.
+\par 
+\par data\tab On writes, input parameter specifying the value being written to the port 
+\par \tab On reads, result parameter. On update, ignored.
+\par 
+\par stPC
+\par \tab ST program counter, only for logging and debugging purposes.
+\par cycles
+\par \tab Current ST main clock cycle counter.
+\par 
+\par updateCycles
+\par \tab The application should call pastiIo again after this number of cycles.
+\par 
+\par intrqState
+\par \tab State of the INTRQ line of the FDC going to MFP GPIP bit 4.
+\par \tab TRUE if interrupt line raised. FALSE otherwise. Note that this line is negated before reaching the MFP. The state represented here is before the negation. 
+\par 
+\par haveXfer
+\par \tab TRUE if a DMA transfer should be performed.
+\par 
+\par brkHit
+\par \tab TRUE if a breakpoint have been hit.
+\par 
+\par struct pastiDMAXFERINFO
+\par \{
+\par \tab BOOL memToDisk;
+\par \tab unsigned xferLen;
+\par \tab void *xferBuf;
+\par \tab unsigned xferSTaddr;
+\par \};
+\par 
+\par 
+\par memToDisk
+\par \tab TRUE if transfer is from ST memory to disk. FALSE if it is from disk to ST memory.
+\par 
+\par xferLen
+\par \tab Transfer length, in bytes. Don\rquote t assume any specific fixed length.
+\par 
+\par xferBuf
+\par \tab Disk buffer. Source of the transfer when reading, destination if writing.
+\par 
+\par xferSTaddr
+\par \tab ST memory address as was configured in the DMA chip. Note, there is no attempt to validate this address. The application should check if indeed indicates a valid ST memory range (no I/O space, etc.)
+\par 
+\par 
+\par }\pard \widctlpar\outlinelevel0\adjustright {BOOL pastiWritePorta( unsigned data, long cycles);
+\par }\pard \widctlpar\adjustright {
+\par Shortcut for access to the PSG port A. Instead of calling pastiIo, it is recommended to use this call when the CPU writes to port A (register $0E) of the PSG chip. It is not mandatory, pastiIo will decode PSG read
+ and writes. But it is recommended for performance reasons, because the emulator typically already decodes PSG writes.
+\par 
+\par You can mix both functions, it is usually redundant but harmless. For optimum performance never use pastiIo for any PSG access, use pastiWritePorta instead. Note that reads from the PSG don\rquote 
+t need to be forwarded to Pasti. In this case, the emulator needs to save the whole byte written to this register, including the drive/side select bits, for returning them to the CPU on reads to this register.
+\par 
+\par \page 
+\par }\pard \widctlpar\outlinelevel0\adjustright {BOOL pastiInit( struct pastiINITINFO *);
+\par }\pard \widctlpar\adjustright {
+\par }\pard \widctlpar\outlinelevel0\adjustright {Pasti Dll services initialization. Called only once.
+\par }\pard \widctlpar\adjustright {
+\par struct pastiINITINFO
+\par \{
+\par \tab unsigned dwSize;
+\par 
+\par \tab unsigned applFlags;
+\par \tab unsigned applVersion;
+\par 
+\par \tab const struct pastiCALLBACKS *cBacks;
+\par 
+\par \tab unsigned dllFlags;
+\par \tab unsigned dllVersion;
+\par 
+\par \tab const struct pastiFUNCS *funcs;
+\par \};
+\par 
+\par dwSize
+\par \tab Size, in bytes of the structure. The application must initialize this value correctly before the call.
+\par 
+\par applFlags
+\par \tab Bitmapped flags for interface configuration. Those flags are permanent, can\rquote t be modified after initialization.
+\par 
+\par }\pard \fi720\widctlpar\outlinelevel0\adjustright {PASTI_AFUSEHBL
+\par }\pard \fi720\li720\widctlpar\adjustright {Set this flag if the application doesn\rquote t schedule pseudo-interrupts for updates and instead it calls a pastiIo update at every HBL.
+\par }\pard \fi720\widctlpar\adjustright {
+\par }\pard \fi720\widctlpar\outlinelevel0\adjustright {PASTI_AFUPDONLY
+\par }\pard \fi720\widctlpar\adjustright {\tab Set this flag if the application can perform a DMA transfer only when calling a pastiIo update and not when calling a pastiIo read or write.
+\par 
+\par }\pard \fi720\widctlpar\outlinelevel0\adjustright {PASTI_AFRDMA
+\par }\pard \fi720\widctlpar\adjustright {\tab Set this flag if the application doesn\rquote t trap reads to the DMA address registers and assumes they are always updated.
+\par }\pard \widctlpar\adjustright {
+\par applVersion
+\par \tab The Pasti interface version that the application was compiled.
+\par 
+\par dllFlags
+\par \tab Result bitmapped parameter.
+\par 
+\par }\pard \fi720\widctlpar\outlinelevel0\adjustright {PASTI_DFDEBUG
+\par \tab Dll includes debugging features.
+\par }\pard \fi720\widctlpar\adjustright {
+\par }\pard \fi720\widctlpar\outlinelevel0\adjustright {PASTI_DFBETA\tab 
+\par }\pard \widctlpar\outlinelevel0\adjustright {\tab \tab Dll is a preliminary beta version.
+\par }\pard \widctlpar\adjustright {
+\par dllVersion
+\par \tab Result parameter. Version of the Pasti DLL.
+\par 
+\par const struct pastiFUNCS *funcs;
+\par \tab Result parameter. A pointer to a struct defining pointers to all Dll public function is returned here.
+\par This is to avoid the need of issuing a GetProcAddress call for every Dll function when using run-time dynamic linking.
+\par 
+\par Version checking.
+ The application should accept any differences in the minor value of the version. If the application major version is older than the Dll one, the Dll will decide if it compatible or not and will return FALSE in the latter case. If the application major ve
+rsion is newer than the Dll one, the application should normally fail unless it is ready to adapt itself and be compatible with the older version.
+\par 
+\par struct pastiCALLBACKS
+\par \{
+\par \tab BOOL ( *DmaXfer) ( const struct pastiDMAXFERINFO *);
+\par \tab void ( *MotorOn) ( BOOL bOn);
+\par \tab void ( *IntrqChg) ( BOOL bOn);
+\par 
+\par \tab void ( *loadDelay) ( int drive, BOOL bStart);
+\par 
+\par \tab void ( *LogMsg) ( const char *msg);
+\par \tab void ( *WarnMsg) ( const char *msg);
+\par 
+\par \tab void ( *BreakHit) ( int n);
+\par \};
+\par 
+\par This structure defines application callbacks that the Dll will call. They are all optional, but the logging and warning ones are recommended to implement. Set any callback pointer as NULL if you don\rquote 
+t want the Dll to use it. Set the pointer to this structure to NULL if you don\rquote t want to use any callback.
+\par 
+\par }\pard \widctlpar\outlinelevel0\adjustright {BOOL ( *DmaXfer) ( const struct pastiDMAXFERINFO *);
+\par }\pard \widctlpar\adjustright {
+\par Called whenever a DMA transfer should be performed. The structure is the same that is returned in a pastiIo call.
+\par 
+\par void ( *MotorOn) ( BOOL bOn);
+\par 
+\par }\pard \widctlpar\outlinelevel0\adjustright {Called whenever the motor-on signal change states.
+\par }\pard \widctlpar\adjustright {
+\par void ( *IntrqChg) ( BOOL bOn);
+\par 
+\par }\pard \widctlpar\outlinelevel0\adjustright {Called whenever the FDC INTRQ line change state. Same value as returned in a pastiIo call.
+\par 
+\par }\pard \widctlpar\adjustright {void ( *loadDelay) ( int drive, BOOL bStart);
+\par }\pard \widctlpar\outlinelevel0\adjustright {
+\par Called whenever a load image delay is started or finished.
+\par }\pard \widctlpar\adjustright {
+\par void ( *LogMsg) ( const char *msg);
+\par 
+\par }\pard \widctlpar\outlinelevel0\adjustright {Called for logging a message. There is a call for configuring the amount of logging.
+\par }\pard \widctlpar\adjustright {
+\par void ( *WarnMsg) ( const char *msg);
+\par 
+\par Called for issuing an immediate warning to the user. There is a call for configuring exactly which warnings are issued and which not.
+\par 
+\par void ( *BreakHit) ( int n);
+\par 
+\par }\pard \widctlpar\outlinelevel0\adjustright {Called when an FDC breakpoint matches.
+\par }\pard \widctlpar\adjustright {\page 
+\par }\pard \widctlpar\outlinelevel0\adjustright {BOOL pastiHwReset( BOOL bPowerUp);
+\par }\pard \widctlpar\adjustright {
+\par For strict emulation, this function should be called whenever the RESET line is asserted on the bus. It is not mandatory. TOS boot code will recover gracefully disregarding the previous state.
+\par 
+\par Parameters:
+\par 
+\par bPowerUp
+\par \tab TRUE if power up sequence. FALSE otherwise.
+\par \page 
+\par  int pastiGetFileExtensions( char *newExts, int bufSize, BOOL bAll);
+\par 
+\par This function returns a list of file name extensions supported by the Dll. The list consists of wildcards separated by a semicolon zero terminated. For example: \ldblquote *.st;*.msa\rdblquote .
+\par 
+\par }\pard \widctlpar\outlinelevel0\adjustright {This function returns the number of extensions.
+\par }\pard \widctlpar\adjustright {
+\par Parameters:
+\par 
+\par newExts
+\par \tab Buffer for storing the filename list.
+\par 
+\par bufSize
+\par \tab Size of the buffer.
+\par 
+\par bAll
+\par \tab TRUE if all filename extensions should be returned. FALSE if only copy protected ones.
+\par \page 
+\par }\pard \widctlpar\outlinelevel0\adjustright {BOOL pastiImgLoad( int drive, BOOL bWprot, BOOL bDelay, long cycles,
+\par }\pard \fi720\widctlpar\outlinelevel0\adjustright {struct pastiDISKIMGINFO *);
+\par }\pard \widctlpar\adjustright {
+\par }\pard \widctlpar\outlinelevel0\adjustright {Load a disk image file.
+\par }\pard \widctlpar\adjustright {
+\par Parameters:
+\par 
+\par drive
+\par \tab Zero based drive number to load the image file.
+\par 
+\par bWprot
+\par \tab TRUE to load the image as write protected. FALSE otherwise.
+\par 
+\par bDelay
+\par \tab TRUE to delay the actual loading for about half a second for letting the system detect the media change. FALSE if wanted to load without delay.
+\par 
+\par cycles
+\par \tab Same parameter as in pastiIo. Used only when bDelay is enabled.
+\par 
+\par Notes:
+\par 
+\par }\pard \widctlpar\outlinelevel0\adjustright {Any previous image loaded on the same drive is silently discarded. The read only status of the file is ignored; only bWprot determines the write protect status of the image in memory.
+\par }\pard \widctlpar\adjustright {
+\par struct pastiDISKIMGINFO
+\par \{
+\par \tab unsigned mode; 
+\par 
+\par \tab unsigned imgType;
+\par \tab const char *fileName;
+\par \tab void *fileBuf;
+\par 
+\par \tab long fileLength;
+\par \tab long bufSize;
+\par 
+\par \tab struct pastiGEOMETRY geometry;
+\par 
+\par \tab BOOL bDirty;
+\par \};
+\par 
+\par Members:
+\par 
+\par mode
+\par \tab How to load or save the image.
+\par 
+\par }\pard \fi720\widctlpar\outlinelevel0\adjustright {PASTI_LDFNAME
+\par \tab The DLL will load/save the image file from/to disk
+\par }\pard \fi720\widctlpar\adjustright {
+\par }\pard \fi720\widctlpar\outlinelevel0\adjustright {PASTI_LDMEM
+\par \tab For loading, the application already read the image file on a memory buffer.
+\par \tab For saving, the DLL will save the image in the provided buffer.
+\par }\pard \widctlpar\adjustright { 
+\par fileName
+\par \tab Fully qualified file name of the image. If loading by memory, only the extension has to be valid.
+\par 
+\par fileBuf
+\par \tab If loading by filename, buffer to load the image; it can be NULL in which case the Dll will allocate an internal buffer. If loading by memory, the buffer where the image is already loaded. If saving b
+y memory, the DLL will copy the image to this buffer.
+\par 
+\par fileLength
+\par \tab Length of the image file. Only required when loading by memory. Ignored when loading by filename. Return parameter when saving by memory.
+\par 
+\par bufSize
+\par \tab Size of the buffer. If loading by filename, the buffer must be big enough to read the whole image file. If loading by memory, the buffer size must be at least the size of the image.
+\par 
+\par \page 
+\par }\pard \widctlpar\outlinelevel0\adjustright {BOOL pastiSaveImg( int drive, BOOL bAlways, pastiDISKIMGINFO *);
+\par }\pard \widctlpar\adjustright {
+\par }\pard \widctlpar\outlinelevel0\adjustright {Saves current disk.
+\par }\pard \widctlpar\adjustright {
+\par Parameters:
+\par 
+\par drive
+\par \tab Zero based drive number to load the image file.
+\par 
+\par bAlways
+\par \tab If FALSE, saves the image only if it is \ldblquote dirty\rdblquote  (it was written). Always saved otherwise.
+\par 
+\par }\pard \widctlpar\outlinelevel0\adjustright {The disk image can be saved to a file, or to memory.
+\par }\pard \widctlpar\adjustright {
+\par 
+\par }\pard \widctlpar\outlinelevel0\adjustright {BOOL pastiEject( int drive, long cycles);
+\par }\pard \widctlpar\adjustright {
+\par }\pard \widctlpar\outlinelevel0\adjustright {Ejects disk from drive. No saving is performed in any case.
+\par }\pard \widctlpar\adjustright {
+\par Parameters:
+\par 
+\par drive
+\par \tab Zero based drive number to eject the image file.
+\par 
+\par cycles
+\par \tab Same parameter as in pastiIo.
+\par 
+\par \page 
+\par }\pard \widctlpar\outlinelevel0\adjustright {BOOL pastiConfig( struct pastiCONFIGINFO *);
+\par }\pard \widctlpar\adjustright {
+\par Configures several DLL options. Can be called multiple times. Most options configured by this function are user level preferences. Ideally, the application should let the end user to set them.
+\par 
+\par BOOL pastiGetConfig( struct pastiCONFIGINFO *);
+\par 
+\par Get current configuration.
+\par 
+\par \page 
+\par }\pard \widctlpar\outlinelevel0\adjustright {BOOL pastiPeek( struct pastiPEEKINFO *);
+\par }\pard \widctlpar\adjustright {
+\par }\pard \widctlpar\outlinelevel0\adjustright {Get a snapshot of the FDC, DMA and drives state for monitoring and debugging purposes.
+\par }\pard \widctlpar\adjustright {
+\par \page 
+\par struct pastiCONFIGINFO
+\par \{
+\par \tab unsigned flags; 
+\par \tab int ndrives;
+\par \tab unsigned drvFlags; 
+\par \tab int logLevel;
+\par \tab unsigned options;
+\par \tab unsigned warnings;
+\par \tab unsigned reserved;
+\par 
+\par \tab BOOL slowSpeed;
+\par \tab BOOL fastUnprotDisk;\tab \tab \tab \tab // Not copy-protected disks
+\par \tab BOOL fastUnprotTracks;\tab \tab \tab \tab // Not copy-protected tracks
+\par 
+\par \tab struct pastiSPEEDINFO SpeedInfo;\tab 
+\par \};
+\par 
+\par 
+\par Members:
+\par 
+\par flags
+\par \tab Specify which options are to be configured. Can be a combination of the following:
+\par 
+\par }\pard \fi720\widctlpar\outlinelevel0\adjustright {PASTI_CFDRIVES
+\par \tab Configure number of drives.
+\par }\pard \fi720\widctlpar\adjustright {
+\par }\pard \fi720\widctlpar\outlinelevel0\adjustright {PASTI_CFOPTIONS
+\par \tab Configure user settings/options switches.
+\par }\pard \fi720\widctlpar\adjustright {
+\par }\pard \fi720\widctlpar\outlinelevel0\adjustright {PASTI_CFDETAILSPEED
+\par \tab Configure disk emulation speed/accuracy by detailed structure.
+\par }\pard \fi720\widctlpar\adjustright {
+\par }\pard \fi720\widctlpar\outlinelevel0\adjustright {PASTI_CFSIMPLESPEED
+\par \tab Configure disk emulation speed/accuracy with a single value.
+\par }\pard \widctlpar\adjustright {
+\par ndrives
+\par \tab Number of drives. Allowed values are zero, one or two.
+\par 
+\par drvFlags
+\par \tab Reserved. Please set to zero.
+\par 
+\par logLevel
+\par \tab Determines the amount of logging messages. Set to zero for no logging and one for normal logging. Higher values are for debugging only.
+\par 
+\par options
+\par \tab Can be a combination of the following:
+\par 
+\par \tab PASTI_OPWPOFF
+\par \tab \tab Fake write protect signal. The write protect signal will be always off.
+\par 
+\par \tab PASTI_OPNORAND
+\par \tab \tab Disable timing randomization.
+\par 
+\par warnings
+\par \tab Can be a combination of the following:
+\par 
+\par }\pard \fi720\widctlpar\outlinelevel0\adjustright {PASTI_WNUNIMG
+\par \tab Block the \ldblquote unimaged track\rdblquote  warning.
+\par }\pard \fi720\widctlpar\adjustright {
+\par }\pard \fi720\widctlpar\outlinelevel0\adjustright {PASTI_WNRDTRK
+\par }\pard \fi720\widctlpar\adjustright {\tab Don\rquote t warn when a \ldblquote read track\rdblquote  is issued for a track that wasn\rquote t imaged with a full track dump.
+\par }\pard \widctlpar\adjustright {
+\par }\pard \fi720\widctlpar\outlinelevel0\adjustright {PASTI_WNWRITEPROT
+\par \tab Don\rquote t warn when attempting to write on a write protected disk.
+\par }\pard \widctlpar\adjustright {
+\par }\pard \fi720\widctlpar\adjustright {PASTI_WNUNIMPLWRT
+\par \tab Don\rquote t warn on unimplemented writes/formats.
+\par 
+\par PASTI_WNONCEPTRK
+\par \tab Issue warnings only once per track.
+\par 
+\par }\pard \widctlpar\adjustright {reserved
+\par \tab Reserved. Please set to zero.
+\par 
+\par slowSpeed
+\par }\pard \fi720\widctlpar\adjustright {If TRUE disk emulation is accurate (slow). Fast otherwise. Valid only when PASTI_CFSIMPLESPEED is on.
+\par }\pard \widctlpar\adjustright {
+\par fastUnprotDisk
+\par \tab If TRUE unprotected disk are emulated at full speed. Use configured speed setting if FALSE.
+\par 
+\par fastUnprotTracks
+\par \tab If TRUE unprotected tracks are emulated at full speed. Use configured speed setting if FALSE.
+\par 
+\par struct pastiSPEEDINFO
+\par \{
+\par \tab BOOL slowSectRead;
+\par \tab BOOL slowTrackRead;
+\par 
+\par \tab BOOL slowRotation;
+\par \tab BOOL slowSpinup;
+\par \tab BOOL slowSettle;
+\par 
+\par \tab BOOL slowSeek;
+\par \tab BOOL slowVerify;
+\par \tab BOOL slowSnf;
+\par \};
+\par 
+\par Members:
+\par 
+\par The members configure all aspects of disk emulation as being slow and accurate if TRUE. Or fast if FALSE.
+\par 
+\par slowSectRead
+\par \tab Sector read timing.
+\par 
+\par slowTrackRead
+\par \tab Track read timing.
+\par 
+\par slowRotation
+\par \tab Disk rotation delay for reaching the required sector or index.
+\par 
+\par slowSpinup
+\par \tab Disk motor spin-up delay.
+\par 
+\par slowSettle
+\par \tab Head settle delay.
+\par 
+\par slowSeek
+\par \tab Head seek delay.
+\par 
+\par slowVerify
+\par \tab Seek verifies delay.
+\par 
+\par slowSnf
+\par \tab Failing to find a sector (Sector Not Found) delay.
+\par \page 
+\par BOOL pastiGetBootSector( int drive, struct pastiBOOTSECTINFO *);
+\par 
+\par Get boot sector information. Provided for virus detection purposes.
+\par 
+\par Parameters:
+\par 
+\par drive
+\par \tab Zero based drive number of loaded image to get boot sector info.
+\par 
+\par 
+\par struct pastiBOOTSECTINFO
+\par \{
+\par \tab unsigned nBoots;
+\par \tab unsigned readSize;
+\par \tab void *buffer;
+\par \};
+\par 
+\par Members:
+\par 
+\par nBoots
+\par \tab Boot sector number.
+\par 
+\par readSize
+\par \tab Number of bytes copied.
+\par 
+\par buffer
+\par \tab Memory buffer where the boot sector will be copied. Must be 512 bytes long.
+\par 
+\par Notes:
+\par 
+\par A copy protected image might have a boot sector with a non-standard size. readSize will report the number of bytes that TOS will read. It might be smaller than 512 bytes, but never bigger (TOS will read 512 bytes even when the sector is bigger).
+\par 
+\par If there is no boot sector, readSize will be zero but the call will still succeed.
+\par 
+\par In theory is possible that a disk might have multiple boot sectors. In which case a random one would be actually read when booting.
+\par 
+\par Most copy protected disks don\rquote t have a valid Bios Parameter Block in the boot sector.
+\par 
+\par \page 
+\par BOOL pastiSaveState( struct pastiSTATEINFO *);
+\par 
+\par Save state.
+\par 
+\par BOOL pastiLoadState( struct pastiSTATEINFO *);
+\par 
+\par Load state.
+\par 
+\par struct pastiSTATEINFO
+\par \{
+\par \tab void *buffer;
+\par \tab unsigned long bufSize;
+\par \tab unsigned long cycles;
+\par \};
+\par 
+\par Members:
+\par 
+\par buffer
+\par \tab Pointer to memory for state buffer. Provided by the application.
+\par bufSize
+\par \tab Size of the buffer. On return when saving state, number of bytes actually used
+\par cycles
+\par \tab Same parameter as pastiIo. When restoring state this must be the value that the application will use after restoring the state.
+\par 
+\par When saving state, set bufSize to zero to get the required size of the buffer; buffer pointer can be NULL in this case. Note: When querying the bu
+ffer size, the DLL might overestimate and return a larger value. Use the value returned on success for actually saving the state to a file. Don\rquote t assume that the size is fixed for the whole session, it might vary depending on the current state.
+
+\par 
+\par You might need to use pastiPeek after restoring a state to know the current motor and INTRQ states.
+\par 
+\par \page 
+\par BOOL pastiSaveConfig( struct pastiLOADINI *, const struct pastiCONFIGINFO *);
+\par 
+\par Save current configuration.
+\par 
+\par BOOL pastiLoadConfig( struct pastiLOADINI *, struct pastiCONFIGINFO *);
+\par 
+\par Restore configuration.
+\par 
+\par These functions provide automatic saving and restoring configuration. When using these functions the application doesn\rquote t need to be aware of the content and type of the configuration.
+\par 
+\par The pastiCONFIGINFO structure pointer should be NULL for loading and saving the actual DLL configuration.
+\par 
+\par 
+\par struct pastiLOADINI
+\par \{
+\par \tab int mode;
+\par \tab const char *name;
+\par \tab void *buffer;
+\par \tab unsigned bufSize;
+\par \};
+\par 
+\par Members:
+\par 
+\par mode
+\par \tab Only valid mode is currently:
+\par }\pard \fi720\widctlpar\adjustright {PASTI_LCSTRINGS
+\par 
+\par }\pard \widctlpar\adjustright {name
+\par \tab Currently not used. Please set to NULL.
+\par 
+\par buffer
+\par \tab Pointer to memory buffer to hold the configuration.
+\par 
+\par bufSize
+\par \tab Size of the buffer. On return when saving, number of bytes actually used.
+\par 
+\par 
+\par The configuration is saved as a pair of NULL terminated strings for the key name and value. The length of a string representing a value might be zero, but not for the key. Two consecutive zeros are appended at the end.
+\par 
+\par When saving, set bufSize to zero to get the required size of the buffer; buffer pointer can be NULL in this case. Note: Whe
+n querying the buffer size, the DLL might overestimate and return a larger value. Use the value returned on success for actually saving the state to a file.
+\par 
+\par When loading, parameters not present in the saved configuration are not changed and retain their previous state.
+\par  
+\par \page 
+\par BOOL pastiBreakpoint( unsigned subfunc, int n, struct pastiBREAKINFO *);
+\par 
+\par }\pard \widctlpar\outlinelevel0\adjustright {Configure breakpoints.
+\par }\pard \widctlpar\adjustright {
+\par Parameters:
+\par 
+\par subfunc
+\par \tab Valid subfunction codes are:
+\par 
+\par }\pard \fi720\widctlpar\adjustright {PASTI_BRK_SET
+\par \tab Set a breakpoint.
+\par }\pard \fi720\li720\widctlpar\adjustright {
+\par }\pard \fi720\widctlpar\adjustright {PASTI_BRK_GET
+\par \tab Get a breakpoint.
+\par 
+\par PASTI_BRK_DEL
+\par \tab Delete a breakpoint.
+\par 
+\par PASTI_BRK_KILL
+\par \tab Remove all breakpoints.
+\par }\pard \widctlpar\adjustright {
+\par n
+\par \tab Breakpoint number.
+\par 
+\par 
+\par The breakpoint defines a set of conditions. All conditions must match for the breakpoint to be triggered. All the settings accept either a value/mask or a minimum/maximum pair.
+\par 
+\par A condition is true if:
+\par 
+\par }\pard \widctlpar\outlinelevel0\adjustright {For value/mask:\tab (current & mask) == value
+\par }\pard \widctlpar\adjustright {For min/max:\tab current >= min && current <= max 
+\par 
+\par A specific setting can be ignored, forcing always a match, by setting a mask and value to 0, or a range of 0-255.
+\par 
+\par Breakpoints are monitored at two different states, depending on the status register breakpoint setting.
+\par If statusRegMask is 0, the breakpoint is monitored when a command is issued to the FDC. Otherwise it is monitored at the command completion.
+\par 
+\par struct pastiBREAKINFO
+\par \{
+\par \tab BOOL enabled;
+\par 
+\par \tab // fdc registers
+\par \tab unsigned char cmdRegValue;
+\par \tab unsigned char cmdRegMask;
+\par \tab unsigned char trackRegMin;
+\par \tab unsigned char trackRegMax;
+\par \tab unsigned char sectRegMin;
+\par \tab unsigned char sectRegMax;
+\par \tab unsigned char statusRegValue;
+\par \tab unsigned char statusRegMask;
+\par 
+\par \tab unsigned char dataRegMin;
+\par \tab unsigned char dataRegMax;
+\par 
+\par \tab // select bits
+\par \tab unsigned char drvSelValue;
+\par \tab unsigned char drvSelMask;
+\par 
+\par \tab // track head position
+\par \tab unsigned char trkHeadMin;
+\par \tab unsigned char trkHeadMax;
+\par 
+\par \tab // PC
+\par \tab unsigned long pcMin;
+\par \tab unsigned long pcMax;
+\par 
+\par \tab // dmabase
+\par \tab unsigned long dmaAddrMin;
+\par \tab unsigned long dmaAddrMax;
+\par  \};
+\par 
+\par Members:
+\par 
+\par cmdRegValue
+\par cmdRegMask
+\par \tab Command register value and mask.
+\par 
+\par trackRegMin
+\par trackRegMax
+\par \tab Track register minimum and maximum values.
+\par 
+\par sectRegMin
+\par sectRegMax
+\par \tab Sector register minimum and maximum values.
+\par 
+\par statusRegValue
+\par statusRegMask
+\par \tab Status register value and mask.
+\par 
+\par dataRegMin
+\par dataRegMax
+\par \tab Data register minimum and maximum values.
+\par 
+\par drvSelValue
+\par drvSelMask
+\par \tab Drive and side select bits value and mask.
+\par 
+\par pcMin
+\par pcMax
+\par \tab Program Counter minimum and maximum values.
+\par 
+\par dmaAddrMin
+\par dmaAddrMax
+\par \tab DMA base address minimum and maximum values.
+\par 
+\par \page 
+\par }\pard \widctlpar\outlinelevel0\adjustright {BOOL pastiDlgStatus( HWND hWnd);
+\par }\pard \widctlpar\adjustright {
+\par }\pard \widctlpar\outlinelevel0\adjustright {Present to the user the result of pastiPeek function.
+\par }\pard \widctlpar\adjustright {
+\par Parameters:
+\par 
+\par hWnd
+\par \tab Parent window handle of the dialog.
+\par 
+\par 
+\par }\pard \widctlpar\outlinelevel0\adjustright {BOOL pastiDlgConfig( HWND hWnd, unsigned flags, struct pastiCONFIGINFO *);
+\par }\pard \widctlpar\adjustright {
+\par }\pard \widctlpar\outlinelevel0\adjustright {Present to the user a Pasti Dll configuration dialog.
+\par }\pard \widctlpar\adjustright {
+\par Parameters:
+\par 
+\par hWnd
+\par \tab Parent window handle of the dialog.
+\par 
+\par flags
+\par }\pard \widctlpar\outlinelevel0\adjustright {\tab PASTI_DFNOINIT
+\par \tab \tab Don\rquote t initialize the structure with current settings.
+\par }\pard \widctlpar\adjustright {
+\par }\pard \fi720\widctlpar\outlinelevel0\adjustright {PASTI_DFNOAPPLY
+\par }\pard \fi720\widctlpar\adjustright {\tab Don\rquote t actually configure the Dll. If this switch is not set and dialog is not cancelled, the dll is actually configured according to the dialog choices.
+\par }\pard \widctlpar\adjustright {
+\par Notes: The structure pointer can be NULL. In this case PASTI_DFNOINIT and PASTI_DFNOAPPLY are forced to zero. Use this to give the user full control. Application level parameters, such as number of drives are masked and not presented to the user.
+\par 
+\par 
+\par BOOL pastiDlgFileProps( HWND hWnd, const char *fileName);
+\par 
+\par }\pard \widctlpar\outlinelevel0\adjustright {Present to the user a dialog with properties for a file image. 
+\par }\pard \widctlpar\adjustright {
+\par Parameters:
+\par 
+\par hWnd
+\par \tab Parent window handle of the dialog.
+\par 
+\par fileName
+\par \tab Fully qualified path of the disk image.
+\par 
+\par 
+\par BOOL pastiDlgBreakpoint( HWND hWnd)
+\par 
+\par }\pard \widctlpar\outlinelevel0\adjustright {Present to the user a dialog for configuring, enabling and disabling a breakpoint.
+\par }\pard \widctlpar\adjustright {
+\par Parameters:
+\par 
+\par hWnd
+\par \tab Parent window handle of the dialog.
+\par \page 
+\par BOOL pastiExtra( unsigned code, void *ptr);
+\par 
+\par Reserved for future expansions.
+\par 
+\par }}
