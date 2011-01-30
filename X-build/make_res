@@ -1,0 +1,4 @@
+#!/bin/bash
+
+nasm -felf -oobj/resource.o ../steem/code/rc/resource.asm
+

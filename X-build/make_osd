@@ -1,0 +1,4 @@
+#!/bin/bash
+
+nasm -felf -oobj/asm_osd.o -i../steem/code/asm/ ../steem/code/asm/asm_osd_draw.asm
+

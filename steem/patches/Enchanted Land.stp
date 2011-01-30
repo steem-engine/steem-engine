@@ -1,0 +1,8 @@
+[Text]
+Description=This game so very nearly works on Steem but now you can play anyway by using this patch. There are a few different versions of this game around, this patch is only certain to work on the one downloadable from the Thalion Webshrine (http://thalion.atari.org).
+ApplyWhen=The Thalion intro appears.
+Version=Works on Steem v3.2 when Steem is run with "STFMBORDER" command-line option
+PatchAuthor=Russell Hayward
+
+[Patch]
+208=$0059 $000d
