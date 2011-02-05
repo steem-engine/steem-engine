@@ -1,10 +1,10 @@
 #BCCROOT = C:\Code\Compile\BCC
 #BCBROOT = C:\Code\Compile\BCB
-STEEMROOT = ..\steem
+STEEMROOT = ..\..\steem
 ASMINCOBJDIR = obj
-INCDIR = ..\include
+INCDIR = ..\..\include
 ASMOBJDIR = obj
-3RDPARTYROOT = ..\3rdparty
+3RDPARTYROOT = ..\..\3rdparty
 
 3RDPARTYOBJS = $(3RDPARTYROOT)\urarlib\urarlib.obj
 
