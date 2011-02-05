@@ -8,6 +8,7 @@ rem the bcc5.5 directory and the PATH variable points to
 rem bcc5.5\bin\make.exe and nasm.exe
 
 set OUT=_DebugRelease
+set ROOT=..\..
 
 rmdir /S /Q %OUT%
 mkdir "%OUT%"
@@ -15,22 +16,22 @@ mkdir "%OUT%"
 rmdir /S /Q obj
 mkdir obj
 
-nasm -o obj\asm_draw.obj -fobj -dWIN32 -w+macro-params -w+macro-selfref -w+orphan-labels -i..\steem\asm\ ..\steem\asm\asm_draw.asm
-nasm -o obj\asm_osd_draw.obj -fobj -dWIN32 -w+macro-params -w+macro-selfref -w+orphan-labels -i..\steem\asm\ ..\steem\asm\asm_osd_draw.asm
-nasm -o obj\asm_portio.obj -fobj -dWIN32 ..\include\asm\asm_portio.asm
+nasm -o obj\asm_draw.obj -fobj -dWIN32 -w+macro-params -w+macro-selfref -w+orphan-labels -i%ROOT%\steem\asm\ %ROOT%\steem\asm\asm_draw.asm
+nasm -o obj\asm_osd_draw.obj -fobj -dWIN32 -w+macro-params -w+macro-selfref -w+orphan-labels -i%ROOT%\steem\asm\ %ROOT%\steem\asm\asm_osd_draw.asm
+nasm -o obj\asm_portio.obj -fobj -dWIN32 %ROOT%\include\asm\asm_portio.asm
 
 make.exe -B -D_FORCE_DEBUG_BUILD -D_BCC_BUILD
 
 del %OUT%\*.tds
 
 mkdir "%OUT%\patches"
-xcopy "..\steem\patches"              "%OUT%\patches\" /y /e
+xcopy "%ROOT%\steem\patches"              "%OUT%\patches\" /y /e
 
-set DOC_DIR=..\steem\doc
+set DOC_DIR=%ROOT%\steem\doc
 
 copy "%DOC_DIR%\readme.txt"           "%OUT%\readme.txt"
-copy "..\steem\lib\unzipd32.dll"      "%OUT%\unzipd32.dll"
-copy "..\steem\steem.new"             "%OUT%\steem.new"
+copy "%ROOT%\steem\lib\unzipd32.dll"      "%OUT%\unzipd32.dll"
+copy "%ROOT%\steem\steem.new"             "%OUT%\steem.new"
 copy "%DOC_DIR%\DISK_IMG.PRG"         "%OUT%\DISK_IMG.PRG"
 copy "%DOC_DIR%\disk image howto.txt" "%OUT%\disk image howto.txt"
 copy "%DOC_DIR%\CART_IMG.PRG"         "%OUT%\CART_IMG.PRG"
