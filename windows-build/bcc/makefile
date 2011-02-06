@@ -1,5 +1,4 @@
 #BCCROOT = C:\Code\Compile\BCC
-#BCBROOT = C:\Code\Compile\BCB
 STEEMROOT = ..\..\steem
 ASMINCOBJDIR = obj
 INCDIR = ..\..\include

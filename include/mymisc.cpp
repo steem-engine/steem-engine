@@ -273,8 +273,15 @@ void CentreTextOut(HDC dc,int x,int y,int w,int h,
 {
   if (len==-1) len=strlen(text);
 
-  SIZE sz;GetTextExtentPoint32(dc,text,len,&sz);
+  SIZE sz;
+  GetTextExtentPoint32(dc,text,len,&sz);
   TextOut(dc,x+(w/2)-(sz.cx/2),y+(h/2)-(sz.cy/2),text,len);
+}
+//---------------------------------------------------------------------------
+void CentreTextOut(HDC dc,RECT *lpRect,char *text)
+{
+  CentreTextOut(dc, (int)lpRect->left, (int)lpRect->top,
+    (int)(lpRect->right - lpRect->left), (int)(lpRect->bottom - lpRect->top), text, -1);
 }
 //---------------------------------------------------------------------------
 void GetLongPathName(char *src,char *dest,int maxlen)
@@ -1326,6 +1333,12 @@ HBITMAP CreateScreenCompatibleBitmap(int w,int h)
   HBITMAP NewBMP=CreateCompatibleBitmap(ScrDC,w,h);
   ReleaseDC(NULL,ScrDC);
   return NewBMP;
+}
+//---------------------------------------------------------------------------
+void FillRectWithColour(HDC dc, RECT *lpRect, COLORREF colour){
+  HBRUSH br = CreateSolidBrush(colour);
+  FillRect(dc, lpRect, br);
+  DeleteObject(br);
 }
 //---------------------------------------------------------------------------
 #else
