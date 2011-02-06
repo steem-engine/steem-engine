@@ -94,13 +94,13 @@ Maybe one day we will port the debug build to X but it is
 such a big job it won't be for a while. In the meantime
 the best thing if you want to do some debugging is to run
 the Windows debug build under WINE, that works as long as
-you use the command-line "noints". You may also want to
-add "nodd nods" to avoid DirectX. Try not to be too
-ambitious when using Steem under WINE. The best way
-to debug something is to use XSteem to get to the problem
-position and then save a memory snapshot. Now run the
-debug build, load the memory snapshot and try to work out
-what is wrong.
+you use the command-line "noints" when starting Steem.
+You may also want to add "nodd nods" to avoid DirectX. Try
+not to be too ambitious when using Steem under WINE. The
+best way to debug something is to use XSteem to get to the
+problem position and then save a memory snapshot. Now
+run the debug build, load the memory snapshot and try to 
+work out what is wrong.
 
 
 That's it, we hope you enjoy using Steem.
