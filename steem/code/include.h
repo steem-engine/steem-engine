@@ -27,7 +27,7 @@ WIN_ONLY( HINSTANCE Inst; )
 #include <portaudio/portaudio_dll.cpp>
 #endif
 #else
-#include <portaudio/pa_common/portaudio.h>
+#include <portaudio.h>
 #endif
 
 typedef EasyStr Str;
