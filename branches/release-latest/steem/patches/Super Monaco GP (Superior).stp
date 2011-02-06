@@ -1,0 +1,8 @@
+[Text]
+Description=This game just freezes up when loading. Why? Don't ask.
+ApplyWhen=It freezes up when loading.
+Version=Works on Steem v3.2
+PatchAuthor=Kimmo Hakala
+
+[Patch]
+720d6=$4e71

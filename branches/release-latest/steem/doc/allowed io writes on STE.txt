@@ -1,0 +1,24 @@
+Allowed writes (OR 0)
+
+000008 - 3FFFFF RAM
+
+FF8000 - FF800F MMU
+FF8200 - FF820F SHIFTER
+FF8240 - FF827F pallette, res
+FF8608 - FF860F FDC
+FF8800 - FF88FF sound chip
+FF8900 - FF893F DMA sound, microwire
+FF8A00 - FF8A3F blitter
+FF9000 
+FF9001
+FF9202  paddles  
+FF9203  paddles
+FFFA01, odd numbers up to FFFA3F MFP
+FFFC00 - FFFDFF  ACIA, realtime clock
+
+Word differences:
+
+FF9000 
+FF8604 - FF860F FDC
+FF9202  paddles  
+FFFA00 - FFFA3F MFP
