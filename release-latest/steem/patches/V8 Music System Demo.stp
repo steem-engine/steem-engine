@@ -1,0 +1,8 @@
+[Text]
+Description=This demo waits for something that should never happen, we might figure out what is going on but until then here's a patch.
+ApplyWhen=It freezes up.
+Version=Works on Steem v3.2
+PatchAuthor=Russell Hayward
+
+[Patch]
+015056=$4e71 $4e71
