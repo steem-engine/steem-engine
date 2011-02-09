@@ -1,8 +1,0 @@
-[Text]
-Description=Some versions of this game are not compatible with TOSs 1.02 or 2.06, but you can play it anyway using this patch.
-ApplyWhen=Any time before it crashes!
-Version=Works on Steem v3.2
-PatchAuthor=Anthony Hayward
-
-[Patch]
-200=$0000 $04de

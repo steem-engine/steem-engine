@@ -1,8 +1,0 @@
-[Text]
-Description=Fixes the graphics for this game on Automation 231.
-ApplyWhen=At any time after the loading screen appears while unpacking.
-Version=Steem v3.2
-PatchAuthor=J
-
-[Patch]
-FF8264=$0000

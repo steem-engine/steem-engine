@@ -1,9 +1,0 @@
-[Text]
-Description=This demo turns on keyboard interrupts and then won't work if it gets keyboard interrupts, very odd.
-ApplyWhen=The main screen appears.
-Version=Works on Steem v3.2
-PatchAuthor=Russell Hayward
-
-[Patch]
-08C7FE = $4E73
-00880A = $4E73

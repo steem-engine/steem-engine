@@ -1,8 +1,0 @@
-[Text]
-Description=Some versions of this game won't work on a real STE, if you have an affected copy here's a patch to allow you to play it on Steem.
-ApplyWhen=The screen fills with a streaky mess.
-Version=Works on Steem v3.2
-PatchAuthor=Russell Hayward
-
-[Patch]
-FF8264=$0000
