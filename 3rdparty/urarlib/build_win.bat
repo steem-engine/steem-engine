@@ -1,2 +1,2 @@
 del urarlib.obj
-make -fwin_makefile -B
+"%BCCROOT%\Bin\make.exe" -fwin_makefile -B
