@@ -1,24 +1,52 @@
 /* ***************************************************************************
- **    
+ **
+ **  This file is part of the UniquE RAR File Library.
+ **
+ **  Copyright (C) 2000-2002 by Christian Scheurer (www.ChristianScheurer.ch)
+ **  UNIX port copyright (c) 2000-2002 by Johannes Winkelmann (jw@tks6.net)
+ **
+ **  The contents of this file are subject to the UniquE RAR File Library
+ **  License (the "unrarlib-license.txt"). You may not use this file except
+ **  in compliance with the License. You may obtain a copy of the License
+ **  at http://www.unrarlib.org/license.html.
+ **  Software distributed under the License is distributed on an "AS IS"
+ **  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied warranty.
+ **
+ **  Alternatively, the contents of this file may be used under the terms
+ **  of the GNU General Public License Version 2 or later (the "GPL"), in
+ **  which case the provisions of the GPL are applicable instead of those
+ **  above. If you wish to allow use of your version of this file only
+ **  under the terms of the GPL and not to allow others to use your version
+ **  of this file under the terms of the UniquE RAR File Library License,
+ **  indicate your decision by deleting the provisions above and replace
+ **  them with the notice and other provisions required by the GPL. If you
+ **  do not delete the provisions above, a recipient may use your version
+ **  of this file under the terms of the GPL or the UniquE RAR File Library
+ **  License.
+ **
+ ************************************************************************** */
+
+/* ***************************************************************************
+ **
  **                           UniquE RAR File Library
  **                     The free file lib for the demoscene
  **                   multi-OS version (Win32, Linux and SunOS)
  **
  *****************************************************************************
  **
- **   ==> Please configure the program in "urarlib.h". <==
+ **   ==> Please configure the program in "unrarlib.h". <==
  **
- **   RAR decompression code: 
+ **   RAR decompression code:
  **    (C) Eugene Roshal
- **   Modifications to a FileLib: 
- **    (C) 2000-2001 Christian Scheurer aka. UniquE/Vantage (unique@vantage.ch)
+ **   Modifications to a FileLib:
+ **    (C) 2000-2002 Christian Scheurer aka. UniquE/Vantage (cs@unrarlib.org)
  **   Linux port:
- **    (C) 2000-2001 Johannes Winkelmann (jw@tks6.net)
+ **    (C) 2000-2002 Johannes Winkelmann (jw@tks6.net)
  **
  **  The UniquE RAR File Library gives you the ability to access RAR archives
- **  (any compression method supported in RAR v2.0 including Multimedia 
+ **  (any compression method supported in RAR v2.0 including Multimedia
  **  Compression and encryption) directly from your program with ease an by
- **  adding only 12kB (6kB UPX-compressed) additional code to your program. 
+ **  adding only 12kB (6kB UPX-compressed) additional code to your program.
  **  Both solid and normal (recommended for fast random access to the files!)
  **  archives are supported. This FileLib is made for the Demo scene, so it's
  **  designed for easy use within your demos and intros.
@@ -26,55 +54,13 @@
  **  in your productions.
  **
  *****************************************************************************
- **  
- ** 
- ** 0.0    14.02.2000 Christian Scheurer  Begin of the URARFileLib project
- ** 0.1    17.08.2000 Christian Scheurer  After many tests and versions, 
- **                                       finally the first working release 
- **                                       is out.
- ** 0.2b   20.08.2000 Christian Scheurer  Support for solid and normal RARs
- **                                       added: decompression speed 
- **                                       increased by factors!
- ** 0.2c   21.08.2000 Johannes Winkelmann first linux-beta port for gcc
- ** 0.2d   23.08.2000 Christian Scheurer  merged all files into one, merged
- **                                       linux and win32 version
- ** >0.3   24.08.2000 JW&CS               making library easier to use both
- **                                       with Win32, Linux and SunOS. First
- **                                       public release
- ** 0.3.0a 30.08.2000 Christian Scheurer  UnpInitData() rewritten in i386 asm
- **                                       and stricomp() doesn't regard if a
- **                                       filename is 'bla/b.x' or 'bla\b.x'.
- ** 0.3.0b 04.09.2000 Christian Scheurer  removed some unused structures,
- **                                       Bugs fixed: CRC32 is now computed
- **                                       correctly if '_DO_CRC32_CHECK' is
- **                                       defined and function UnstoreFile()
- **                                       is completely rewritten, memory
- **                                       management in case of failure 
- **                                       improved
- ** >0.3.1 07.09.2000 Christian Scheurer  bug fixed in Unpack() (check for
- **                                       buffer overflow added)
- ** >0.3.2 21.11.2000 Christian Scheurer  Listing of RAR archives support
- **                                       added: urarlib_list(), memory bug 
- **                                       in ExtrFile() fixed caused by debug
- **                                       code
- ** 0.3.2a 23.11.2000 Johannes Winkelmann DecodeNumber() ported to i386 asm in
- **                                       AT & T syntax (compiles w/gcc)
- ** 0.3.2b 24.11.2000 Johannes Winkelmann SetCryptKeys() ported to i386 asm in
- **                                       AT & T syntax as well
- ** 0.3.2c 25.11.2000 Johannes Winkelmann Guess: something in UnpInitData()
- ** >0.3.3 12.01.2001 JW&CS               Making library ready for 4th release
- ** 0.3.3a 18.03.2001 Christian Scheurer  Support for Memory-to-memory
- **                                       decompression added. Works fine with
- **                                       VisualC
- ** >0.3.4 18.03.2001 Christian Scheurer  public release
- ** >0.3.4a 21.9.2001 JW & CS             fclose()-bug fixed
  **
- **
+ **  ==> see the "CHANGES" file to see what's new
  **
  ************************************************************************** */
 
 /* -- include files ------------------------------------------------------- */
-#include "urarlib.h"                        /* include global configuration */
+#include "urarlib.h"                       /* include global configuration */
 /* ------------------------------------------------------------------------ */
 
 
@@ -146,6 +132,8 @@ typedef short   BOOL;
 #define TRUE    1
 #define FALSE   0
 
+
+#ifdef _DEBUG_LOG                           /* define macros for debugging  */
 #include <unistd.h>
 #include <sys/time.h>
 
@@ -155,6 +143,7 @@ DWORD GetTickCount()
     gettimeofday( &tv, 0 );
     return (tv.tv_usec / 1000);
 }
+#endif
 
 #endif
 
@@ -313,14 +302,14 @@ char ArgName[NM];                           /* current file in rar archive  */
 char ArcFileName[NM];                       /* file to decompress           */
 
 #ifdef _USE_MEMORY_TO_MEMORY_DECOMPRESSION  /* mem-to-mem decompression     */
-  MemoryFile *MemRARFile;                   /* pointer to RAR file in memory*/ 
+  MemoryFile *MemRARFile;                   /* pointer to RAR file in memory*/
 #else
   char ArcName[255];                        /* RAR archive name             */
   FILE *ArcPtr;                             /* input RAR file handler       */
 #endif
 char Password[255];                         /* password to decrypt files    */
 
-char *temp_output_buffer;                   /* extract files to this pointer*/
+unsigned char *temp_output_buffer;          /* extract files to this pointer*/
 unsigned long *temp_output_buffer_offset;   /* size of temp. extract buffer */
 
 BOOL FileFound;                             /* TRUE=use current extracted   */
@@ -337,7 +326,7 @@ UDWORD HeaderCRC;
 int Encryption;
 
 unsigned int UnpWrSize;
-unsigned char *UnpWrAddr;        
+unsigned char *UnpWrAddr;
 unsigned int UnpPtr,WrPtr;
 
 unsigned char PN1,PN2,PN3;
@@ -377,19 +366,19 @@ int stricomp(char *Str1,char *Str2);
 
 /* -- global functions ---------------------------------------------------- */
 
-int urarlib_get(void *output, 
-                unsigned long *size, 
-                char *filename, 
-                void *rarfile, 
+int urarlib_get(void *output,
+                unsigned long *size,
+                char *filename,
+                void *rarfile,
                 char *libpassword)
-/* Get a file from a RAR file to the "output" buffer. The UniquE RAR FileLib 
- * does everything from allocating memory, decrypting and unpacking the file 
- * from the archive. TRUE is returned if the file could be successfully 
+/* Get a file from a RAR file to the "output" buffer. The UniquE RAR FileLib
+ * does everything from allocating memory, decrypting and unpacking the file
+ * from the archive. TRUE is returned if the file could be successfully
  * extracted, else a FALSE indicates a failure.
  */
 {
   BOOL  retcode = FALSE;
-  
+
 #ifdef _DEBUG_LOG
   int  str_offs;                            /* used for debug-strings       */
   char DebugMsg[500];                       /* used to compose debug msg    */
@@ -405,19 +394,19 @@ int urarlib_get(void *output,
   InitCRC();                                /* init some vars               */
 
   strcpy(ArgName, filename);                /* set file(s) to extract       */
-#ifdef _USE_MEMORY_TO_MEMORY_DECOMPRESSION 
+#ifdef _USE_MEMORY_TO_MEMORY_DECOMPRESSION
   MemRARFile = rarfile;                     /* set pointer to mem-RAR file  */
 #else
   strcpy(ArcName, rarfile);                 /* set RAR file name            */
 #endif
-  if(libpassword != NULL)          
+  if(libpassword != NULL)
     strcpy(Password, libpassword);          /* init password                */
 
   temp_output_buffer = NULL;
   temp_output_buffer_offset=size;           /* set size of the temp buffer  */
 
 #ifdef _DEBUG_LOG
-  sprintf(DebugMsg, "Extracting >%s< from >%s< (password is >%s<)...", 
+  sprintf(DebugMsg, "Extracting >%s< from >%s< (password is >%s<)...",
           filename, (char*)rarfile, libpassword);
   debug_log(DebugMsg);
 #endif
@@ -440,7 +429,7 @@ int urarlib_get(void *output,
   TempMemory=NULL;
   CommMemory=NULL;
 
-  
+
   if(retcode == FALSE)
   {
     free(temp_output_buffer);               /* free memory and return NULL  */
@@ -468,7 +457,7 @@ int urarlib_get(void *output,
 #endif
   *(DWORD*)output=(DWORD)temp_output_buffer;/* return pointer for unpacked*/
                                             /* data                       */
-  
+
   return retcode;
 }
 
@@ -495,7 +484,7 @@ int urarlib_list(void *rarfile, ArchiveList_struct *list)
   {
     debug_log("Not a RAR file");
     return NoOfFilesInArchive;              /* error => exit!               */
-  } 
+  }
 #else
   /* open and identify archive                                              */
   if ((ArcPtr=fopen(rarfile,READBINARY))!=NULL)
@@ -525,7 +514,7 @@ int urarlib_list(void *rarfile, ArchiveList_struct *list)
 #else
   tseek(ArcPtr,NewMhd.HeadSize-MainHeadSize,SEEK_CUR);
 #endif
-  (void*)(*(DWORD*)list) = NULL;            /* init file list               */
+  (*(DWORD*)list) = (DWORD)NULL;            /* init file list               */
   /* do while file is not extracted and there's no error                    */
   while (TRUE)
   {
@@ -545,8 +534,8 @@ int urarlib_list(void *rarfile, ArchiveList_struct *list)
       tmp_List = malloc(sizeof(ArchiveList_struct));
       tmp_List->next = NULL;
 
-      (void*)(*(DWORD*)list) = tmp_List;
- 
+      (*(DWORD*)list) = (DWORD)tmp_List;
+
     } else                                  /* add entry                    */
     {
       tmp_List->next = malloc(sizeof(ArchiveList_struct));
@@ -574,7 +563,7 @@ int urarlib_list(void *rarfile, ArchiveList_struct *list)
     if (ArcPtr!=NULL) tseek(ArcPtr,NextBlockPos,SEEK_SET);
 #endif
 
-  }; 
+  };
 
   /* free memory, clear password and close archive                          */
   memset(Password,0,sizeof(Password));      /* clear password               */
@@ -591,9 +580,33 @@ int urarlib_list(void *rarfile, ArchiveList_struct *list)
   UnpMemory=NULL;
   TempMemory=NULL;
   CommMemory=NULL;
- 
+
   return NoOfFilesInArchive;
 }
+
+
+
+/* urarlib_freelist:
+ * (after the suggestion and code of Duy Nguyen, Sean O'Blarney
+ * and Johannes Winkelmann who independently wrote a patch)
+ * free the memory of a ArchiveList_struct created by urarlib_list.
+ *
+ *    input: *list          pointer to an ArchiveList_struct
+ *    output: -
+ */
+
+void urarlib_freelist(ArchiveList_struct *list)
+{
+    ArchiveList_struct* tmp = list;
+
+    while ( list ) {
+        tmp = list->next;
+        free( list->item.Name );
+        free( list );
+        list = tmp;
+    }
+}
+
 
 /* ------------------------------------------------------------------------ */
 
@@ -706,9 +719,9 @@ int ReadBlock(int BlockType)
       debug_log("file header broken");
     }
 #endif
-    Size+=NewLhd.NameSize;      
+    Size+=NewLhd.NameSize;
   } else
-  { 
+  {
     memcpy(&NewLhd,&SaveFileHead,sizeof(NewLhd));
 #ifdef _USE_MEMORY_TO_MEMORY_DECOMPRESSION
     MemRARFile->offset = CurBlockPos;
@@ -724,7 +737,7 @@ int ReadBlock(int BlockType)
 
 int ReadHeader(int BlockType)
 {
-  int Size = 0;            
+  int Size = 0;
   unsigned char Header[64];
   switch(BlockType)
   {
@@ -871,12 +884,12 @@ int IsArchive(void)
 
      debug_log(DebugMsg);
 #endif
-                
+
     }
 
 
   MainHeadSize=SIZEOF_NEWMHD;
- 
+
   return(TRUE);
 }
 
@@ -908,7 +921,7 @@ BOOL ExtrFile(void)
   } else
   {
     debug_log("Error opening file.");
-    return FALSE;                 
+    return FALSE;
   }
 #endif
 
@@ -916,7 +929,7 @@ BOOL ExtrFile(void)
   if ((UnpMemory=malloc(UNP_MEMORY))==NULL)
   {
     debug_log("Can't allocate memory for decompression!");
-    return FALSE;                 
+    return FALSE;
   }
 
 #ifdef _USE_MEMORY_TO_MEMORY_DECOMPRESSION
@@ -932,7 +945,7 @@ BOOL ExtrFile(void)
     if (ReadBlock(FILE_HEAD | READSUBBLOCK) <= 0) /* read name of the next  */
     {                                       /* file within the RAR archive  */
 /*
- * 
+ *
  * 21.11.2000  UnQ  There's a problem with some linux distros when a file
  *                  can not be found in an archive.
  *
@@ -970,8 +983,8 @@ BOOL ExtrFile(void)
     }
 
     /* in case of a solid archive, we need to decompress any single file till
-     * we have found the one we are looking for. In case of normal archives 
-     * (recommended!!), we skip the files until we are sure that it is the 
+     * we have found the one we are looking for. In case of normal archives
+     * (recommended!!), we skip the files until we are sure that it is the
      * one we want.
      */
     if((NewMhd.Flags & 0x08) || FileFound)
@@ -1002,7 +1015,7 @@ BOOL ExtrFile(void)
       }
 
 
-      
+
 #ifdef _DO_CRC32_CHECK                      /* calculate CRC32              */
       if((UBYTE*)temp_output_buffer != NULL)
       {
@@ -1082,10 +1095,10 @@ int tread(void *stream,void *buf,unsigned len)
 {
 #ifdef _USE_MEMORY_TO_MEMORY_DECOMPRESSION
 
-  if(((MemRARFile->offset + len) > MemRARFile->size) || (len == 0)) 
+  if(((MemRARFile->offset + len) > MemRARFile->size) || (len == 0))
      return 0;
 
-  memcpy(buf, 
+  memcpy(buf,
          (BYTE*)(((MemoryFile*)stream)->data)+((MemoryFile*)stream)->offset,
          len % ((((MemoryFile*)stream)->size) - 1));
 
@@ -1132,12 +1145,12 @@ int stricomp(char *Str1,char *Str2)
   {
     *chptr = '_';
   }
-  
+
   while((chptr = strchr(S1, '/')) != NULL)  /* ignore slash                 */
   {
     *chptr = '_';
   }
-   
+
   while((chptr = strchr(S2, '/')) != NULL)  /* ignore slash                 */
   {
     *chptr = '_';
@@ -1346,45 +1359,45 @@ void Unpack(unsigned char *UnpAddr)
     if (((WrPtr-UnpPtr) & MAXWINMASK)<270 && WrPtr!=UnpPtr)
     {
 
-    
+
       if (FileFound)
       {
 
         if (UnpPtr<WrPtr)
         {
-			if((*temp_output_buffer_offset + UnpPtr) > NewLhd.UnpSize)
-			{
- 			  debug_log("Fatal! Buffer overrun during decompression!");
-			  DestUnpSize=-1;
+                        if((*temp_output_buffer_offset + UnpPtr) > NewLhd.UnpSize)
+                        {
+                           debug_log("Fatal! Buffer overrun during decompression!");
+                          DestUnpSize=-1;
 
-		    } else
-			{
+                    } else
+                        {
               /* copy extracted data to output buffer                         */
-              memcpy(temp_output_buffer + *temp_output_buffer_offset, 
-                     &UnpBuf[WrPtr], (0-WrPtr) & MAXWINMASK);   
+              memcpy(temp_output_buffer + *temp_output_buffer_offset,
+                     &UnpBuf[WrPtr], (0-WrPtr) & MAXWINMASK);
               /* update offset within buffer                                  */
               *temp_output_buffer_offset+= (0-WrPtr) & MAXWINMASK;
               /* copy extracted data to output buffer                         */
-              memcpy(temp_output_buffer + *temp_output_buffer_offset, UnpBuf, 
+              memcpy(temp_output_buffer + *temp_output_buffer_offset, UnpBuf,
                      UnpPtr);
               /* update offset within buffer                                  */
               *temp_output_buffer_offset+=UnpPtr;
-			}
+                        }
         } else
         {
-			if((*temp_output_buffer_offset + (UnpPtr-WrPtr)) > NewLhd.UnpSize)
-			{
-	 		  debug_log("Fatal! Buffer overrun during decompression!");
-			  DestUnpSize=-1;						
-		    } else
-			{
-	          /* copy extracted data to output buffer                       */
-              memcpy(temp_output_buffer + *temp_output_buffer_offset, 
-                     &UnpBuf[WrPtr], UnpPtr-WrPtr);   
+                        if((*temp_output_buffer_offset + (UnpPtr-WrPtr)) > NewLhd.UnpSize)
+                        {
+                           debug_log("Fatal! Buffer overrun during decompression!");
+                          DestUnpSize=-1;
+                    } else
+                        {
+                  /* copy extracted data to output buffer                       */
+              memcpy(temp_output_buffer + *temp_output_buffer_offset,
+                     &UnpBuf[WrPtr], UnpPtr-WrPtr);
               *temp_output_buffer_offset+=UnpPtr-WrPtr;                                                /* update offset within buffer */
-		    }
+                    }
 
-	    }
+            }
       }
 
       WrPtr=UnpPtr;
@@ -1518,36 +1531,36 @@ void Unpack(unsigned char *UnpAddr)
 
     if (UnpPtr<WrPtr)
     {
-	  if((*temp_output_buffer_offset + UnpPtr) > NewLhd.UnpSize)
-	  {
-	    debug_log("Fatal! Buffer overrun during decompression!");
-		DestUnpSize=-1;						
-	  } else
-	  {
+          if((*temp_output_buffer_offset + UnpPtr) > NewLhd.UnpSize)
+          {
+            debug_log("Fatal! Buffer overrun during decompression!");
+                DestUnpSize=-1;
+          } else
+          {
         /* copy extracted data to output buffer                             */
-        memcpy(temp_output_buffer + *temp_output_buffer_offset, &UnpBuf[WrPtr], 
+        memcpy(temp_output_buffer + *temp_output_buffer_offset, &UnpBuf[WrPtr],
                (0-WrPtr) & MAXWINMASK);
         /* update offset within buffer                                      */
-        *temp_output_buffer_offset+= (0-WrPtr) & MAXWINMASK;   
+        *temp_output_buffer_offset+= (0-WrPtr) & MAXWINMASK;
         /* copy extracted data to output buffer                             */
         memcpy(temp_output_buffer + *temp_output_buffer_offset, UnpBuf, UnpPtr);
         /* update offset within buffer                                      */
         *temp_output_buffer_offset+=UnpPtr;
-	  }
+          }
     } else
     {
-	  if((*temp_output_buffer_offset + (UnpPtr-WrPtr)) > NewLhd.UnpSize)
-	  {
-	 	debug_log("Fatal! Buffer overrun during decompression!");
-		DestUnpSize=-1;						
-	  } else
-	  {
+          if((*temp_output_buffer_offset + (UnpPtr-WrPtr)) > NewLhd.UnpSize)
+          {
+                 debug_log("Fatal! Buffer overrun during decompression!");
+                DestUnpSize=-1;
+          } else
+          {
         /* copy extracted data to output buffer                             */
         memcpy(temp_output_buffer + *temp_output_buffer_offset, &UnpBuf[WrPtr],
-               UnpPtr-WrPtr);   
+               UnpPtr-WrPtr);
         /* update offset within buffer                                      */
         *temp_output_buffer_offset+=UnpPtr-WrPtr;
-	  }
+          }
     }
   }
 
@@ -1563,7 +1576,7 @@ unsigned int UnpRead(unsigned char *Addr,unsigned int Count)
   ReadAddr=Addr;
   while (Count > 0)
   {
-    ReadSize=(unsigned int)((Count>(unsigned long)UnpPackedSize) ? 
+    ReadSize=(unsigned int)((Count>(unsigned long)UnpPackedSize) ?
                                                   UnpPackedSize : Count);
 #ifdef _USE_MEMORY_TO_MEMORY_DECOMPRESSION
     if(MemRARFile->data == NULL)
@@ -1763,38 +1776,38 @@ static void DecodeNumber(struct Decode *Deco)
   GetBits();
 
 #ifdef _USE_ASM
-  
+
 #ifdef _WIN_32
  __asm {
 
     xor eax, eax
     mov eax, BitField                       // N=BitField & 0xFFFE;
     and eax, 0xFFFFFFFE
-    mov [N], eax                                                 
+    mov [N], eax
     mov edx, [Deco]                         // EAX=N, EDX=Deco
 
           cmp  eax, dword ptr[edx + 8*4 + 4]// if (N<Dec->DecodeLen[8])
           jae  else_G
 
-             cmp  eax, dword ptr[edx + 4*4 + 4]// if (N<Dec->DecodeLen[4]) 
+             cmp  eax, dword ptr[edx + 4*4 + 4]// if (N<Dec->DecodeLen[4])
              jae  else_F
 
 
-                cmp  eax, dword ptr[edx + 2*4 + 4]// if (N<Dec->DecodeLen[2]) 
+                cmp  eax, dword ptr[edx + 2*4 + 4]// if (N<Dec->DecodeLen[2])
                 jae  else_C
 
-                   cmp  eax, dword ptr[edx + 1*4 + 4]// if (N<Dec->DecodeLen[1]) 
+                   cmp  eax, dword ptr[edx + 1*4 + 4]// if (N<Dec->DecodeLen[1])
                    jae  else_1
                    mov  I, 1                         //  I=1;
                    jmp  next_1
                  else_1:                             // else
                    mov  I, 2                         //  I=2;
                  next_1:
-                
+
                 jmp  next_C
               else_C:                             // else
-                   
-                   cmp  eax, dword ptr[edx + 3*4 + 4]// if (N<Dec->DecodeLen[3]) 
+
+                   cmp  eax, dword ptr[edx + 3*4 + 4]// if (N<Dec->DecodeLen[3])
                    jae  else_2
                    mov  I, 3                         //  I=3;
                    jmp  next_2
@@ -1808,10 +1821,10 @@ static void DecodeNumber(struct Decode *Deco)
            else_F:
 
 
-             cmp  eax, dword ptr[edx + 6*4 + 4]// if (N<Dec->DecodeLen[6]) 
+             cmp  eax, dword ptr[edx + 6*4 + 4]// if (N<Dec->DecodeLen[6])
              jae  else_E
 
-                cmp  eax, dword ptr[edx + 5*4 + 4]// if (N<Dec->DecodeLen[5]) 
+                cmp  eax, dword ptr[edx + 5*4 + 4]// if (N<Dec->DecodeLen[5])
                 jae  else_3
                 mov  I, 5                         //  I=5;
                 jmp  next_3
@@ -1822,7 +1835,7 @@ static void DecodeNumber(struct Decode *Deco)
              jmp  next_E
            else_E:                             // else
 
-                cmp  eax, dword ptr[edx + 7*4 + 4]// if (N<Dec->DecodeLen[7]) 
+                cmp  eax, dword ptr[edx + 7*4 + 4]// if (N<Dec->DecodeLen[7])
                 jae  else_4
                 mov  I, 7                         //  I=7;
                 jmp  next_4
@@ -1837,10 +1850,10 @@ static void DecodeNumber(struct Decode *Deco)
           jmp  next_G
         else_G:
 
-          cmp  eax, dword ptr[edx + 12*4 + 4] // if (N<Dec->DecodeLen[12]) 
+          cmp  eax, dword ptr[edx + 12*4 + 4] // if (N<Dec->DecodeLen[12])
           jae  else_D
 
-             cmp  eax, dword ptr[edx + 10*4 + 4]// if (N<Dec->DecodeLen[10]) 
+             cmp  eax, dword ptr[edx + 10*4 + 4]// if (N<Dec->DecodeLen[10])
              jae  else_B
 
                 cmp  eax, dword ptr[edx + 9*4 + 4]// if (N<Dec->DecodeLen[9])
@@ -1853,8 +1866,8 @@ static void DecodeNumber(struct Decode *Deco)
 
              jmp  next_B
            else_B:                             // else
- 
-                cmp  eax, dword ptr[edx + 11*4 + 4]// if (N<Dec->DecodeLen[11]) 
+
+                cmp  eax, dword ptr[edx + 11*4 + 4]// if (N<Dec->DecodeLen[11])
                 jae  else_6
                 mov  I, 11                         //  I=11;
                 jmp  next_6
@@ -1863,15 +1876,15 @@ static void DecodeNumber(struct Decode *Deco)
               next_6:
 
            next_B:
-      
-        
+
+
           jmp  next_D
         else_D:                             // else
 
-               cmp  eax, dword ptr[edx + 14*4 + 4]// if (N<Dec->DecodeLen[14]) 
+               cmp  eax, dword ptr[edx + 14*4 + 4]// if (N<Dec->DecodeLen[14])
                jae  else_A
 
-                  cmp  eax, dword ptr[edx + 13*4 + 4]// if (N<Dec->DecodeLen[13]) 
+                  cmp  eax, dword ptr[edx + 13*4 + 4]// if (N<Dec->DecodeLen[13])
                   jae  else_7
                   mov  I, 13                         //  I=13;
                   jmp  next_7
@@ -1883,128 +1896,127 @@ static void DecodeNumber(struct Decode *Deco)
               else_A:                             // else
                mov  I, 15                         //  I=15;
               next_A:
-          
-        next_D:                             
+
+        next_D:
     next_G:
 }
 #else
  __asm__ __volatile__ (
-     "andl $0xFFFFFFFE, %%eax
-      movl %%eax, %1
-
-          cmpl 8*4(%%edx), %%eax /* 5379 */
-          jae  else_G
-
-             cmpl 4*4(%%edx), %%eax
-             jae  else_F
-
-                cmpl 2*4(%%edx), %%eax
-                jae  else_C
-
-                   cmpl 1*4(%%edx), %%eax
-
-                   jae  else_1
-                   movl $1, %0
-                   jmp  next_1
-                 else_1:       
-                   movl  $2, %0
-                 next_1:
-                
-                jmp  next_C
-              else_C:          
-
-                   cmpl 3*4(%%edx), %%eax 
-                   jae  else_2
-                   movl  $3, %0
-                   jmp  next_2
-                 else_2:       
-                   movl  $4, %0
-                 next_2:
-
-              next_C:          
-
-             jmp  next_F
-           else_F:
-
-             cmpl 6*4(%%edx), %%eax
-             jae  else_E
-
-                cmpl 5*4(%%edx), %%eax
-                jae  else_3
-                movl  $5, %0   
-                jmp  next_3
-              else_3:          
-                movl  $6, %0   
-              next_3:
-
-             jmp  next_E
-           else_E:             
-
-                cmpl 7*4(%%edx), %%eax
-                jae  else_4
-                movl  $7, %0   
-                jmp  next_4
-              else_4:          
-                movl  $8, %0   
-              next_4:
-
-           next_E:
-
-           next_F:
-
-          jmp  next_G
-        else_G:
-
-          cmpl 12*4(%%edx), %%eax
-          jae  else_D
-
-             cmpl 10*4(%%edx), %%eax
-             jae  else_B
-
-                cmpl 9*4(%%edx), %%eax
-                jae  else_5
-                movl  $9, %0   
-                jmp  next_5
-              else_5:          
-                movl  $10, %0  
-              next_5:
-
-             jmp  next_B
-           else_B:             
-
-                cmpl 11*4(%%edx), %%eax
- 
-                jae  else_6
-                movl  $11, %0  
-                jmp  next_6
-              else_6:          
-                movl  $12, %0  
-              next_6:
-
-           next_B:
-      
-        
-          jmp  next_D
-        else_D:                
-
-               cmpl 14*4(%%edx), %%eax
-               jae  else_A
-
-                  cmpl 13*4(%%edx), %%eax
-                  jae  else_7
-                  movl  $13, %0
-                  jmp  next_7
-                 else_7:       
-                  movl  $14, %0
-                 next_7:
-
-               jmp  next_A
-              else_A:          
-               movl  $15, %0   
-              next_A:
-          
-        next_D:                             
-    next_G:"
+     "andl $0xFFFFFFFE, %%eax"
+"      movl %%eax, %1"
+"          cmpl 8*4(%%edx), %%eax /* 5379 */"
+"          jae  else_G"
+""
+"             cmpl 4*4(%%edx), %%eax"
+"             jae  else_F"
+""
+"                cmpl 2*4(%%edx), %%eax"
+"                jae  else_C"
+""
+"                   cmpl 1*4(%%edx), %%eax"
+""
+"                   jae  else_1"
+"                   movl $1, %0"
+"                   jmp  next_1"
+"                 else_1:       "
+"                   movl  $2, %0"
+"                 next_1:"
+"                "
+"                jmp  next_C"
+"              else_C:          "
+""
+"                   cmpl 3*4(%%edx), %%eax "
+"                   jae  else_2"
+"                   movl  $3, %0"
+"                   jmp  next_2"
+"                 else_2:       "
+"                   movl  $4, %0"
+"                 next_2:"
+""
+"              next_C:          "
+""
+"             jmp  next_F"
+"           else_F:"
+""
+"             cmpl 6*4(%%edx), %%eax"
+"             jae  else_E"
+""
+"                cmpl 5*4(%%edx), %%eax"
+"                jae  else_3"
+"                movl  $5, %0   "
+"                jmp  next_3"
+"              else_3:          "
+"                movl  $6, %0   "
+"              next_3:"
+""
+"             jmp  next_E"
+"           else_E:             "
+""
+"                cmpl 7*4(%%edx), %%eax"
+"                jae  else_4"
+"                movl  $7, %0   "
+"                jmp  next_4"
+"              else_4:          "
+"                movl  $8, %0   "
+"              next_4:"
+""
+"           next_E:"
+""
+"           next_F:"
+""
+"          jmp  next_G"
+"        else_G:"
+""
+"          cmpl 12*4(%%edx), %%eax"
+"          jae  else_D"
+""
+"             cmpl 10*4(%%edx), %%eax"
+"             jae  else_B"
+""
+"                cmpl 9*4(%%edx), %%eax"
+"                jae  else_5"
+"                movl  $9, %0   "
+"                jmp  next_5"
+"              else_5:          "
+"                movl  $10, %0  "
+"              next_5:"
+""
+"             jmp  next_B"
+"           else_B:             "
+""
+"                cmpl 11*4(%%edx), %%eax"
+" "
+"                jae  else_6"
+"                movl  $11, %0  "
+"                jmp  next_6"
+"              else_6:          "
+"                movl  $12, %0  "
+"              next_6:"
+""
+"           next_B:"
+"      "
+"        "
+"          jmp  next_D"
+"        else_D:                "
+""
+"               cmpl 14*4(%%edx), %%eax"
+"               jae  else_A"
+""
+"                  cmpl 13*4(%%edx), %%eax"
+"                  jae  else_7"
+"                  movl  $13, %0"
+"                  jmp  next_7"
+"                 else_7:       "
+"                  movl  $14, %0"
+"                 next_7:"
+""
+"               jmp  next_A"
+"              else_A:          "
+"               movl  $15, %0   "
+"              next_A:"
+"          "
+"        next_D:                             "
+"    next_G:"
      : "=g" (I), "=r"(N)
      : "eax" ((long)BitField), "edx"((long)Deco->DecodeLen)
       : "memory"
@@ -2038,7 +2050,7 @@ static void DecodeNumber(struct Decode *Deco)
         else
           I=8;
       }
-   }      
+   }
   } else {
     if (N<Deco->DecodeLen[12]) {
       if (N<Deco->DecodeLen[10]) {
@@ -2058,19 +2070,19 @@ static void DecodeNumber(struct Decode *Deco)
           I=13;
         else
           I=14;
-      
+
       } else {
           I=15;
       }
-    }	  
-  
+    }
+
   }
 #endif
 
   AddBits(I);
   if ((N=Deco->DecodePos[I]+((N-Deco->DecodeLen[I-1])>>(16-I)))>=Deco->MaxNum)
       N=0;
-  Number=Deco->DecodeNum[N]; 
+  Number=Deco->DecodeNum[N];
 }
 
 
@@ -2084,7 +2096,7 @@ void UnpInitData()
 #ifdef _USE_ASM
 
 #ifdef _WIN_32                              /* Win32 with VisualC           */
-    
+
     __asm {
         push edi
         push eax
@@ -2105,9 +2117,9 @@ void UnpInitData()
         rep  stosb                          /* clear memory                 */
 
         pop  ecx
-        pop  eax 
+        pop  eax
         pop  edi
-        
+
 
         mov  [OldDistPtr], 0
         mov  [LastDist], 0
@@ -2126,34 +2138,33 @@ void UnpInitData()
 
 #else                    /* unix/linux on i386 cpus */
     __asm__ __volatile (
-        "
-        cld                                 /* increment EDI and ESI        */
-        movb $0x00, %%al
-        movl %0, %%ecx
-        movl %1, %%edi
-        rep  
-        stosb                              /* clear memory                 */
-
-        movl %2, %%ecx
-        mov  %3, %%edi
-        rep  
-        stosb                              /* clear memory                 */
-
-        movl %4, %%ecx
-        movl %5, %%edi
-        rep  
-        stosb                              /* clear memory                 */
-
-        movl $0, (OldDistPtr)
-        movl $0, (LastDist)
-        movl $0, (LastLength)
-        movl $0, (UnpPtr)
-        movl $0, (WrPtr)
-        movl $0, (OldDistPtr)
-        movl $0, (LastLength)
-        movl $0, (LastDist)
-        movl $0, (UnpPtr)
-        movl $0, (WrPtr)"
+"        cld                                 /* increment EDI and ESI        */"
+"        movb $0x00, %%al"
+"        movl %0, %%ecx"
+"        movl %1, %%edi"
+"        rep  "
+"        stosb                              /* clear memory                 */"
+""
+"        movl %2, %%ecx"
+"        mov  %3, %%edi"
+"        rep  "
+"        stosb                              /* clear memory                 */"
+""
+"        movl %4, %%ecx"
+"        movl %5, %%edi"
+"        rep  "
+"        stosb                              /* clear memory                 */"
+""
+"        movl $0, (OldDistPtr)"
+"        movl $0, (LastDist)"
+"        movl $0, (LastLength)"
+"        movl $0, (UnpPtr)"
+"        movl $0, (WrPtr)"
+"        movl $0, (OldDistPtr)"
+"        movl $0, (LastLength)"
+"        movl $0, (LastDist)"
+"        movl $0, (UnpPtr)"
+"        movl $0, (WrPtr)"
         :
         : "m" ((long)sizeof(AudV)),
           "m" ((long)AudV),
@@ -2163,9 +2174,9 @@ void UnpInitData()
           "m" ((long)UnpOldTable)
         : "memory", "edi", "eax", "ecx"
     );
-    memset(UnpBuf,0,MAXWINSIZE);            
+    memset(UnpBuf,0,MAXWINSIZE);
 #endif
-    
+
 #else                                       /* unix/linux on non-i386 cpu  */
     memset(AudV,0,sizeof(AudV));
     memset(OldDist,0,sizeof(OldDist));
@@ -2470,7 +2481,7 @@ void SetCryptKeys(char *Password)
   unsigned int I,J,K,PswLength;
   unsigned char N1,N2;
   unsigned char Psw[256];
-  
+
 #if !defined _USE_ASM
   UBYTE Ch;
 #endif
@@ -2485,7 +2496,7 @@ void SetCryptKeys(char *Password)
   strcpy((char *)Psw,Password);
   PswLength=strlen(Password);
   memcpy(SubstTable,InitSubstTable,sizeof(SubstTable));
-  
+
   for (J=0;J<256;J++)
     for (I=0;I<PswLength;I+=2)
     {
@@ -2506,7 +2517,7 @@ void SetCryptKeys(char *Password)
                     mov cl, N1
                     add ebx, ecx
                     mov al, byte ptr[ebx]
-              
+
                     mov cl, N1              // read SubstTable[(N1+I+K)&0xFF]...
                     add ecx, I
                     add ecx, K
@@ -2520,35 +2531,33 @@ void SetCryptKeys(char *Password)
                }
 #else
                      __asm__ __volatile__ (
-                    "
-                    xorl %%ecx, %%ecx
-                    movl %2, %%ecx                     /* ecx = N1 */
-                    mov %%ebx, %%edx
-                    addl %%ecx, %%ebx
-
-                    addl %0, %%ecx
-                    addl %1, %%ecx
-                    andl $0x000000FF, %%ecx
-                    addl %%ecx, %%edx
-                    
-                    movb (%%ebx), %%al
-                    movb (%%edx), %%ah
-
-                    movb  %%ah, (%%ebx)     /* and write back */
-                    movb  %%al, (%%edx)
-                    "
+"                    xorl %%ecx, %%ecx"
+"                    movl %2, %%ecx                     /* ecx = N1 */"
+"                    mov %%ebx, %%edx"
+"                    addl %%ecx, %%ebx"
+""
+"                    addl %0, %%ecx"
+"                    addl %1, %%ecx"
+"                    andl $0x000000FF, %%ecx"
+"                    addl %%ecx, %%edx"
+"                    "
+"                    movb (%%ebx), %%al"
+"                    movb (%%edx), %%ah"
+""
+"                    movb  %%ah, (%%ebx)     /* and write back */"
+"                    movb  %%al, (%%edx)"
                     : : "g" ((long)I),
                         "g" ((long)K),
                         "g" ((long)N1),
                         "ebx"((long)SubstTable)
                     : "ecx", "edx"
-     
+
               );
 #endif
-                     
+
 #else
             /* Swap(&SubstTable[N1],&SubstTable[(N1+I+K)&0xFF]);            */
-             Ch=SubstTable[N1];         
+             Ch=SubstTable[N1];
              SubstTable[N1]=SubstTable[(N1+I+K)&0xFF];
              SubstTable[(N1+I+K)&0xFF]=Ch;
 #endif
@@ -2664,7 +2673,7 @@ void debug_init_proc(char *file_name)
   FILE *fp;
   char date[] = __DATE__;
   char time[] = __TIME__;
-    
+
   debug_start_time = GetTickCount();        /* get start time               */
   strcpy(log_file_name, file_name);         /* save file name               */
 
@@ -2689,7 +2698,7 @@ void debug_log_proc(char *text, char *sourcefile, int sourceline)
   if((fp = fopen(log_file_name, APPENDTEXT)) != NULL) /* append to logfile  */
 
   {
-    fprintf(fp, " %8u ms (line %u in %s):\n              - %s\n", 
+    fprintf(fp, " %8u ms (line %u in %s):\n              - %s\n",
             (unsigned int)(GetTickCount() - debug_start_time),
             sourceline, sourcefile, text);
     fclose(fp);
@@ -2705,4 +2714,3 @@ void debug_log_proc(char *text, char *sourcefile, int sourceline)
 
 
 /* end of file urarlib.c */
-

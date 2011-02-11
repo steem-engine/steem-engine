@@ -50,6 +50,7 @@ all:
 	rm -rf obj output
 	mkdir obj output
 	$(MAKE) res
+	$(MAKE) asm
 	$(MAKE) helper
 	$(MAKE) main
 	$(MAKE) emu
@@ -78,13 +79,13 @@ release:
 	strip -s $(OUTPUT)
 
 helper:
-	$(CC) -c $(ROOT)/steem/helper.cpp $(CFLAGS) $(STEEMFLAGS)
+	$(CC) -o ./obj/helper.o -c $(ROOT)/steem/helper.cpp $(CFLAGS) $(STEEMFLAGS)
 
 main:
-	$(CC) -c $(ROOT)/steem/code/main.cpp $(CFLAGS) $(STEEMFLAGS)
+	$(CC) -o ./obj/main.o -c $(ROOT)/steem/code/main.cpp $(CFLAGS) $(STEEMFLAGS)
 
 emu:
-	$(CC) -c $(ROOT)/steem/emu.cpp $(CFLAGS) $(STEEMFLAGS)
+	$(CC) -o ./obj/emu.o -c $(ROOT)/steem/emu.cpp $(CFLAGS) $(STEEMFLAGS)
 
 release_compile:
 	$(CC) -c $(ROOT)/steem/helper.cpp $(CFLAGS) $(RELEASE_CFLAGS) $(STEEMFLAGS)
