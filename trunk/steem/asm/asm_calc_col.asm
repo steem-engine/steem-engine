@@ -1,3 +1,7 @@
+; FILE: asm_calc_col.asm
+; MODULE: asm_draw
+; DESCRIPTION: Routine to get the PC colour data from ST screen data
+
 ;%macro CALC_COL_LOWRES_SHORT 0
 ;  mov eax,pal0
 ;

@@ -1,3 +1,10 @@
+/*---------------------------------------------------------------------------
+FILE: helper.cpp
+MODULE: helper
+DESCRIPTION: The hub for the helper module that includes utility functions
+used by Steem. Basically includes all the files that are in the object.
+---------------------------------------------------------------------------*/
+
 #include "pch.h"
 #pragma hdrstop
 
@@ -22,6 +29,7 @@
 #include <choosefolder.cpp>
 #include <scrollingcontrolswin.cpp>
 #include <directory_tree.cpp>
+#include <input_prompt.cpp>
 
 #else
 

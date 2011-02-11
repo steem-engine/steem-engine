@@ -87,7 +87,7 @@ typedef unsigned long LANGID;
 
 #define MAKELANGID MAKELONG
 
-#define MAX_PATH (min(PATH_MAX,2000))
+#define MAX_PATH ((PATH_MAX>2000) ? 2000:PATH_MAX)
 
 #define _NO_DEBUG_BUILD
 

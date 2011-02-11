@@ -1,3 +1,11 @@
+/*---------------------------------------------------------------------------
+FILE: midi.cpp
+MODULE: emu
+DESCRIPTION: A class that forms the backbone of Steem's MIDI emulation. It
+takes the raw bytes from the MIDI ACIA and buffers them before sending them
+on to the Windows multimedia MIDI API. 
+---------------------------------------------------------------------------*/
+
 #define LOGSECTION LOGSECTION_MIDI
 //---------------------------------------------------------------------------
 int MidiGetStatusNumParams(BYTE StatByte)

@@ -1,3 +1,14 @@
+/*---------------------------------------------------------------------------
+FILE: main.cpp
+MODULE: Steem
+DESCRIPTION: This file contains the various main routines and general
+startup/shutdown code for all the versions of Steem. It also includes the
+other files that make up the Steem module.
+---------------------------------------------------------------------------*/
+
+#include "pch.h"
+#pragma hdrstop
+
 /*
 ------------------------------------------------------------------
        S T E E M   E N G I N E
@@ -11,12 +22,15 @@
                                                _/  |  \_
 ------------------------------------------------------------------
 */
+#define IN_MAIN
+#include "conditions.h"
+
 const char *stem_version_date_text=__DATE__ " - " __TIME__;
 
 #ifndef ONEGAME
 const char *stem_window_title="Steem Engine";
 #else
-const char *stem_window_title="FX Interactive";
+const char *stem_window_title=ONEGAME;
 #endif
 
 bool Initialise();
@@ -80,6 +94,8 @@ TPatchesBox PatchesBox;
 #include "palette.cpp"
 #include "archive.cpp"
 #include "macros.cpp"
+#include <WordWrapper.cpp>
+#include "screen_saver.cpp"
 
 #ifdef ONEGAME
 #define _USE_MEMORY_TO_MEMORY_DECOMPRESSION
@@ -128,9 +144,10 @@ int main(int argc,char *argv[])
     EasyStr Com=_argv[0];
     RemoveFileNameFromPath(Com,REMOVE_SLASH);
     RunDir+=Com;
+
 */
   }
-  printf(EasyStr("\n-- Steem Engine v")+stem_version_text+", X release "+stem_x_version_text+" --\n\n");
+  printf(EasyStr("\n-- Steem Engine v")+stem_version_text+" --\n\n");
   printf(EasyStr("Steem will save all its settings to ")+RunDir.Text+"\n");
 
   XD=XOpenDisplay(NULL);
@@ -162,6 +179,7 @@ int main(int argc,char *argv[])
     while (GetMessage(&MainMess,NULL,0,0)){
       if (HandleMessage(&MainMess)){
         TranslateMessage(&MainMess);
+        TScreenSaver::checkMessage(&MainMess);
         DispatchMessage(&MainMess);
       }
     }
@@ -247,7 +265,7 @@ void FindWriteDir()
 #ifndef ONEGAME
     WriteDir=Str(TestOutFileName)+SLASH+"Steem";
 #else
-    WriteDir=Str(TestOutFileName)+SLASH+"FX Interactive";
+    WriteDir=Str(TestOutFileName)+SLASH+ONEGAME;
     CreateDirectory(WriteDir,NULL);
     WriteDir+=Str(SLASH)+ONEGAME_NAME;
 #endif
@@ -269,7 +287,7 @@ bool Initialise()
   TranslateFileName=RunDir+SLASH "Translate.txt";
 #ifndef ONEGAME
   INIFile=WriteDir+SLASH "steem.ini";
-  bool NoNewInst=0,AlwaysNewInst=0,QuitNow=0;
+  bool NoNewInst=0,AlwaysNewInst=0,QuitNow=0,ShowNotify=true;
   for (int n=0;n<_argc-1;n++){
     EasyStr Path;
     int Type=GetComLineArgType(_argv[1+n],Path);
@@ -288,6 +306,8 @@ bool Initialise()
       QuitNow=true;
     }else if (Type==ARG_SETFONT){
 UNIX_ONLY( hxc::font_sl.Insert(0,0,Path,NULL); )
+    }else if (Type==ARG_NONOTIFYINIT){
+      ShowNotify=0;
     }
   }
 #else
@@ -298,7 +318,7 @@ UNIX_ONLY( hxc::font_sl.Insert(0,0,Path,NULL); )
 
 #ifndef ONEGAME
   if ((CSF.GetInt("Options","OpenFilesInNew",true)==0 || NoNewInst) && AlwaysNewInst==0){
-    if (OpenComLineFilesInCurrent()){
+    if (OpenComLineFilesInCurrent(NoNewInst)){
       MainRetVal=EXIT_SUCCESS;
       return 0;
     }
@@ -340,6 +360,57 @@ UNIX_ONLY( hxc::font_sl.Insert(0,0,Path,NULL); )
 
   InitTranslations();
 
+#if USE_PASTI
+  hPasti=LoadLibrary("pasti.dll");
+  if (hPasti==NULL) hPasti=LoadLibrary("pasti\\pasti.dll");
+  if (hPasti){
+    bool Failed=true;
+    LPPASTIINITPROC pastiInit=(LPPASTIINITPROC)GetProcAddress(hPasti,"pastiInit");
+    if (pastiInit){
+      struct pastiCALLBACKS pcb;
+      ZeroMemory(&pcb,sizeof(pcb));
+      pcb.LogMsg=pasti_log_proc;
+      pcb.WarnMsg=pasti_warn_proc;
+      pcb.MotorOn=pasti_motor_proc;
+
+      struct pastiINITINFO pii;
+      pii.dwSize=sizeof(pii);
+      pii.applFlags=0;
+      pii.applVersion=2;
+      pii.cBacks=&pcb;
+      Failed=(pastiInit(&pii)==FALSE);
+      pasti=pii.funcs;
+    }
+    if (Failed){
+      FreeLibrary(hPasti);
+      hPasti=NULL;
+      Alert(T("Pasti initialisation failed"),T("Pasti Error"),MB_ICONEXCLAMATION);
+    }else{
+      char p_exts[160];
+      ZeroMemory(p_exts,160);
+      pasti->GetFileExtensions(p_exts,160,TRUE);
+      // Convert to NULL terminated list
+      for (int i=0;i<160;i++){
+        if (p_exts[i]==0) break;
+        if (p_exts[i]==';') p_exts[i]=0;
+      }
+
+      // Strip *.
+      char *p_src=p_exts,*p_dest=pasti_file_exts;
+      ZeroMemory(pasti_file_exts,160);
+      while (*p_src){
+        if (*p_src=='*') p_src++;
+        if (*p_src=='.') p_src++;
+        strcpy(p_dest,p_src);
+        p_dest+=strlen(p_dest)+1;
+        p_src+=strlen(p_src)+1;
+      }
+    }
+  }
+#endif
+
+  DiskMan.InitGetContents();
+
 #ifndef ONEGAME
   {
     bool TwoSteems=CheckForSteemRunning();
@@ -352,7 +423,7 @@ UNIX_ONLY( hxc::font_sl.Insert(0,0,Path,NULL); )
     if (TwoSteems==0){
       if (CrashedLastTime){
         StepByStepInit=Alert(T("It seems that Steem did not close properly. If it crashed we are terribly sorry, it shouldn't happen. If you can get Steem to crash 2 or more times when doing the same thing then please tell us, it would be a massive help.")+
-                "\n\nE-mail: steem@gmx.net\n\n"+
+                "\n\nE-mail: " STEEM_EMAIL "\n\n"+
               T("Please send as much detail as you can and we'll look into it as soon as possible. ")+
               "\n\n"+T("If you are having trouble starting Steem, you might want to step carefully through the initialisation process.  Would you like to do a step-by-step confirmation?"),
               T("Step-By-Step Initialisation"),MB_ICONQUESTION | MB_YESNO)==IDYES;
@@ -378,13 +449,14 @@ UNIX_ONLY( hxc::font_sl.Insert(0,0,Path,NULL); )
       INIFile=WriteDir+SLASH "steemcrash.ini";
       CSF.Open(INIFile);
       CSF.SetStr("Machine","ROM_File",ROMFile);
+
     }
   }
 #endif
 
   LoadAllIcons(&CSF,true);
 
-  CreateNotifyInitWin();
+  if (ShowNotify) CreateNotifyInitWin();
 
 #ifdef WIN32
   SetNotifyInitText(T("COM and Common Controls"));
@@ -456,8 +528,10 @@ UNIX_ONLY( hxc::font_sl.Insert(0,0,Path,NULL); )
         return 0;
       }
 #ifdef WIN32
-      SetWindowPos(NotifyWin,HWND_TOPMOST,0,0,0,0,SWP_NOSIZE | SWP_NOMOVE | SWP_SHOWWINDOW);
-      UpdateWindow(NotifyWin);
+      if (NotifyWin){
+        SetWindowPos(NotifyWin,HWND_TOPMOST,0,0,0,0,SWP_NOSIZE | SWP_NOMOVE | SWP_SHOWWINDOW);
+        UpdateWindow(NotifyWin);
+      }
 #endif
     }
 
@@ -473,7 +547,7 @@ UNIX_ONLY( hxc::font_sl.Insert(0,0,Path,NULL); )
 
       while (load_TOS(ROMFile)){
 #ifdef WIN32
-        ShowWindow(NotifyWin,SW_HIDE);
+        if (NotifyWin) ShowWindow(NotifyWin,SW_HIDE);
 #endif
         if (ROMFile.NotEmpty()){
           if (Exists(ROMFile)==0){
@@ -495,11 +569,14 @@ UNIX_ONLY( hxc::font_sl.Insert(0,0,Path,NULL); )
         if (ROMFile.IsEmpty()){
           MainRetVal=EXIT_FAILURE;
           return 0;
+
         }
       }
 #ifdef WIN32
-      SetWindowPos(NotifyWin,HWND_TOPMOST,0,0,0,0,SWP_NOSIZE | SWP_NOMOVE | SWP_SHOWWINDOW);
-      UpdateWindow(NotifyWin);
+      if (NotifyWin){
+        SetWindowPos(NotifyWin,HWND_TOPMOST,0,0,0,0,SWP_NOSIZE | SWP_NOMOVE | SWP_SHOWWINDOW);
+        UpdateWindow(NotifyWin);
+      }
 #endif
     }
   }
@@ -599,7 +676,12 @@ UNIX_ONLY( hxc::font_sl.Insert(0,0,Path,NULL); )
 #ifdef WIN32
   if (CSF.GetInt("Options","NoDirectSound",0)) TrySound=0;
 #else
-  if (CSF.GetInt("Options","NoPortAudio",0)) TrySound=0;
+  x_sound_lib=CSF.GetInt("Sound","Library",x_sound_lib);
+  if (CSF.GetInt("Sound","NoPortAudio",0) && CSF.GetInt("Sound","IgnoreNoPortAudio",0)==0){
+    x_sound_lib=0;
+    CSF.SetInt("Sound","IgnoreNoPortAudio",1);
+  }
+  TrySound=x_sound_lib!=0;
 #endif
   if (TrySound && StepByStepInit){
     if (Alert(T("Would you like to disable sound for this session?")+" "+
@@ -610,7 +692,6 @@ UNIX_ONLY( hxc::font_sl.Insert(0,0,Path,NULL); )
     }
   }
   if (TrySound){
-    UseSound=true;
     log("STARTUP: InitSound Called");
     InitSound();
     log(EasyStr("STARTUP: InitSound finished. ")+LPSTR(UseSound ? "DirectSound will be used.":"DirectSound will not be used."));
@@ -664,6 +745,9 @@ UNIX_ONLY( hxc::font_sl.Insert(0,0,Path,NULL); )
   AssociateSteem(".MSA","st_disk_image",0,T("ST Disk Image"),DISK_ICON_NUM,0);
   AssociateSteem(".DIM","st_disk_image",0,T("ST Disk Image"),DISK_ICON_NUM,0);
   AssociateSteem(".STZ","st_disk_image",0,T("ST Disk Image"),DISK_ICON_NUM,0);
+#if USE_PASTI
+  if (hPasti) AssociateSteem(".STX","st_pasti_disk_image",0,T("ST Disk Image"),DISK_ICON_NUM,0);
+#endif
   AssociateSteem(".STS","steem_memory_snapshot",0,T("Steem Memory Snapshot"),SNAP_ICON_NUM,0);
   AssociateSteem(".STC","st_cartridge",0,T("ST ROM Cartridge"),CART_ICON_NUM,0);
   AssociateSteem(".PRG","st_program",0,T("ST Program"),PRG_ICON_NUM,true);
@@ -720,10 +804,35 @@ UNIX_ONLY( hxc::font_sl.Insert(0,0,Path,NULL); )
 #endif
 
 #ifndef ONEGAME
-  if (BootDisk[0]){
+  if (BootDisk[0].NotEmpty()){
     if (BootStateFile.NotEmpty()){
-      BootDisk[0]=LoadSnapShot(BootStateFile);
+      if (LoadSnapShot(BootStateFile)) BootInMode|=BOOT_MODE_RUN;
       LastSnapShot=BootStateFile;
+    }else{
+#if USE_PASTI
+      if (pasti_active){
+        // Check you aren't booting with pasti when passing a non-pasti compatible disk
+        for (int Drive=0;Drive<2;Drive++){
+          if (BootDisk[Drive].NotEmpty() && NotSameStr_I(BootDisk[Drive],".")){
+            if (ExtensionIsPastiDisk(strrchr(BootDisk[Drive],'.'))==0) BootPasti=BOOT_PASTI_OFF;
+          }
+        }
+      }
+      if (BootPasti!=BOOT_PASTI_DEFAULT){
+        bool old_pasti=pasti_active;
+        pasti_active=BootPasti==BOOT_PASTI_ON;
+        if (DiskMan.IsVisible() && old_pasti!=pasti_active) DiskMan.RefreshDiskView();
+      }
+#endif
+      for (int Drive=0;Drive<2;Drive++){
+        if (BootDisk[Drive].NotEmpty() && NotSameStr_I(BootDisk[Drive],".")){
+          EasyStr Name=GetFileNameFromPath(BootDisk[Drive]);
+          *strrchr(Name,'.')=0;
+          if (DiskMan.InsertDisk(Drive,Name,BootDisk[Drive],0,0)){
+            if (Drive==0) BootInMode|=BOOT_MODE_RUN;
+          }
+        }
+      }
     }
   }else if (AutoLoadSnapShot && BootTOSImage==0){
     if (Exists(WriteDir+SLASH+AutoSnapShotName+".sts")){
@@ -735,16 +844,17 @@ UNIX_ONLY( hxc::font_sl.Insert(0,0,Path,NULL); )
         }
       }
       if (Load){
-        LoadSnapShot(WriteDir+SLASH+AutoSnapShotName+".sts",true);
+        LoadSnapShot(WriteDir+SLASH+AutoSnapShotName+".sts",0,true,0); // Don't add to history, don't change disks
       }
     }
   }
-  if (OptionBox.NeedReset()) reset_st();
+  if (OptionBox.NeedReset()) reset_st(RESET_COLD | RESET_STOP | RESET_CHANGESETTINGS | RESET_NOBACKUP);
   CheckResetDisplay();
 
   if (Disp.CanGoToFullScreen()){
-    bool Full=(BootInMode==BOOT_MODE_FULLSCREEN);
-    if (BootInMode==BOOT_MODE_DEFAULT){
+    bool Full=(BootInMode & BOOT_MODE_FLAGS_MASK)==BOOT_MODE_FULLSCREEN;
+
+    if ((BootInMode & BOOT_MODE_FLAGS_MASK)==BOOT_MODE_DEFAULT){
       Full=CSF.GetInt("Options","StartFullscreen",0);
     }
     if (Full){
@@ -777,7 +887,7 @@ UNIX_ONLY( hxc::font_sl.Insert(0,0,Path,NULL); )
   XFlush(XD);
 #endif
 
-  if (BootDisk[0]){
+  if (BootInMode & BOOT_MODE_RUN){
     if (GetForegroundWindow()==StemWin) PostRunMessage();
   }
 
@@ -803,6 +913,7 @@ void make_Mem(BYTE conf0,BYTE conf1)
   Mem_End_minus_4=Mem_End-4;
 
   for (int y=0;y<64+PAL_EXTRA_BYTES;y++) palette_exec_mem[y]=0;
+
 
   himem=mem_len;
   mmu_confused=false;
@@ -926,7 +1037,7 @@ void CleanUpSteem()
     delete[] osd_plasma_pal; osd_plasma_pal=NULL;
     delete[] osd_plasma;     osd_plasma=NULL;
   }
-  
+
   log("SHUTDOWN: Releasing Sound");
   SoundRelease();
   log("SHUTDOWN: Releasing Joysticks");
@@ -971,6 +1082,11 @@ void CleanUpSteem()
   ONEGAME_ONLY( OGCleanUp(); )
 
   WIN_ONLY( if (SteemRunningMutex) CloseHandle(SteemRunningMutex); )
+
+#if USE_PASTI
+  if (hPasti) FreeLibrary(hPasti);
+  hPasti=NULL;
+#endif
 }
 //---------------------------------------------------------------------------
 

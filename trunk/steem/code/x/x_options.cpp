@@ -138,12 +138,13 @@ void TOptionBox::Show()
   page_lv.sl.Add(T("Ports"),101+ICO16_PORTS,12);
 
   page_lv.sl.Add(T("General"),101+ICO16_TOOLS,0);
-  if (UseSound) page_lv.sl.Add(T("Sound"),101+ICO16_SOUND,5);
+  page_lv.sl.Add(T("Sound"),101+ICO16_SOUND,5);
   page_lv.sl.Add(T("Display"),101+ICO16_DISPLAY,1);
   page_lv.sl.Add(T("On Screen Display"),101+ICO16_OSD,14);
   page_lv.sl.Add(T("Brightness")+"/"+T("Contrast"),101+ICO16_BRIGHTCON,2);
   page_lv.sl.Add(T("Profiles"),101+ICO16_PROFILE,11);
   page_lv.sl.Add(T("Startup"),101+ICO16_FUJI16,6);
+  page_lv.sl.Add(T("Paths"),101+ICO16_FUJI16,15);
 
   page_lv.lpig=&Ico16;
   page_lv.display_mode=1;
@@ -237,6 +238,21 @@ int TOptionBox::listview_notify_proc(hxc_listview* LV,int Mess,int i)
       LV->draw(0);
       return 1;
     }
+  }else if (LV->id>=15000 && LV->id<15100){
+    if (Mess==LVN_RETURN || Mess==LVN_CB_RETRACT){
+      int n=(LV->id-15000)/10;
+      hxc_edit *p_ed=(hxc_edit*)hxc::find(This->page_p,15000+n*10);
+      hxc_button *p_but=(hxc_button*)hxc::find(This->page_p,15001+n*10);
+
+      LV->destroy(LV);
+
+      if (i>=0){
+        p_ed->set_text(Comlines_Default[n][i]);
+        p_ed->notifyproc(p_ed,EDN_CHANGE,0);
+      }
+      p_but->set_check(0);
+    }
+
   }
   return 0;
 }
@@ -249,8 +265,6 @@ int TOptionBox::button_notify_proc(hxc_button*b,int mess,int* ip)
       AutoLoadSnapShot=b->checked;
     }else if (b->id==101){ //never use MIT Shared Memory Extension
       WriteCSFStr("Options","NoSHM",EasyStr(b->checked),INIFile);
-    }else if (b->id==102){ //never use PortAudio
-      WriteCSFStr("Options","NoPortAudio",EasyStr(b->checked),INIFile);
     }else if (b->id==110){
       PauseWhenInactive=b->checked;
     }else if (b->id==120){
@@ -352,7 +366,7 @@ int TOptionBox::button_notify_proc(hxc_button*b,int mess,int* ip)
     	EnableShiftSwitching=b->checked;
       InitKeyTable();
     }else if (b->id==1000){
-      reset_st();
+      reset_st(RESET_COLD | RESET_STOP | RESET_CHANGESETTINGS | RESET_BACKUP);
     }else if (b->id==1010){
     	b->set_check(true);
       fileselect.set_corner_icon(&Ico16,ICO16_CHIP);
@@ -553,6 +567,26 @@ int TOptionBox::button_notify_proc(hxc_button*b,int mess,int* ip)
       osd_show_scrollers=b->checked;
     }else if (b->id==12030){
       This->ChangeOSDDisable(b->checked);
+    }else if (b->id>=15000 && b->id<15100){
+      int i=(b->id-15000)/10;
+      hxc_listview *p_lv=&(This->drop_lv);
+      hxc_edit *p_ed=(hxc_edit*)hxc::find(b->parent,15000+i*10);
+
+      b->set_check(true);
+
+      p_lv->sl.DeleteAll();
+      for (int cl=0;cl<16;cl++){
+        if (Comlines_Default[i][cl]==NULL) break;
+        p_lv->additem(Comlines_Default[i][cl]);
+      }
+      p_lv->itemheight=(b->font->ascent)+(b->font->descent)+2; //use the listview's font!
+      p_lv->in_combo=true;
+      p_lv->sel=0;
+      p_lv->id=15000+i*10;
+      p_lv->create(XD,p_ed->handle,0,p_ed->h+1,p_ed->w + b->w,
+                p_lv->itemheight*p_lv->sl.NumStrings + p_lv->border*2,listview_notify_proc,This);
+      XSetInputFocus(XD,p_lv->handle,RevertToParent,CurrentTime);
+      XFlush(XD);
     }
   }
   return 0;
@@ -569,15 +603,31 @@ int TOptionBox::dd_notify_proc(hxc_dropdown*dd,int mess,int i)
     prepare_cpu_boosted_event_plans();
   }else if (dd->id==5001){ //sound mode
     This->SoundModeChange(i,true,0);
+  }else if (dd->id==5067){ //sound lib
+    Sound_Stop(true);
+    SoundRelease();
+    x_sound_lib=dd->sl[dd->sel].Data[0];
+    InitSound();
+    This->FillSoundDevicesDD();
+    Sound_Start();
   }else if (dd->id==5000){ //sound device
     sound_device_name=dd->sl[dd->sel].String;
     This->SoundModeChange(sound_mode,0,0);
   }else if (dd->id==5004){ //sound delay
     psg_write_n_screens_ahead=dd->sl[dd->sel].Data[0];
+  }else if (dd->id==5005){ //sound timing method
+    sound_time_method=dd->sl[dd->sel].Data[0];
   }else if (dd->id==5002){ //sound freq
     sound_chosen_freq=dd->sl[i].Data[0];
     This->UpdateSoundFreq();
   }else if (dd->id==5003){ //sound format
+#ifndef NO_RTAUDIO
+    if (HIWORD(dd->sl[dd->sel].Data[0])){
+      rt_unsigned_8bit=1;
+    }else if (x_sound_lib==XS_RT){
+      rt_unsigned_8bit=0;
+    }
+#endif
     This->ChangeSoundFormat(LOBYTE(dd->sl[dd->sel].Data[0]),HIBYTE(dd->sl[dd->sel].Data[0]));
   }else if (dd->id>=12010 && dd->id<12020){
     int *p_element[4]={&osd_show_plasma,&osd_show_speed,&osd_show_icons,&osd_show_cpu};
@@ -687,6 +737,8 @@ int TOptionBox::edit_notify_proc(hxc_edit *ed,int Mess,int Inf)
         }
         break;
     }
+  }else if (ed->id>=15000 && ed->id<16000){
+    if (Mess==EDN_CHANGE) Comlines[(ed->id-15000)/10]=ed->text;
   }
 	return 0;
 }

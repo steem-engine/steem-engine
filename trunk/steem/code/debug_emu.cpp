@@ -1,3 +1,9 @@
+/*---------------------------------------------------------------------------
+FILE: debug_emu.cpp
+MODULE: emu
+DESCRIPTION: General low-level debugging functions.
+---------------------------------------------------------------------------*/
+
 //---------------------------------------------------------------------------
 // This is for if the emu is half way though the screen, it should be called
 // immediately after draw_begin to fix draw_dest_ad
@@ -89,19 +95,6 @@ void update_display_after_trace()
   in=0;
 }
 //---------------------------------------------------------------------------
-inline MEM_ADDRESS monitor_check()
-{
-  for (int n=0;n<num_monitors;n++){
-    if (monitor_ad[n]<mem_len){
-      if ((DPEEK(monitor_ad[n]) & monitor_mask[n])!=monitor_contents[n]){
-        monitor_contents[n]=DPEEK(monitor_ad[n]) & monitor_mask[n];
-        return monitor_ad[n];
-      }
-    }
-  }
-  return 0;
-}
-//---------------------------------------------------------------------------
 void breakpoint_log()
 {
   if (logging_suspended) return;
@@ -117,18 +110,18 @@ void breakpoint_log()
   log_write(logline);
 }
 //---------------------------------------------------------------------------
-inline void breakpoint_check()
+void breakpoint_check()
 {
   if (runstate!=RUNSTATE_RUNNING) return;
 
-  for (int n=0;n<num_breakpoints;n++){
-    if (breakpoint[n]==pc){
-      if (breakpoint_mode==2){
+  for (int n=0;n<debug_num_bk;n++){
+    if (debug_bk_ad[n]==pc){
+      if (debug_get_ad_mode(pc)==3){
         breakpoint_log();
-        return;
+      }else{
+        runstate=RUNSTATE_STOPPING;
+        SET_WHY_STOP(Str("Hit breakpoint at address $")+HEXSl(pc,6));
       }
-      runstate=RUNSTATE_STOPPING;
-      SET_WHY_STOP(Str("Hit breakpoint at address $")+HEXSl(pc,6));
       return;
     }
   }
@@ -148,48 +141,58 @@ void debug_update_cycle_counts()
   }
 }
 //---------------------------------------------------------------------------
-void debug_check_monitors()
+extern BYTE d2_peek(MEM_ADDRESS);
+extern WORD d2_dpeek(MEM_ADDRESS);
+
+void debug_hit_mon(MEM_ADDRESS ad,int read)
 {
-  if (monitor_mode>0){
-    MEM_ADDRESS monitor_altered=monitor_check();
-    if (monitor_altered){
-      if (monitor_mode==1){
-        Alert(HEXSl(old_pc,6)+": Write to "+HEXSl(monitor_altered,6),"Watched Memory Altered",0);
-      }else{
-        log_write(HEXSl(old_pc,6)+": Wrote to "+HEXSl(monitor_altered,6)+" new value is "+HEXSl(LPEEK(monitor_altered),8));
-      }
+  if (mode!=STEM_MODE_CPU) return;
+
+  WORD mask=debug_get_ad_mask(ad,read);
+  int bytes=2;
+  if (mask==0xff00) bytes=1;
+  if (mask==0x00ff) bytes=1, ad++;
+  int val=int((bytes==1) ? int(d2_peek(ad)):int(d2_dpeek(ad)));
+  Str mess;
+  if (read){
+    mess=HEXSl(old_pc,6)+": Read "+val+" ($"+HEXSl(val,bytes*2)+") from address $"+HEXSl(ad,6);
+  }else{
+    mess=HEXSl(old_pc,6)+": Write to address $"+HEXSl(ad,6);
+  }
+  int mode=debug_get_ad_mode(ad & ~1);
+  if (mode==2){
+    if (runstate==RUNSTATE_RUNNING){
+      runstate=RUNSTATE_STOPPING;
+      SET_WHY_STOP(mess);
+    }else if (runstate==RUNSTATE_STOPPED){
+      Alert(mess,"Monitor Activated",0);
     }
+  }else{
+    debug_mem_write_log_address=ad;
+    debug_mem_write_log_bytes=bytes;
+    ioaccess|=IOACCESS_DEBUG_MEM_WRITE_LOG;
   }
 }
 //---------------------------------------------------------------------------
-void debug_check_io_monitor(MEM_ADDRESS ad,bool readflag,BYTE io_src_b)
+void debug_hit_io_mon_write(MEM_ADDRESS ad,int val)
 {
-  if (monitor_mode==0) return;
   if (mode!=STEM_MODE_CPU) return;
 
-  for (int n=0;n<num_io_monitors;n++){
-    if (monitor_io_readflag[n]==readflag){
-      MEM_ADDRESS match1=0,match2=0;
-      if (monitor_io_mask[n] & 0xff00) match1=monitor_io_ad[n];
-      if (monitor_io_mask[n] & 0x00ff) match2=monitor_io_ad[n]+1;
-      if (ad==match1 || ad==match2){
-        if (monitor_mode==1){
-          Str mess=HEXSl(old_pc,6)+": Accessed address "+HEXSl(ad,6);
-          if (runstate==RUNSTATE_RUNNING){
-            runstate=RUNSTATE_STOPPING;
-            SET_WHY_STOP(mess);
-          }else if (runstate==RUNSTATE_STOPPED){
-            Alert(mess,"Monitor Activated",0);
-          }
-        }else{
-          if (readflag){
-            log_write(HEXSl(old_pc,6)+": Read monitored address "+HEXSl(ad,6));
-          }else{
-            log_write(HEXSl(old_pc,6)+": Wrote to "+HEXSl(ad,6)+" new value is "+io_src_b+" ($"+HEXSl(io_src_b,2)+")");
-          }
-        }
-      }
+  WORD mask=debug_get_ad_mask(ad,read);
+  int bytes=2;
+  if (mask==0xff00) bytes=1;
+  if (mask==0x00ff) bytes=1, ad++;
+  Str mess=HEXSl(old_pc,6)+": Wrote to address $"+HEXSl(ad,6)+", new value is "+val+" ($"+HEXSl(val,bytes*2)+")";
+  int mode=debug_get_ad_mode(ad & ~1);
+  if (mode==2){
+    if (runstate==RUNSTATE_RUNNING){
+      runstate=RUNSTATE_STOPPING;
+      SET_WHY_STOP(mess);
+    }else if (runstate==RUNSTATE_STOPPED){
+      Alert(mess,"Monitor Activated",0);
     }
+  }else{
+    log_write(mess);
   }
 }
 //---------------------------------------------------------------------------
@@ -267,6 +270,34 @@ void iolist_debug_add_pseudo_addresses()
   iolist_add_entry(IOLIST_PSEUDO_AD_IKBD+0x026,"IKBD Absolute Mouse Buttons",1,
             "RMB Down|RMB Was Down|LMB Down|LMB Was Down",lpDWORD_B_0(&ikbd.abs_mousek_flags));
   iolist_add_entry(IOLIST_PSEUDO_AD_IKBD+0x028,"IKBD Joy Button Duration",1,NULL,lpDWORD_B_0(&ikbd.duration));
+}
+//---------------------------------------------------------------------------
+int __stdcall debug_plugin_read_mem(DWORD ad,BYTE *buf,int len)
+{
+  if (ad>=himem) return 0;
+  if (ad+len>=himem) len=himem-ad;
+
+  int n_bytes=len;
+  BYTE *p=lpPEEK(ad);
+  while (len--){
+    *(buf++)=*p;
+    p+=MEM_DIR;
+  }
+  return n_bytes;
+}
+//---------------------------------------------------------------------------
+int __stdcall debug_plugin_write_mem(DWORD ad,BYTE *buf,int len)
+{
+  if (ad>=himem) return 0;
+  if (ad+len>=himem) len=himem-ad;
+
+  int n_bytes=len;
+  BYTE *p=lpPEEK(ad);
+  while (len--){
+    *p=*(buf++);
+    p+=MEM_DIR;
+  }
+  return n_bytes;
 }
 //---------------------------------------------------------------------------
 

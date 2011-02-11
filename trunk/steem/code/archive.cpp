@@ -1,3 +1,11 @@
+/*---------------------------------------------------------------------------
+FILE: archive.cpp
+MODULE: Steem
+DESCRIPTION: This file contains the code for zipclass, Steem's abstraction
+of the various unarchiving libraries it can use.
+---------------------------------------------------------------------------*/
+
+//---------------------------------------------------------------------------
 zipclass::zipclass()
 {
   type[0]=0;
@@ -5,7 +13,7 @@ zipclass::zipclass()
   current_file_n=0;
   err=0;
 }
-
+//---------------------------------------------------------------------------
 bool zipclass::first(char *name)
 {
   if (enable_zip==0) return ZIPPY_FAIL;
@@ -38,6 +46,7 @@ bool zipclass::first(char *name)
         close();
         return ZIPPY_FAIL;
       }
+      crc=fi.crc;
     }
 #endif
 #ifdef WIN32
@@ -71,13 +80,14 @@ bool zipclass::first(char *name)
     current_file_n=0;
     current_file_offset=0;
     attrib=WORD(rar_current->item.FileAttr);
+    crc=rar_current->item.FileCRC;
 
     return ZIPPY_SUCCEED;
 #endif
   }
   return ZIPPY_FAIL;
 }
-
+//---------------------------------------------------------------------------
 bool zipclass::next()
 {
   if (enable_zip==0) return ZIPPY_FAIL;
@@ -93,6 +103,7 @@ bool zipclass::next()
     if (err) return ZIPPY_FAIL;
     current_file_n++;
     current_file_offset=current_file_n;
+    crc=fi.crc;
 #endif
 #ifdef WIN32
     err=GetNextInZip(&PackInfo);
@@ -117,6 +128,7 @@ bool zipclass::next()
 
     current_file_offset=current_file_n;
     attrib=WORD(rar_current->item.FileAttr);
+    crc=rar_current->item.FileCRC;
 
     return ZIPPY_SUCCEED;
 #endif
@@ -142,7 +154,7 @@ char* zipclass::filename_in_zip()
   }
   return "";
 }
-
+//---------------------------------------------------------------------------
 bool zipclass::close()
 {
   if (enable_zip==0) return ZIPPY_FAIL;
@@ -164,7 +176,7 @@ bool zipclass::close()
   }
   return ZIPPY_FAIL;
 }
-
+//---------------------------------------------------------------------------
 void zipclass::list_contents(char *name,EasyStringList *eslp,bool st_disks_only)
 {
   if (enable_zip==0) return;
@@ -176,14 +188,18 @@ void zipclass::list_contents(char *name,EasyStringList *eslp,bool st_disks_only)
       EasyStr a=filename_in_zip();
       bool addflag=true;
       if (st_disks_only){
-        if (FileIsDisk(a)!=DISK_UNCOMPRESSED) addflag=false;
+        if (FileIsDisk(a)==DISK_UNCOMPRESSED || FileIsDisk(a)==DISK_PASTI){
+          addflag=true;
+        }else{
+          addflag=0;
+        }
       }
       if (addflag) eslp->Add(a,current_file_offset,attrib,crc);
     }while (next()==0);
   }
   close();
 }
-
+//---------------------------------------------------------------------------
 bool zipclass::extract_file(char *fn,int offset,char *dest_dir,bool hide,DWORD attrib)
 {
   if (enable_zip==0) return ZIPPY_FAIL;
@@ -320,4 +336,5 @@ bool zipclass::extract_file(char *fn,int offset,char *dest_dir,bool hide,DWORD a
   }
   return ZIPPY_FAIL;
 }
+//---------------------------------------------------------------------------
 

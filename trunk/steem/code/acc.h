@@ -70,7 +70,8 @@
   #define LOGSECTION_INIFILE 19
   #define LOGSECTION_GUI 20
   #define LOGSECTION_DIV 21
-  #define NUM_LOGSECTIONS 22
+  #define LOGSECTION_PASTI 22
+  #define NUM_LOGSECTIONS 23
 
   extern const char *name_of_mfp_interrupt[21];
 
@@ -89,6 +90,7 @@
                                     {"Trace",LOGSECTION_TRACE},
                                     {"-",-1},
                                     {"FDC",LOGSECTION_FDC},
+                                    {"Pasti",LOGSECTION_PASTI},
                                     {"Stemdos",LOGSECTION_STEMDOS},
                                     {"Trap",LOGSECTION_TRAP},
                                     {"-",-1},
@@ -175,6 +177,8 @@ EXT int count_bits_set_in_word(unsigned short w);
 EXT EasyStr read_string_from_memory(MEM_ADDRESS,int);
 EXT MEM_ADDRESS write_string_to_memory(MEM_ADDRESS,char*);
 EXT MEM_ADDRESS get_sp_before_trap(bool* DEFVAL(NULL));
+EXT void acc_parse_search_string(Str,DynamicArray<BYTE>&,bool&);
+EXT MEM_ADDRESS acc_find_bytes(DynamicArray<BYTE> &,bool,MEM_ADDRESS,int);
 
 EXT bool STfile_read_error INIT(0);
 
@@ -183,6 +187,10 @@ EXT LONG STfile_read_long(FILE*f);
 EXT void STfile_read_to_ST_memory(FILE*f,MEM_ADDRESS ad,int n_bytes);
 EXT void STfile_write_from_ST_memory(FILE*f,MEM_ADDRESS ad,int n_bytes);
 EXT long colour_convert(int,int,int);
+
+#ifdef ENABLE_LOGFILE
+EXT Str scanline_cycle_log();
+#endif
 
 #ifdef IN_MAIN
 void GetTOSKeyTableAddresses(MEM_ADDRESS *,MEM_ADDRESS *);

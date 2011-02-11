@@ -1,3 +1,13 @@
+/*---------------------------------------------------------------------------
+FILE: pch.h
+MODULES: ALL
+DESCRIPTION: System specific includes, declarations and macros. PCH stands
+for pre-compiled headers (to reduce build time on slower development PCs).
+---------------------------------------------------------------------------*/
+
+#ifndef __PCH_H
+#define __PCH_H
+
 #if defined(LINUX) || defined(CYGWIN)
 
 #ifndef UNIX
@@ -134,6 +144,12 @@ extern char *strupr(char*);
 extern char *strlwr(char*);
 extern int random(int);
 extern char *itoa(int,char*,int);
+
+#endif
+
+#ifndef M_PI
+#define M_PI        3.14159265358979323846
+#endif
 
 #endif
 

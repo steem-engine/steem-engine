@@ -1,3 +1,11 @@
+/*---------------------------------------------------------------------------
+FILE: mem_browser.cpp
+MODULE: Steem
+CONDITION: _DEBUG_BUILD
+DESCRIPTION: The code for Steem's memory browsers, used heavily in the debug
+build to view memory and I/O areas.
+---------------------------------------------------------------------------*/
+
 LRESULT __stdcall mem_browser_WndProc(HWND,UINT,UINT,long);
 WNDPROC Old_mem_browser_WndProc;
 //---------------------------------------------------------------------------
@@ -87,7 +95,7 @@ void mem_browser::new_window(MEM_ADDRESS address,type_disp_type new_disp_type)
               /*bytes*/ 3,/*regflag*/ MST_MEM_BROWSER_ADDRESS, /*editflag*/true,
               /*mem_browser to update*/this);
 
-          HWND Win=CreateWindowEx(512,"Combobox","",WS_VISIBLE | WS_CHILDWINDOW | CBS_DROPDOWNLIST,
+          HWND Win=CreateWindowEx(512,"Combobox","",WS_VISIBLE | WS_CHILD | CBS_DROPDOWNLIST,
                                         75,2,100,160,owner,(HMENU)2,Inst,NULL);
           SendMessage(Win,CB_ADDSTRING,0,(long)"Instructions");
           SendMessage(Win,CB_ADDSTRING,0,(long)"Memory");
@@ -122,12 +130,12 @@ void mem_browser::new_window(MEM_ADDRESS address,type_disp_type new_disp_type)
 
 
           CreateWindow("Static","",WS_VISIBLE | WS_CHILD | SS_ETCHEDVERT,
-              412,0,2,27,owner,(HMENU)6,Inst,NULL);
+              412,0,2,27,owner,NULL,Inst,NULL);
 
           CreateWindow("Button","Dump->",WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,
               419,2,60,23,owner,(HMENU)4,Inst,NULL);
 
-          Win=CreateWindowEx(512,"Combobox","",WS_VISIBLE | WS_CHILD | WS_VSCROLL | CBS_DROPDOWNLIST,
+          Win=CreateWindowEx(512,"Combobox","",WS_VISIBLE | WS_CHILD | WS_VSCROLL | CBS_DROPDOWN,
                               484,2,65,300,owner,(HMENU)5,Inst,NULL);
           for (int n=5;n<=256;n+=5) CBAddString(Win,EasyStr(n)+"Kb",n*1024);
           CBAddString(Win,"512Kb",512*1024);
@@ -136,13 +144,15 @@ void mem_browser::new_window(MEM_ADDRESS address,type_disp_type new_disp_type)
           CBAddString(Win,"2MB",2*1024*1024);
           CBAddString(Win,"2.5MB",(2048+512)*1024);
           CBAddString(Win,"4MB",4*1024*1024);
+          SendMessage(Win,WM_SETTEXT,0,LPARAM("100Kb"));
 
-          SendMessage(Win,CB_SETCURSEL,19,0);
+          CreateWindow("Button","Load",WS_VISIBLE | WS_CHILD | BS_PUSHBUTTON,484+65+5,2,60,23,owner,(HMENU)6,Inst,NULL);
         }
       }
       SetWindowAndChildrensFont(owner,fnt);
       CentreWindow(owner,0);
       ShowWindow(owner,SW_SHOW);
+      if (GetDlgItem(owner,5)) SetFocus(GetDlgItem(owner,5));
       SetFocus(handle);
     }
     m_b[n]=this;
@@ -159,7 +169,11 @@ void mem_browser::init()
 
   for (int k=columns-1;k>=0;k--) SendMessage(handle,LVM_DELETECOLUMN,k,0);
   columns=0;
-  text_column=0;
+  text_column=-1;
+  disa_column=-1;
+  mon_column=-1;
+  break_column=-1;
+  hex_column=-1;
 
   if (disp_type==DT_INSTRUCTION){
     lc.cx=30;
@@ -167,18 +181,22 @@ void mem_browser::init()
     SendMessage(handle,LVM_INSERTCOLUMN,columns++,(long)&lc);
     lc.cx=20;
     lc.pszText="Bk";
+    break_column=columns;
     SendMessage(handle,LVM_INSERTCOLUMN,columns++,(long)&lc);
-    lc.cx=20;
+    lc.cx=35;
     lc.pszText="Mon";
+    mon_column=columns;
     SendMessage(handle,LVM_INSERTCOLUMN,columns++,(long)&lc);
     lc.cx=65;
     lc.pszText="Address";
     SendMessage(handle,LVM_INSERTCOLUMN,columns++,(long)&lc);
     lc.cx=how_big_is_0000*2+8;
     lc.pszText="Hex";
+    hex_column=columns;
     SendMessage(handle,LVM_INSERTCOLUMN,columns++,(long)&lc);
-    lc.cx=150;
+    lc.cx=240;
     lc.pszText="Disassembly";
+    disa_column=columns;
     SendMessage(handle,LVM_INSERTCOLUMN,columns++,(long)&lc);
   }else if (disp_type==DT_MEMORY){
     bool InIO=(ad & 0xffffff)>MEM_IO_BASE;
@@ -195,11 +213,13 @@ void mem_browser::init()
     lc.cx=20;
     if (InIO || init_text || Pseudo) lc.cx=0;
     lc.pszText="Bk";
+    break_column=columns;
     SendMessage(handle,LVM_INSERTCOLUMN,columns++,(long)&lc);
 
-    lc.cx=20;
+    lc.cx=35;
     if (init_text || Pseudo) lc.cx=0;
     lc.pszText="Mon";
+    mon_column=columns;
     SendMessage(handle,LVM_INSERTCOLUMN,columns++,(long)&lc);
 
     lc.cx=65;
@@ -211,13 +231,18 @@ void mem_browser::init()
     if (InIO) lc.cx=how_big_is_0000+8;
     if (init_text || Pseudo) lc.cx=0;
     lc.pszText="Hex";
+    hex_column=columns;
     SendMessage(handle,LVM_INSERTCOLUMN,columns++,(long)&lc);
 
     lc.cx=150;
     lc.pszText="Disassembly";
     if (mode==MB_MODE_STACK) lc.cx=0;
     if (init_text) lc.cx=0;
-    if (Pseudo) lc.pszText="Description";
+    if (Pseudo){
+      lc.pszText="Description";
+    }else{
+      disa_column=columns;
+    }
     SendMessage(handle,LVM_INSERTCOLUMN,columns++,(long)&lc);
 
     lc.cx=50;
@@ -246,6 +271,7 @@ void mem_browser::init()
     SendMessage(handle,LVM_INSERTCOLUMN,columns++,(long)&lc);
     lc.cx=how_big_is_0000*2+8;
     lc.pszText="Hex";
+    hex_column=columns;
     SendMessage(handle,LVM_INSERTCOLUMN,columns++,(long)&lc);
     lc.cx=0;
     lc.pszText="Text";
@@ -266,22 +292,39 @@ int mem_browser::calculate_wpl()
   return max(1,(int)(cwid/how_big_is_0000)); //words per line
 }
 //---------------------------------------------------------------------------
-char* mem_browser::get_mem_mon_string(WORD mask,bool readflag)
+char* mem_browser::get_mem_mon_string(void *p)
 {
-  if (readflag){
-    switch (mask){
-      case 0xffff: return "Rw";
-      case 0xff00: return "Rh";
-      case 0x00ff: return "Rl";
-    }
-  }else{
-    switch (mask){
-      case 0xffff: return "Ow";
-      case 0xff00: return "Oh";
-      case 0x00ff: return "Ol";
+  DEBUG_ADDRESS *pda=(DEBUG_ADDRESS*)p;
+  WORD mask=0;
+  bool readonly=0;
+  if (pda->bwr & BIT_2) mask|=pda->mask[1],readonly=true;
+  if (pda->bwr & BIT_1) mask|=pda->mask[0],readonly=0;
+  switch (mask){
+    case 0xffff: return (readonly ? "E":"B");
+    case 0xff00: return (readonly ? "F":"C");
+    case 0x00ff: return (readonly ? "G":"D");
+  }
+  return ".";
+}
+//---------------------------------------------------------------------------
+Str mem_browser::get_hex_map(MEM_ADDRESS ad)
+{
+  char word_map[3]={0,0,0};
+  for (int i=0;i<debug_ads.NumItems;i++){
+    if (debug_ads[i].ad==ad){
+      if (debug_ads[i].bwr & BIT_1){
+        if (debug_ads[i].mask[0] & 0xff00) word_map[0]|=1;
+        if (debug_ads[i].mask[0] & 0x00ff) word_map[1]|=1;
+      }
+      if (debug_ads[i].bwr & BIT_2){
+        if (debug_ads[i].mask[1] & 0xff00) word_map[0]|=2;
+        if (debug_ads[i].mask[1] & 0x00ff) word_map[1]|=2;
+      }
     }
   }
-  return "O";
+  word_map[0]+='0';
+  word_map[1]+='0';
+  return Str(word_map);
 }
 //---------------------------------------------------------------------------
 void mem_browser::get_breakpoint_labels(MEM_ADDRESS ad,int bpl,char *t[3])
@@ -289,7 +332,7 @@ void mem_browser::get_breakpoint_labels(MEM_ADDRESS ad,int bpl,char *t[3])
   ad&=0xffffff;
 
   char regname[20];strcpy(regname,"(pc)");
-  MEM_ADDRESS rv=pc,ad2=ad+bpl;
+  MEM_ADDRESS rv=pc,ad2=(ad+bpl) & 0xffffff;
   int n=-1;
 
   t[0][0]=0; // registers
@@ -305,25 +348,33 @@ void mem_browser::get_breakpoint_labels(MEM_ADDRESS ad,int bpl,char *t[3])
   }
 
   t[1][0]=0; // breakpoints
-  for (n=0;n<num_breakpoints;n++){
-    if (breakpoint[n]==ad){
-      strcat(t[1],"X");
-    }else if (breakpoint[n]>ad && breakpoint[n]<ad2){
-      strcat(t[1],"..X");
-    }
-  }
-
   t[2][0]=0; // monitors
-  int mon_num=int((ad>=MEM_IO_BASE) ? num_io_monitors:num_monitors);
-  MEM_ADDRESS *mon_ads=(MEM_ADDRESS*)((ad>=MEM_IO_BASE) ? monitor_io_ad:monitor_ad);
-  WORD *mon_mask=(WORD*)((ad>=MEM_IO_BASE) ? monitor_io_mask:monitor_mask);
-  bool *mon_readflag=(bool*)((ad>=MEM_IO_BASE) ? monitor_io_readflag:NULL);
-  for (n=0;n<mon_num;n++){
-    if (mon_ads[n]==ad){
-      strcat(t[2],get_mem_mon_string(mon_mask[n],bool(mon_readflag ? mon_readflag[n]:0)));
-    }else if (mon_ads[n]>ad && mon_ads[n]<ad2){
-      strcat(t[2],Str("..")+get_mem_mon_string(mon_mask[n],bool(mon_readflag ? mon_readflag[n]:0)));
+  bool add_dotdot=0;
+  for (;ad<ad2;ad+=2){
+    ad&=0xffffff;
+    for (int i=0;i<debug_ads.NumItems;i++){
+      if (debug_ads[i].ad==ad){
+        int bkmode=debug_ads[i].mode,monmode=bkmode;
+        if (bkmode==1){
+          bkmode=breakpoint_mode;
+          monmode=monitor_mode;
+        }
+        if (debug_ads[i].bwr & BIT_0){
+          if (add_dotdot) strcat(t[1],"..");
+          strcat(t[1],(bkmode==0 ? "a":"A"));
+        }else if (debug_ads[i].name[0]){
+          if (add_dotdot) strcat(t[1],"..");
+          strcat(t[1],"H");
+        }
+        if (debug_ads[i].bwr & (BIT_1 | BIT_2)){
+          if (add_dotdot) strcat(t[2],"..");
+          Str c=get_mem_mon_string(&debug_ads[i]);
+          if (monmode==0) strlwr(c);
+          strcat(t[2],c);
+        }
+      }
     }
+    add_dotdot=true;
   }
 }
 //---------------------------------------------------------------------------
@@ -354,7 +405,7 @@ void mem_browser::draw(DRAWITEMSTRUCT *di)
 {
   HBRUSH br;
   COLORREF oldtextcol,oldbkcol;
-  char Text[500];
+  char Text[1024];
 
   oldtextcol=GetTextColor(di->hDC);
   oldbkcol=GetBkMode(di->hDC);  //Color
@@ -370,7 +421,7 @@ void mem_browser::draw(DRAWITEMSTRUCT *di)
   if (di->itemID < 0xffff){
     LV_ITEM lvi;
     lvi.pszText=Text;
-    lvi.cchTextMax=499;
+    lvi.cchTextMax=1023;
     lvi.iItem=di->itemID;
 
     int Wid=SendMessage(di->hwndItem,LVM_GETCOLUMNWIDTH,0,0),Col=0;
@@ -383,7 +434,9 @@ void mem_browser::draw(DRAWITEMSTRUCT *di)
       SendMessage(di->hwndItem,LVM_GETITEM,0,(LPARAM)&lvi);
 
       HFONT old_font=NULL;
-      if (Col && text_column==Col) old_font=(HFONT)SelectObject(di->hDC,GetStockObject(ANSI_FIXED_FONT));
+      if (text_column==Col || (disa_column==Col && debug_monospace_disa)){
+        old_font=(HFONT)SelectObject(di->hDC,GetStockObject(ANSI_FIXED_FONT));
+      }
 
       di->rcItem.left+=2;
 
@@ -417,7 +470,80 @@ void mem_browser::draw(DRAWITEMSTRUCT *di)
           c1+=(7+8);
         }
       }else{
-        DrawText(di->hDC,Text,strlen(Text),&(di->rcItem),DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
+        if (mon_column==Col || break_column==Col){
+          COLORREF text_col=GetSysColor(COLOR_WINDOWTEXT);
+          WIDTHHEIGHT wh=GetTextSize((HFONT)GetCurrentObject(di->hDC,OBJ_FONT),Text);
+          int x=di->rcItem.left;
+          int y=di->rcItem.top + (di->rcItem.bottom-di->rcItem.top)/2 - DEBUG_ICONS_H/2;
+          for (size_t i=0;i<strlen(Text);i++){
+            if (x>=di->rcItem.right) break;
+            if (Text[i]=='.'){
+              SetPixel(di->hDC,x,di->rcItem.bottom-2,text_col);
+              x+=2;
+            }else{
+              int ico=toupper(Text[i])-'A';
+              if (ico<0 || ico>=DEBUG_NUM_ICONS) ico=0;
+              int w=DEBUG_ICONS_W;
+              if (x+w>=di->rcItem.right) w-=x+w-di->rcItem.right;
+              BitBlt(di->hDC,x,y,w,DEBUG_ICONS_H,icons_dc,ico*DEBUG_ICONS_W,0,SRCCOPY);
+              if (islower(Text[i])){
+                BitBlt(di->hDC,x,y,w,DEBUG_ICONS_H,icons_dc,8*DEBUG_ICONS_W,0,MERGEPAINT);
+              }
+              x+=DEBUG_ICONS_W+1;
+            }
+          }
+        }else if (Col==hex_column){
+          if (hex_map.NumStrings){
+            RECT rc=di->rcItem;
+            char *map=hex_map[di->itemID].String;
+            char byte_text[3]={0,0,0},*t=Text;
+            int next_l=rc.left+how_big_is_0000,last_l=rc.left;
+            HFONT Font=(HFONT)GetCurrentObject(di->hDC,OBJ_FONT);
+
+            COLORREF text_col=GetTextColor(di->hDC);
+            int save_bk_mode=SetBkMode(di->hDC,TRANSPARENT);
+            while (map[0]){
+              while (t[0]==' '){
+                rc.left=next_l;
+                next_l=rc.left+how_big_is_0000;
+                t++;
+              }
+
+              for (int i=0;i<2;i++) byte_text[i]=*(t++);
+
+              COLORREF bk_col=0;
+              if (map[0]=='1') bk_col=RGB(255,0,0);
+              if (map[0]=='2') bk_col=RGB(0,0,255);
+              if (map[0]=='3') bk_col=RGB(224,0,224);
+              WIDTHHEIGHT wh=GetTextSize(Font,byte_text);
+              if (rc.left+wh.Width+6>=rc.right){
+                rc.left=last_l+1;
+                for (int i=0;i<3;i++){
+                  SetPixel(di->hDC,rc.left,rc.top+(rc.bottom-rc.top)/2+wh.Height/2-3,text_col);
+                  rc.left+=3;
+                }
+                break;
+              }
+              if (bk_col){
+                RECT bk_rc={rc.left,rc.top,rc.left+wh.Width,rc.bottom};
+                HBRUSH br=CreateSolidBrush(bk_col);
+                FillRect(di->hDC,&bk_rc,br);
+                DeleteObject(br);
+                SetTextColor(di->hDC,RGB(255,255,255));
+              }
+              DrawText(di->hDC,byte_text,2,&rc,DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
+              if (bk_col) SetTextColor(di->hDC,text_col);
+              rc.left+=wh.Width;
+              last_l=rc.left;
+              map++;
+            }
+            SetBkMode(di->hDC,save_bk_mode);
+          }else{
+            DrawText(di->hDC,Text,strlen(Text),&(di->rcItem),DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
+          }
+        }else{
+          DrawText(di->hDC,Text,strlen(Text),&(di->rcItem),DT_LEFT | DT_SINGLELINE | DT_VCENTER | DT_END_ELLIPSIS);
+        }
       }
       if (old_font) SelectObject(di->hDC,old_font);
 
@@ -435,8 +561,8 @@ void mem_browser::draw(DRAWITEMSTRUCT *di)
 
 void mem_browser::update()
 {
-  int i,x3,x1;
-  char*c;
+  int x3,x1;
+  char *c;
   iolist_entry* iol[30];
   MEM_ADDRESS ldpc2;
   MEM_ADDRESS save_dpc=dpc;
@@ -444,10 +570,12 @@ void mem_browser::update()
   char txt[12][1024];
   char *txt_p[12];
   char tbuffy[8];
-  for (i=0;i<12;i++){
+  for (int i=0;i<12;i++){
     txt_p[i]=txt[i];
     txt[i][0]=0;
   }
+  hex_map.Sort=eslNoSort;
+  hex_map.DeleteAll();
 
   bool reg=(disp_type==DT_REGISTERS);
 
@@ -478,7 +606,7 @@ void mem_browser::update()
       int min_wpl=min(wpl,8);
       if (!reg) dpc=ad;
 
-      for (i=0;i<lb_height;i++){
+      for (int i=0;i<lb_height;i++){
         for (int n=0;n<12;n++) txt[n][0]=0;
         for (int n=0;n<30;n++) iol[n]=NULL;
         if (reg){
@@ -489,6 +617,7 @@ void mem_browser::update()
           ldpc2&=0xfffffe;
           ldpc2|=ad_high;
         }
+        Str line_hex_map;
         // Add to list view
         if (reg){
           if (reg_browser_entry_name[ldpc2][0]==0) break;
@@ -542,7 +671,7 @@ void mem_browser::update()
           bool first=true;
           while (dpc<ldpc2+wpl*2){
             bool add_this=(dpc<ldpc2+min_wpl*2);
-            dis=disa_d2(dpc);
+            dis=debug_parse_disa_for_display(disa_d2(dpc));
             if (add_this){
               if (first==0) strcat(txt[5],"     ");
               first=0;
@@ -666,6 +795,7 @@ void mem_browser::update()
               strcat(txt[x3+2]," ");
             }
             strcat(txt[x1],tbuffy);
+            line_hex_map+=get_hex_map(((ldpc2+m*2) & 0xffffff));
 
             if (strlen(txt[x3+2])<200-20){
               mask=0x8000;
@@ -704,23 +834,39 @@ void mem_browser::update()
             }
           }
         }
+        if (mode!=MB_MODE_IOLIST){
+          // Pad to make sure text same length as that displayed
+          int n=(strlen(txt[x1])+1)/10;
+          strcat(txt[x1],"\01");
+          for (int j=0;j<=n;j++) strcat(txt[x1],"0");
+          hex_map.Add(line_hex_map);
+        }
         txt[x3+3][0]=0;
         listbox_add_line(handle,i,txt_p,x3+3);
       }
-    }else if(disp_type==DT_INSTRUCTION){
+    }else if (disp_type==DT_INSTRUCTION){
       wpl=1;
-      for (i=0;i<(lb_height);i++){
-        for (int n=0;n<12;n++) txt[n][0]=0;
+      for (int i=0;i<lb_height;i++){
+        int n;
+        for (n=0;n<12;n++) txt[n][0]=0;
   //      ldpc2=ad+i*2*wpl;
         //add to list view
         ldpc2=dpc;
         strcpy(txt[3],HEXSl(dpc,6));
-        strcpy(txt[5],disa_d2(dpc).c_str());
+        strcpy(txt[5],debug_parse_disa_for_display(disa_d2(dpc)).Text);
         get_breakpoint_labels(ldpc2,(int)dpc-(int)ldpc2,txt_p);
+
+        Str line_hex_map;
         for (int m=0;m<(int)dpc-(int)ldpc2;m+=2){
           if (m) strcat(txt[4]," ");
           strcat(txt[4],HEXSl(d2_dpeek(ldpc2+m),4));
+          line_hex_map+=get_hex_map((ldpc2+m) & 0xffffff);
         }
+        // Pad to make sure text same length as that displayed
+        n=(strlen(txt[4])+1)/10;
+        strcat(txt[4],"\01");
+        for (int j=0;j<=n;j++) strcat(txt[4],"0");
+        hex_map.Add(line_hex_map);
         listbox_add_line(handle,i,txt_p,columns);
       }
     }
@@ -755,18 +901,43 @@ LRESULT __stdcall mem_browser_window_WndProc(HWND Win,UINT Mess,UINT wPar,long l
         case BN_CLICKED:
           mb=(mem_browser*)GetWindowLong(Win,GWL_USERDATA);
           if (LOWORD(wPar)==4){
+            Str sz_str;
+            sz_str.SetLength(200);
+            SendMessage(GetDlgItem(Win,5),WM_GETTEXT,200,LPARAM(sz_str.Text));
+            strupr(sz_str);
+            int coeff=1;
+            char *postfix=strstr(sz_str,"MB");
+            if (postfix) coeff=1024*1024,*postfix=0;
+            postfix=strstr(sz_str,"KB");
+            if (postfix) coeff=1024,*postfix=0;
+
+            int bytes;
+            bool hex=0;
+            char *sz=sz_str;
+            if (sz[0]=='0' && sz[1]=='x') sz+=2, hex=true;
+            if (sz[0]=='$') sz++, hex=true;
+            if (hex){
+              bytes=HexToVal(sz);
+            }else{
+              bytes=atoi(sz);
+            }
+            bytes*=coeff;
+            if (bytes<=0){
+              MessageBeep(NULL);
+              break;
+            }
+
             EasyStr fn;
             if (mb->disp_type==DT_MEMORY){
-              fn=FileSelect(Win,"Save Memory Block As...",WriteDir,"Memory Dump Files\0*.DMP\0All Files\0*.*\0\0",1,false,"dmp");
+              fn=FileSelect(Win,"Save Memory Block As...",WriteDir,"Memory Dump Files\0*.dmp\0All Files\0*.*\0\0",1,false,"dmp");
             }else if (mb->disp_type==DT_INSTRUCTION){
-              fn=FileSelect(Win,"Save Disassembly As...",WriteDir,"Dissasembly Files\0*.DIS;*.S\0All Files\0*.*\0\0",1,false,"dis");
+              fn=FileSelect(Win,"Save Disassembly As...",WriteDir,"Dissasembly Files\0*.s;*.dis\0All Files\0*.*\0\0",1,false,"s");
             }else{
               break;
             }
             if (fn.NotEmpty()){
               FILE *f=fopen(fn,"wb");
               if (f){
-                int bytes=CBGetSelectedItemData(GetDlgItem(Win,5));
                 if (mb->disp_type==DT_MEMORY){
                   STfile_write_from_ST_memory(f,mb->ad,bytes);
                 }else{
@@ -776,89 +947,28 @@ LRESULT __stdcall mem_browser_window_WndProc(HWND Win,UINT Mess,UINT wPar,long l
                 fclose(f);
               }
             }
+          }else if (LOWORD(wPar)==6){
+            debug_load_file_to_address(Win,mb->ad & 0xffffff);
           }else if (LOWORD(wPar)==9 || LOWORD(wPar)==10){
             int dir=int((LOWORD(wPar)==9) ? -1:1);
             EasyStr Text;
             Text.SetLength(200);
             SendDlgItemMessage(Win,8,WM_GETTEXT,200,LPARAM(Text.Text));
 
-            int DataLen=0;
+            DynamicArray<BYTE> BytesToFind;
             bool WordOnly=0;
-            MEM_ADDRESS ad=mb->ad & 0xffffff;
-            BYTE *Data=LPBYTE(Text.Text);
-            if (Text[0]=='\"' || (Text[0]>'F' && Text[0]<='Z') || (Text[0]>'f' && Text[0]<='z')){
-              if (Text[0]=='\"') Text.Delete(0,1);
-              if (Text.RightChar()=='\"') *(Text.Right())=0;
-              DataLen=Text.Length();
-            }else{
-              if (Text.Length()==0){
-                MessageBeep(0);
-                return 0;
-              }
-              strupr(Text);
-
-              if (Text.RightChar()=='W'){
-                *(Text.Right())=0; // Just in case this messes with the atoi etc..
-                WordOnly=true;
-              }
-              DWORD Num=0;
-              if (Text.Lefts(2)=="0X" || Text[0]=='$' || Text[0]>='A' && Text[0]<='F'){
-                char *t=Text.Text;
-                if (t[1]=='X') t+=2;
-                else if (t[0]=='$') t++;
-                int HexLen=0;
-                while (*t){
-                  if (((*t)>='A' && (*t)<='F')==0 && ((*t)>='0' && (*t)<='9')==0) break;
-                  HexLen++;
-                  t++;
-                }
-                if (HexLen>0){
-                  DataLen=min((HexLen+1)/2,4);
-                  Num=HexToVal(Text);
-                }
-              }else if (Text[0]=='%'){  // Binary
-                int BinLen=0;
-                for (;BinLen<Text.Length();BinLen++){
-                  if (Text[BinLen+1]!='0' && Text[BinLen+1]!='1') break;
-                }
-                if (BinLen>0 && BinLen<=32){
-                  DataLen=(BinLen+7)/8;
-                  int Bit=0;
-                  for (int n=BinLen;n>0;n--){
-                    if (Text[n]=='1') Num |= 1 << Bit;
-                    Bit++;
-                  }
-                }else{
-                  MessageBeep(0);
-                  return 0;
-                }
-              }else{                    // Decimal
-                Num=(DWORD)atoi(Text);
-                if (Num==0 && Text[0]!='0' && Text.Lefts(2)!="-0"){
-                  MessageBeep(0);
-                  return 0;
-                }
-                if (Num<=0xff){
-                  DataLen=1;
-                }else if (Num<=0xffff){
-                  DataLen=2;
-                }else if (Num<=0xffffff){
-                  DataLen=3;
-                }else{
-                  DataLen=4;
-                }
-              }
-              BYTE *lpHiNum=LPBYTE(&Num)+DataLen-1;
-              Data[0]=*lpHiNum;
-              if (DataLen>1) Data[1]=*(lpHiNum-1);
-              if (DataLen>2) Data[2]=*(lpHiNum-2);
-              if (DataLen>3) Data[3]=*(lpHiNum-3);
+            acc_parse_search_string(Text,BytesToFind,WordOnly);
+            if (BytesToFind.NumItems==0){
+              MessageBeep(0);
+              return 0;
             }
-            BYTE ToFind=Data[0];
-            if (ad>=rom_addr+tos_len && dir<0) ad=rom_addr+tos_len-DataLen;
+
+            MEM_ADDRESS ad=mb->ad & 0xffffff;
+            if (ad>=rom_addr+tos_len && dir<0) ad=rom_addr+tos_len-BytesToFind.NumItems;
             if (mb->disp_type==DT_INSTRUCTION){
               ad=oi(ad & ~1,int(dir<0 ? -1:1));  //offset instruction
             }else{
+              BYTE ToFind=BytesToFind[0];
 //              try{
               TRY_M68K_EXCEPTION
                 if (m68k_peek(ad)==ToFind || m68k_peek(ad+1)==ToFind) ad+=dir*2;
@@ -867,42 +977,13 @@ LRESULT __stdcall mem_browser_window_WndProc(HWND Win,UINT Mess,UINT wPar,long l
               END_M68K_EXCEPTION
             }
             ad+=dir*2;
-            bool Found=0;
-            int n;
-            LOOP{
-              if (ad>=himem && ad<rom_addr){
-                ad=(MEM_ADDRESS)(dir>0 ? rom_addr:himem-1);
-              }
-              if (ad>=rom_addr+tos_len || ad>0xffffff) break;
 
-              if ((ad & 1)==0 || WordOnly==0){
-                n=-1;
-                if (ad<himem){
-                  if (PEEK(ad)==ToFind){
-                    if (ad+DataLen<=himem){
-                      for (n=1;n<DataLen;n++) if ( PEEK(ad+n)!=Data[n] ) break;
-                    }
-                  }
-                }else{
-                  if (ROM_PEEK(ad-rom_addr)==ToFind){
-                    if (ad+DataLen<=rom_addr+tos_len){
-                      for (n=1;n<DataLen;n++) if ( ROM_PEEK(ad+n-rom_addr)!=Data[n] ) break;
-                    }
-                  }
-                }
-                if (n>=DataLen){
-                  Found=true;
-                  break;
-                }
-              }
-
-              ad+=dir;
-            }
-            if (Found){
+            MEM_ADDRESS found_at=acc_find_bytes(BytesToFind,WordOnly,ad,dir);
+            if (found_at<=0xffffff){
               if (mb->disp_type==DT_INSTRUCTION){
-                mb->ad=oi((ad & ~1)+2,-1) | (mb->ad & 0xff000000);  //offset instruction
+                mb->ad=oi((found_at & ~1)+2,-1) | (mb->ad & 0xff000000);  //offset instruction
               }else{
-                mb->ad=(ad & ~1) | (mb->ad & 0xff000000);
+                mb->ad=(found_at & ~1) | (mb->ad & 0xff000000);
               }
               mb->update();
 //              SetFocus(mb->handle);
@@ -997,64 +1078,120 @@ mem_browser* mem_browser_get_pointer(HWND Win)
 //---------------------------------------------------------------------------
 void mem_browser::setup_contextmenu(int row,int col)
 {
-  char ttt[256];
-  LV_ITEM item;
-//  MEM_ADDRESS ad;
-
   insp_menu_subject_type=1; //0=mem_browser
   insp_menu_subject=(void*)this;
   insp_menu_row=row;
   insp_menu_col=col;
 
-  RemoveAllMenuItems(insp_menu);
+  DeleteAllMenuItems(insp_menu);
+  MEM_ADDRESS row_ad=get_address_from_row(row) & 0xffffff;
 
-  if (disp_type!=DT_REGISTERS){
-    item.iItem=row;
-    item.iSubItem=3;
-    item.mask=LVIF_TEXT;
-    item.pszText=ttt;
-    item.cchTextMax=250;
-    SendMessage(handle,LVM_GETITEM,0,(LPARAM)&item);
-    ad=HexToVal(ttt); //(ad)+n*2*(wpl);
-    strcpy(insp_menu_long_name[0],"address ");
-    strcat(insp_menu_long_name[0],ttt);
+  if (col<=mon_column){
+    insp_menu_long[0]=row_ad;
 
-    insp_menu_long_bytes[0]=3;
-    insp_menu_long[0]=ad;
+    int wpl=1;
+    if (disp_type==DT_MEMORY && mode==MB_MODE_STANDARD) wpl=min(calculate_wpl(),5);
+    if (disp_type==DT_INSTRUCTION) wpl=max(int(oi(row_ad,1)-row_ad)/2,1);
 
-    strcpy(insp_menu_long_name[1],"(");strcat(insp_menu_long_name[1],ttt);
-    strcat(insp_menu_long_name[1],").L = ");
-    strcat(insp_menu_long_name[1],HEXS(d2_lpeek(ad)));
-    insp_menu_long[1]=d2_lpeek(ad);
-    insp_menu_long_bytes[1]=4;
+    for (int w=0;w<wpl;w++){
+      DEBUG_ADDRESS *pda=debug_find_address(row_ad);
+      int id_base=3050+w*20;
 
-    strcpy(insp_menu_long_name[2],"(");strcat(insp_menu_long_name[2],ttt);
-    strcat(insp_menu_long_name[2],").W = ");
-    strcat(insp_menu_long_name[2],HEXS(d2_dpeek(ad)));
-    insp_menu_long[2]=(long)d2_dpeek(ad);
-    insp_menu_long_bytes[2]=4;
+      if (pda) if (pda->name[0]) AppendMenu(insp_menu,MF_BYCOMMAND | MF_DISABLED | MF_GRAYED,0,pda->name);
+      AppendMenu(insp_menu,MF_BYCOMMAND,id_base+1,Str("Name address at $")+HEXSl(row_ad,6));
+      bool is_bk=0;
+      WORD mask[2]={0,0};
+      if (pda){
+        if (pda->bwr & BIT_0) is_bk=true;
+        if (pda->bwr & BIT_1) mask[0]=pda->mask[0];
+        if (pda->bwr & BIT_2) mask[1]=pda->mask[1];
+      }
+      if (is_bk){
+        AppendMenu(insp_menu,MF_BYCOMMAND,id_base,Str("Clear breakpoint at $")+HEXSl(row_ad,6));
+      }else{
+        AppendMenu(insp_menu,MF_BYCOMMAND,id_base,Str("Set breakpoint at $")+HEXSl(row_ad,6));
+      }
 
-    insp_menu_col=2;
+      if (row_ad<0xe00000 || row_ad>=MEM_IO_BASE){ // Monitors only on RAM and IO
+        HMENU MonPop[2]={CreatePopupMenu(),CreatePopupMenu()};
+        AppendMenu(insp_menu,MF_BYCOMMAND | MF_POPUP | (mask[0] ? MF_CHECKED:0),(UINT)MonPop[0],"Monitor writes to");
+        AppendMenu(insp_menu,MF_BYCOMMAND | MF_POPUP | (mask[1] ? MF_CHECKED:0),(UINT)MonPop[1],"Monitor reads of");
 
+        for (int n=0;n<2;n++){
+          int mask_base=id_base+2+n*4;
+          AppendMenu(MonPop[n],MF_BYCOMMAND,mask_base,"None");
+          AppendMenu(MonPop[n],MF_BYCOMMAND,mask_base+1,Str("$")+HEXSl(row_ad,6)+".w");
+          AppendMenu(MonPop[n],MF_BYCOMMAND,mask_base+2,Str("$")+HEXSl(row_ad,6)+".b");
+          AppendMenu(MonPop[n],MF_BYCOMMAND,mask_base+3,Str("$")+HEXSl(row_ad+1,6)+".b");
+          int check=mask_base;
+          if (mask[n]==0xffff) check=mask_base+1;
+          if (mask[n]==0xff00) check=mask_base+2;
+          if (mask[n]==0x00ff) check=mask_base+3;
+          CheckMenuRadioItem(MonPop[n],mask_base,mask_base+3,check,MF_BYCOMMAND);
+        }
+        if (pda){
+          HMENU ActivatePop=CreatePopupMenu();
+          AppendMenu(ActivatePop,MF_STRING,id_base+16,"Do nothing");
+          AppendMenu(ActivatePop,MF_STRING,id_base+17,"Do global");
+          AppendMenu(ActivatePop,MF_STRING,id_base+18,"Break");
+          AppendMenu(ActivatePop,MF_STRING,id_base+19,"Log");
+          AppendMenu(insp_menu,MF_BYCOMMAND | MF_POPUP,(UINT)ActivatePop,"On activation");
+          CheckMenuRadioItem(ActivatePop,id_base+16,id_base+19,id_base+16+pda->mode,MF_BYCOMMAND);
+        }
+      }
+
+      if (w+1>=wpl) break;
+      AppendMenu(insp_menu,MF_SEPARATOR,0,NULL);
+      row_ad+=2;
+    }
   }else{
-    int n=row+(ad);
-    strcpy(insp_menu_long_name[0],reg_browser_entry_name[n]);
-    strcat(insp_menu_long_name[0],".L = ");
-    strcat(insp_menu_long_name[0],HEXS(*(reg_browser_entry_pointer[n])));
-    insp_menu_long[0]=*(reg_browser_entry_pointer[n]);
-    insp_menu_long_bytes[0]=4;
+    if (disp_type!=DT_REGISTERS){
+      strcpy(insp_menu_long_name[0],"address ");
+      strcat(insp_menu_long_name[0],HEXSl(row_ad,6));
+      insp_menu_long_bytes[0]=3;
+      insp_menu_long[0]=row_ad;
 
-    strcpy(insp_menu_long_name[1],reg_browser_entry_name[n]);
-    strcat(insp_menu_long_name[1],".W = ");
-    strcat(insp_menu_long_name[1],HEXS(*(WORD*)(reg_browser_entry_pointer[n])));
-    insp_menu_long[1]=(long)*(WORD*)(reg_browser_entry_pointer[n]);
-    insp_menu_long_bytes[1]=2;
+      insp_menu_long[1]=d2_lpeek(row_ad) & 0xffffff;
+      insp_menu_long_bytes[1]=4;
+      strcpy(insp_menu_long_name[1],"(");strcat(insp_menu_long_name[1],HEXSl(row_ad,6));
+      strcat(insp_menu_long_name[1],").L = ");
+      strcat(insp_menu_long_name[1],HEXSl(insp_menu_long[1],6));
 
-    insp_menu_long_bytes[2]=0;
-    insp_menu_col=1;
+      insp_menu_long[2]=(long)d2_dpeek(row_ad);
+      insp_menu_long_bytes[2]=4;
+      strcpy(insp_menu_long_name[2],"(");strcat(insp_menu_long_name[2],HEXSl(row_ad,6));
+      strcat(insp_menu_long_name[2],").W = ");
+      strcat(insp_menu_long_name[2],HEXSl(insp_menu_long[2],6));
+
+      insp_menu_col=4; // Edit target
+
+    }else{
+      int n=row+(ad);
+      strcpy(insp_menu_long_name[0],reg_browser_entry_name[n]);
+      strcat(insp_menu_long_name[0],".L = ");
+      strcat(insp_menu_long_name[0],HEXS(*(reg_browser_entry_pointer[n])));
+      insp_menu_long[0]=*(reg_browser_entry_pointer[n]);
+      insp_menu_long_bytes[0]=4;
+
+      strcpy(insp_menu_long_name[1],reg_browser_entry_name[n]);
+      strcat(insp_menu_long_name[1],".W = ");
+      strcat(insp_menu_long_name[1],HEXS(*(WORD*)(reg_browser_entry_pointer[n])));
+      insp_menu_long[1]=(long)*(WORD*)(reg_browser_entry_pointer[n]);
+      insp_menu_long_bytes[1]=2;
+
+      insp_menu_long_bytes[2]=0;
+      insp_menu_col=1;
+    }
+    insp_menu_setup();
+    AppendMenu(insp_menu,MF_ENABLED | MF_STRING,3025,"Edit");
   }
-  insp_menu_setup();
-  AppendMenu(insp_menu,MF_ENABLED | MF_STRING,3025,"Edit");
+  if (disp_type!=DT_REGISTERS){
+    AppendMenu(insp_menu,MF_SEPARATOR,0,NULL);
+    AppendMenu(insp_menu,MF_SEPARATOR,0,NULL);
+    AppendMenu(insp_menu,MF_ENABLED | MF_STRING,3028,Str("Run to $")+HEXSl(row_ad,6));
+    if (owner!=DWin) AppendMenu(insp_menu,MF_ENABLED | MF_STRING,3026,"Set browser name");
+    if ((MEM_ADDRESS)(insp_menu_long[0])<himem) AppendMenu(insp_menu,MF_ENABLED | MF_STRING,3027,Str("Load file to $")+HEXSl(insp_menu_long[0],6));
+  }
 }
 //---------------------------------------------------------------------------
 LRESULT __stdcall mem_browser_WndProc(HWND Win,UINT Mess,UINT wPar,long lPar)
@@ -1091,33 +1228,29 @@ LRESULT __stdcall mem_browser_WndProc(HWND Win,UINT Mess,UINT wPar,long lPar)
           if ((col==1 || col==2) && (mb->disp_type)!=DT_REGISTERS){
             if (Mess==WM_LBUTTONDOWN || Mess==WM_LBUTTONDBLCLK){
               MEM_ADDRESS ad=mb->get_address_from_row(row);
-              bool is_mon=(col==2);
-              int i=get_breakpoint_or_monitor(is_mon,ad);
-              WORD new_mask=0xffff;
-              bool readflag=0;
-              if (i>=0){
-                bool is_io_mon=((ad & 0xffffff)>=MEM_IO_BASE && is_mon);
-                new_mask=0;
-                if (is_mon){
-                  WORD *mon_masks=(WORD*)(is_io_mon ? monitor_io_mask:monitor_mask);
-                  switch (mon_masks[i]){
-                    case 0xffff: new_mask=0xff00; break;
-                    case 0xff00: new_mask=0x00ff; break;
-                  }
-                }
-                if (is_io_mon) readflag=monitor_io_readflag[i];
-                remove_breakpoint_or_monitor(is_mon,ad);
-                if (new_mask==0){
-                  if (is_io_mon && readflag==0){
-                    readflag=true;
-                    new_mask=0xffff;
+              DEBUG_ADDRESS *pda=debug_find_address(ad);
+              if (col==1){
+                bool bk=0;
+                if (pda) bk=(pda->bwr & BIT_0);
+                debug_set_bk(ad,!bk);
+              }else{
+                if (pda){
+                  int cur=pda->bwr & (BIT_1 | BIT_2);
+                  if (cur==BIT_1 && pda->mask[0]==0xffff){
+                    debug_set_mon(ad,0,0);
+                    debug_set_mon(ad,true,0xffff);
+                  }else if (cur==BIT_2 && pda->mask[1]==0xffff){
+                    debug_set_mon(ad,true,0);
+                  }else if (cur==0){
+                    debug_set_mon(ad,0,0xffff);
                   }else{
-                    return 0;
+                    Mess=WM_RBUTTONUP;
                   }
+                }else{
+                  debug_set_mon(ad,0,0xffff);
                 }
               }
-              set_breakpoint_or_monitor(is_mon,ad,new_mask,readflag);
-              return 0;
+              if (Mess!=WM_RBUTTONUP) return 0;
             }
           }else if (bool((mb->disp_type==DT_REGISTERS) ? (col==1):(col==4)) ){ //hex
             if (Mess==WM_LBUTTONDOWN){
@@ -1266,4 +1399,5 @@ mem_browser::~mem_browser()
     }
   }
 }
+//---------------------------------------------------------------------------
 

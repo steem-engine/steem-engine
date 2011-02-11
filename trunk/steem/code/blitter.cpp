@@ -1,3 +1,9 @@
+/*---------------------------------------------------------------------------
+FILE: blitter.cpp
+MODULE: emu
+DESCRIPTION: Emulation of the STE only blitter chip.
+---------------------------------------------------------------------------*/
+
 #define BLITTER_START_WAIT 8
 #define BLITTER_END_WAIT 0
 
@@ -36,6 +42,7 @@ void Blitter_DPoke(MEM_ADDRESS abus,WORD x)
     CATCH_M68K_EXCEPTION
     END_M68K_EXCEPTION
   }else if (abus>=MEM_FIRST_WRITEABLE && abus<himem){
+    DEBUG_CHECK_WRITE_W(abus);
     DPEEK(abus)=x;
   }
 }
@@ -106,7 +113,8 @@ void Blitter_Blit_Word()
     Blit.Last=true;
     if (Blit.XCount>1) Blit.Mask=Blit.EndMask[2];
   }
-  if ((Blit.Op % 5)!=0 && Blit.Hop>1){ //won't read source for 0,5,10,15 or Hop=0,1
+  //won't read source for 0,5,10,15 or Hop=0,1 (unless 1 and smudge on)
+  if ((Blit.Op % 5)!=0 && (Blit.Hop>1 || (Blit.Hop==1 && Blit.Smudge))){
     if (Blit.NFSR && Blit.Last){
       if (Blit.SrcXInc>=0){
         Blit.SrcBuffer<<=16;
@@ -250,10 +258,6 @@ void Blitter_Draw()
 //  while(Blit.Busy){
 //    Blitter_Blit_Word();
 //  }
-
-#ifdef _DEBUG_BUILD
-  MEM_ADDRESS monitor_altered;
-#endif
 
   while (runstate==RUNSTATE_RUNNING){
     while (cpu_cycles>0 && runstate==RUNSTATE_RUNNING){

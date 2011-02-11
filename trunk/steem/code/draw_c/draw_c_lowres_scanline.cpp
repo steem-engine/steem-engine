@@ -1,3 +1,9 @@
+/*---------------------------------------------------------------------------
+FILE: draw_c_lowres_scanline.cpp
+MODULE: draw_c
+DESCRIPTION: Low res C++ drawing routine
+---------------------------------------------------------------------------*/
+
 //void draw_scanline_lowres_pixelwise_8(int border1,int picture,int border2,int hscroll){
   int n;
   WORD w0,w1,w2,w3,mask;

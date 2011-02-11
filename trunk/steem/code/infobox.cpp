@@ -1,3 +1,9 @@
+/*---------------------------------------------------------------------------
+FILE: infobox.cpp
+MODULE: Steem
+DESCRIPTION: Steem's general information dialog.
+---------------------------------------------------------------------------*/
+
 //---------------------------------------------------------------------------
 void TGeneralInfo::CreatePage(int pg)
 {
@@ -21,7 +27,9 @@ void TGeneralInfo::CreatePage(int pg)
   }
 }
 
-const char *Credits[30]={
+const char *Credits[40]={
+  "Jorge Cwik for the brilliant pasti library and finding lots of Steem bugs",
+  "Keili for the fantastic disk image database",
   "Stephen Ware for finding lots of emulation and MIDI bugs",
   "Tomi Kivelä for the move.l timing bug and lots of STE help",
   "Xavier Joubert for finding the illegal instruction bug",
@@ -30,7 +38,6 @@ const char *Credits[30]={
   "Kimmo Hakala for finding many CPU bugs",
   "Christian Gandler for the Pexec clearing heap bug",
   "Sengan Baring-Gould for the Pexec mode 3/4 bug",
-  "Jorge Cwik for lots of CPU and FDC fixes",
   "Simon Owen for the FDC CRC generation code",
   "Zorg for the fantastic MSA Converter",
   "Heinz Rudolf for his help with overscans",
@@ -42,9 +49,15 @@ const char *Credits[30]={
   "Robert Hagenström for his fantastic icons",
   "David E. Gervais for his gold Steem icon",
 
+  "",
+  "Libraries:",
 #ifdef UNIX
   "The makers of PortAudio the Portable Real-Time Audio Library",
   "PortAudio Copyright (c) 1999-2000 Phil Burk and Ross Bencina",
+  "",
+  "RtAudio: A set of realtime audio I/O C++ classes",
+  "Copyright (c) 2001-2004 Gary P. Scavone",
+  "",
   "Jean-Loup Gailly and Mark Adler for the zlib library",
   "Gilles Vollant for the zlib minizip addition",
 #endif
@@ -55,7 +68,9 @@ const char *Credits[30]={
 #endif
 
   "Christian Scheurer and Johannes Winkelmann for the UniquE RAR File Library",
+  "",
 
+  "Technical Info:",
   "Dan Hollis/MicroImages Software for their hardware register list",
   "Damien Burke for describing the MSA disk image format",
   "Bruno Mathieu for his info on the DIM disk image format",
@@ -67,8 +82,6 @@ void TGeneralInfo::GetHyperlinkLists(EasyStringList &desc_sl,EasyStringList &lin
   link_sl.Sort=eslNoSort;
   desc_sl.Add(T("Official Steem website"),0);
   link_sl.Add(STEEM_WEB);
-  desc_sl.Add(T("E-mail us with problems, comments or suggestions"),0);
-  link_sl.Add("mailto:" STEEM_EMAIL);
 
   // Steem links
   FILE *f=fopen(RunDir+SLASH "steem.new","rt");
@@ -90,10 +103,11 @@ void TGeneralInfo::GetHyperlinkLists(EasyStringList &desc_sl,EasyStringList &lin
             link_sl.Add("");
           }else{
             if (fgets(buf,5000,f)){
-              buf[strlen(buf)-1]=0;
+              Str Link=buf;
+              while (Link.RightChar()=='\r' || Link.RightChar()=='\n') *(Link.Right())=0;
 
               desc_sl.Add(LinkDesc,0);
-              link_sl.Add(buf);
+              link_sl.Add(Link);
             }
           }
         }
@@ -269,7 +283,7 @@ void TGeneralInfo::CreateAboutPage()
                           page_l,y,page_w,TextHeight,Handle,(HMENU)204,HInstance,NULL);
   y+=TextHeight;
 
-  Scroller.CreateEx(512,WS_CHILD | WS_VSCROLL | WS_HSCROLL,page_l,y,page_w,INFOBOX_HEIGHT-y-((TextHeight+2)*2+10+10),
+  Scroller.CreateEx(512,WS_CHILD | WS_VSCROLL | WS_HSCROLL,page_l,y,page_w,INFOBOX_HEIGHT-y-(TextHeight+10+10),
                       Handle,203,HInstance);
   Scroller.SetBkColour(GetSysColor(COLOR_WINDOW));
 
@@ -285,15 +299,10 @@ void TGeneralInfo::CreateAboutPage()
   Scroller.AutoSize(2,2);
   ShowWindow(Scroller,SW_SHOW);
 
-  y=INFOBOX_HEIGHT-(TextHeight+2)*2-10;
+  y=INFOBOX_HEIGHT-TextHeight-10;
   CreateWindowEx(0,"Steem HyperLink",STEEM_WEB,
                       WS_CHILD | WS_VISIBLE,page_l,y,page_w,TextHeight,
                       Handle,(HMENU)201,HInstance,NULL);
-  y+=TextHeight+2;
-
-  CreateWindowEx(0,"Steem HyperLink","mailto:" STEEM_EMAIL,
-                      WS_CHILD | WS_VISIBLE,page_l,y,page_w,TextHeight,
-                      Handle,(HMENU)202,HInstance,NULL);
 
   if (Focus==NULL) Focus=PageTree;
   SetPageControlsFont();
@@ -561,6 +570,7 @@ LRESULT __stdcall TGeneralInfo::WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lP
 
       HWND NewParent=(HWND)lPar;
       if (NewParent){
+        This->CheckFSPosition(NewParent);
         SetWindowPos(Win,NULL,This->FSLeft,This->FSTop,0,0,SWP_NOZORDER | SWP_NOSIZE);
       }else{
         SetWindowPos(Win,NULL,This->Left,This->Top,0,0,SWP_NOZORDER | SWP_NOSIZE);

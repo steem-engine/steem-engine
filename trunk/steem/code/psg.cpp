@@ -1,3 +1,12 @@
+/*---------------------------------------------------------------------------
+FILE: psg.cpp
+MODULE: emu
+DESCRIPTION: Steem's Programmable Sound Generator (Yamaha 2149) and STE
+DMA sound output emulation. Sound_VBL is the main function writing one
+frame of sound to the output buffer. The I/O code isn't included here, see
+ior.cpp and iow.cpp for the lowest level emulation.
+---------------------------------------------------------------------------*/
+
 #define LOGSECTION LOGSECTION_SOUND
 //---------------------------------------------------------------------------
 //---------------------------------------------------------------------------
@@ -15,28 +24,14 @@ HRESULT Sound_Start()
 #endif
 
   if (sound_mode==SOUND_MODE_MUTE) return DS_OK;
-  if (UseSound==0) return DSERR_GENERIC;
-WIN_ONLY( if (DSOpen) return DS_OK; )
-UNIX_ONLY( if (sound_device!=-1) return DS_OK; )
+  if (UseSound==0) return DSERR_GENERIC;  // Not initialised
+  if (SoundActive()) return DS_OK;        // Already started
 
   if (fast_forward || slow_motion || runstate!=RUNSTATE_RUNNING) return DSERR_GENERIC;
 
   sound_first_vbl=true;
 
   log("SOUND: Starting sound buffers and initialising PSG variables");
-
-  dma_sound_channel_buf_last_write_t=0;
-  if (dma_sound_mode & BIT_7){ // Mono
-    dma_sound_last_sample_l=(0 ^ 128) << 6;
-    dma_sound_last_sample_r=(0 ^ 128) << 6;
-  }else{
-    dma_sound_last_sample_l=(0 ^ 128) << 5;
-    dma_sound_last_sample_r=(0 ^ 128) << 5;
-  }
-  for (int i=0;i<DMA_SOUND_BUFFER_LENGTH;i++){
-    dma_sound_channel_buf[i]=dma_sound_last_sample_l;
-    if (sound_num_channels==2) dma_sound_channel_buf[++i]=dma_sound_last_sample_r;
-  }
 
   // Work out startup voltage
   int envshape=psg_reg[13] & 15;
@@ -50,8 +45,9 @@ UNIX_ONLY( if (sound_device!=-1) return DS_OK; )
   }
   psg_voltage=flatlevel;psg_dv=0;
 
-  int current_l=HIBYTE(flatlevel+dma_sound_last_sample_l),
-      current_r=HIBYTE(flatlevel+dma_sound_last_sample_r);
+  WORD dma_l,dma_r;
+  dma_sound_get_last_sample(&dma_l,&dma_r);
+  int current_l=HIBYTE(flatlevel)+HIBYTE(dma_l),current_r=HIBYTE(flatlevel)+HIBYTE(dma_r);
   if (sound_num_bits==16){
     current_l^=128;current_r^=128;
   }
@@ -84,7 +80,10 @@ UNIX_ONLY( if (sound_device!=-1) return DS_OK; )
   psg_time_of_next_vbl_for_writing=psg_time_of_start_of_buffer;
 */
 
-  for (int abc=2;abc>=0;abc--) psg_buf_pointer[abc]=0;
+  for (int abc=2;abc>=0;abc--){
+    psg_buf_pointer[abc]=0;
+    psg_tone_start_time[abc]=0;
+  }
   for (int i=0;i<PSG_CHANNEL_BUF_LENGTH;i++) psg_channels_buf[i]=VOLTAGE_FP(VOLTAGE_ZERO_LEVEL);
   psg_envelope_start_time=0xff000000;
 
@@ -192,7 +191,7 @@ void SoundStopInternalSpeaker()
               }     \
     	        WAVEFORM_ONLY(temp_waveform_display[((int)(source_p-psg_channels_buf)+psg_time_of_last_vbl_for_writing) % MAX_temp_waveform_display_counter]=WORD_B_1(&val)); \
   	          *(source_p++)=VOLTAGE_FP(VOLTAGE_ZERO_LEVEL);                 \
-              if (lp_dma_sound_channel<lp_max_dma_sound_channel) lp_dma_sound_channel+=sound_num_channels; \
+              if (lp_dma_sound_channel<lp_max_dma_sound_channel) lp_dma_sound_channel+=2; \
       	      c--;                                                          \
 	          }
 
@@ -222,7 +221,7 @@ void SoundStopInternalSpeaker()
               }  \
               source_p++;                       \
               SINE_ONLY( t++ );                                   \
-              if (lp_dma_sound_channel<lp_max_dma_sound_channel) lp_dma_sound_channel+=sound_num_channels; \
+              if (lp_dma_sound_channel<lp_max_dma_sound_channel) lp_dma_sound_channel+=2; \
               c--;                                          \
             }
 
@@ -232,7 +231,7 @@ void sound_record_to_wav(int c,DWORD SINE_ONLY(t),bool chipmode,int *source_p)
 
   int v=psg_voltage,dv=psg_dv; //restore from last time
   WORD *lp_dma_sound_channel=dma_sound_channel_buf;
-  WORD *lp_max_dma_sound_channel=dma_sound_channel_buf+(dma_sound_channel_buf_last_write_t-1);
+  WORD *lp_max_dma_sound_channel=dma_sound_channel_buf+dma_sound_channel_buf_last_write_t;
   int val;
   if (sound_num_bits==8){
     if (chipmode){
@@ -292,17 +291,8 @@ HRESULT Sound_VBL()
     }
   }
 
-  if (dma_sound_control & BIT_0){ // DMA sound playing
-    // Do this even if there is no sound, this keeps the next byte to read correct
-    dma_sound_write_to_buffer(ABSOLUTE_CPU_TIME);
-  }else{
-    // Do this so it writes in the last sample if no dma sound has played this VBL at all
-    if (dma_sound_channel_buf_last_write_t==0){
-      dma_sound_channel_buf[dma_sound_channel_buf_last_write_t++]=dma_sound_last_sample_l;
-      if (sound_num_channels==2){
-        dma_sound_channel_buf[dma_sound_channel_buf_last_write_t++]=dma_sound_last_sample_r;
-      }
-    }
+  if (psg_capture_file){
+    psg_capture_check_boundary();
   }
 
   // This just clears up some clicks when Sound_VBL is called very soon after Sound_Start
@@ -312,9 +302,8 @@ HRESULT Sound_VBL()
   }
 
   if (sound_mode==SOUND_MODE_MUTE) return DS_OK;
-  if (UseSound==0) return DSERR_GENERIC;
-  WIN_ONLY( if (DSOpen==0) return DSERR_GENERIC; )
-	UNIX_ONLY( if (sound_device==-1) return DSERR_GENERIC; )
+  if (UseSound==0) return DSERR_GENERIC;  // Not initialised
+  if (SoundActive()==0) return DS_OK;        // Not started
 
   log("");
   log("SOUND: Start of Sound_VBL");
@@ -363,6 +352,20 @@ HRESULT Sound_VBL()
   for (int abc=2;abc>=0;abc--){
     psg_write_buffer(abc,time_of_next_vbl_to_write+PSG_WRITE_EXTRA);
   }
+  if (dma_sound_on_this_screen){
+    WORD w[2]={dma_sound_channel_buf[dma_sound_channel_buf_last_write_t-2],dma_sound_channel_buf[dma_sound_channel_buf_last_write_t-1]};
+    for (int i=0;i<PSG_WRITE_EXTRA;i++){
+      if (dma_sound_channel_buf_last_write_t>=DMA_SOUND_BUFFER_LENGTH) break;
+      dma_sound_channel_buf[dma_sound_channel_buf_last_write_t++]=w[0];
+      dma_sound_channel_buf[dma_sound_channel_buf_last_write_t++]=w[1];
+    }
+  }else{
+    WORD w1,w2;
+    dma_sound_get_last_sample(&w1,&w2);
+    dma_sound_channel_buf[0]=w1;
+    dma_sound_channel_buf[1]=w2;
+    dma_sound_channel_buf_last_write_t=0;
+  }
 
   // write_time_1 and 2 are sample variables, convert to bytes
   DWORD StartByte=(write_time_1 MOD_PSG_BUF_LENGTH)*sound_bytes_per_sample;
@@ -385,10 +388,9 @@ HRESULT Sound_VBL()
     int samples_left_in_buffer=max(PSG_CHANNEL_BUF_LENGTH-i,0);
     int countdown_to_storing_values=max((int)(time_of_next_vbl_to_write-write_time_1),0);
     //this is set when we are counting down to the start time of the next write
-    bool store_values=false,chipmode=true;
-    if (sound_mode>=SOUND_MODE_EMULATED){
-      chipmode=(sound_mode==SOUND_MODE_SHARPSAMPLES && ((psg_reg[PSGR_MIXER] & b00111111)!=b00111111));
-    }
+    bool store_values=false,chipmode=bool((sound_mode==SOUND_MODE_EMULATED) ? false:true);
+    if (sound_mode==SOUND_MODE_SHARPSAMPLES) chipmode=(psg_reg[PSGR_MIXER] & b00111111)!=b00111111;
+    if (sound_mode==SOUND_MODE_SHARPCHIP)    chipmode=(psg_reg[PSGR_MIXER] & b00111111)==b00111111;
     if (sound_record){
       sound_record_to_wav(countdown_to_storing_values,write_time_1,chipmode,source_p);
     }
@@ -400,7 +402,7 @@ HRESULT Sound_VBL()
     int val;
     log("SOUND: Starting to write to buffers");
     WORD *lp_dma_sound_channel=dma_sound_channel_buf;
-    WORD *lp_max_dma_sound_channel=dma_sound_channel_buf+(dma_sound_channel_buf_last_write_t-sound_num_channels);
+    WORD *lp_max_dma_sound_channel=dma_sound_channel_buf+dma_sound_channel_buf_last_write_t;
     BYTE *pb;
     WORD *pw;
     for (int n=0;n<2;n++){
@@ -480,163 +482,182 @@ HRESULT Sound_VBL()
 /*                                DMA SOUND                                  */
 /*---------------------------------------------------------------------------*/
 /*---------------------------------------------------------------------------*/
-void dma_sound_prepare_for_end(MEM_ADDRESS from_position,int start_cpu_time,bool playing)
+void dma_sound_set_control(BYTE io_src_b)
 {
-  if (playing==0){
-    dma_sound_end_cpu_time=ABSOLUTE_CPU_TIME+n_cpu_cycles_per_second;
-    return;
-  }
-  double n_bytes_to_play=max(int(dma_sound_end-from_position),2);
-
-  double cpu_cycles_per_byte;
-  if (dma_sound_mode & BIT_7){
-    cpu_cycles_per_byte=dma_sound_mode_to_cycles_per_byte_mono[dma_sound_mode & 3];
-  }else{
-    cpu_cycles_per_byte=dma_sound_mode_to_cycles_per_byte_stereo[dma_sound_mode & 3];
-  }
-
-  dma_sound_end_cpu_time=start_cpu_time + int(cpu_cycles_per_byte*n_bytes_to_play);
-}
-//---------------------------------------------------------------------------
-void dma_sound_write_to_buffer(int end_time)
-{
-  DWORD end_t;
-  DWORD hi_t=DMA_SOUND_BUFFER_LENGTH;
-  if (end_time){
-    int cpu_cycles_per_vbl=n_cpu_cycles_per_second/shifter_freq;
-#if SCREENS_PER_SOUND_VBL != 1
-    cpu_cycles_per_vbl*=SCREENS_PER_SOUND_VBL;
-    DWORDLONG end64=(end_time-cpu_time_of_last_sound_vbl);
-#else
-    DWORDLONG end64=(end_time-cpu_time_of_last_vbl);
-#endif
-    end64*=psg_n_samples_this_vbl;
-    end64/=cpu_cycles_per_vbl;
-    end64*=sound_num_channels;
-    end_t=(DWORD)end64;
-  }else{
-    // Write to dma_sound_end
-    end_t=hi_t;
-  }
-  // NOTE: dma_sound_channel_buf_last_write_t isn't a sample count like the
-  //       psg ts, just to be confusing it goes up twice as fast when output
-  //       is stereo, this allows for the 2 channels to be stored seperately.
-  log(Str("SOUND: Writing to dma_sound_buffer now, from $")+
-        HEXSl(dma_sound_addr_to_read_next,6)+" to $"+HEXSl(dma_sound_end,6)+
-        ", time "+dma_sound_channel_buf_last_write_t+" to "+end_t);
-
-  if (dma_sound_control & BIT_0){ // Playing
-    bool Mono=(dma_sound_mode & BIT_7)!=0;
-    int left_vol_top_val=dma_sound_l_top_val;
-    if (Mono){
-      left_vol_top_val=(dma_sound_l_top_val >> 1)+(dma_sound_r_top_val >> 1);
-    }
-    bool ChangeVolLeft=(left_vol_top_val<128),ChangeVolRight=(dma_sound_r_top_val<128);
-
-    while (dma_sound_channel_buf_last_write_t<end_t){
-      if (dma_sound_addr_to_read_next>=dma_sound_end) break;
-
-      bool write_to_channel=true;
-      while (dma_sound_countdown<=0){
-        dma_sound_countdown+=sound_freq;
-
-        if (dma_sound_countdown>0){
-          // Fetch sample and adjust for volume
-          DWORD sample1=128 ^ 0;
-          if (dma_sound_addr_to_read_next<himem){
-            int samp=(signed char)(PEEK(dma_sound_addr_to_read_next));
-            if (ChangeVolLeft){
-              samp*=left_vol_top_val;
-              samp/=128;
-            }
-            sample1=BYTE(128 ^ BYTE(samp));
-          }
-          dma_sound_addr_to_read_next++;
-          if (Mono){
-            dma_sound_last_sample_l=WORD(sample1 << 6);
-            dma_sound_last_sample_r=dma_sound_last_sample_l;
-          }else{
-            DWORD sample2=128 ^ 0;
-            if (dma_sound_addr_to_read_next<himem){
-              int samp=(signed char)(PEEK(dma_sound_addr_to_read_next));
-              if (ChangeVolRight){
-                samp*=dma_sound_r_top_val;
-                samp/=128;
-              }
-              sample2=BYTE(128 ^ BYTE(samp));
-            }
-            dma_sound_addr_to_read_next++;
-            if (sound_num_channels==2){
-              dma_sound_last_sample_l=WORD(sample1 << 6);
-              dma_sound_last_sample_r=WORD(sample2 << 6);
-            }else{
-              // Mix sample1 and 2 
-              dma_sound_last_sample_l=WORD((sample1+sample2) << 5);
-              dma_sound_last_sample_r=dma_sound_last_sample_l;
-            }
-          }
-        }else{ // Skip this byte/word
-          dma_sound_addr_to_read_next++;
-          if (Mono==0) dma_sound_addr_to_read_next++;
-          if (dma_sound_addr_to_read_next>=dma_sound_end){
-            write_to_channel=0;
-            break;
-          }
-        }
-      }
-      if (write_to_channel==0) break;
-
-      if (dma_sound_channel_buf_last_write_t<hi_t){
-        dma_sound_channel_buf[dma_sound_channel_buf_last_write_t++]=dma_sound_last_sample_l;
-        if (sound_num_channels==2){
-          dma_sound_channel_buf[dma_sound_channel_buf_last_write_t++]=dma_sound_last_sample_r;
-        }
-      }
-      dma_sound_countdown-=dma_sound_freq;
-    }
-  }else{
-    while (dma_sound_channel_buf_last_write_t<end_t){
-      if (dma_sound_channel_buf_last_write_t>=hi_t) break;
-
-      dma_sound_channel_buf[dma_sound_channel_buf_last_write_t++]=dma_sound_last_sample_l;
-      if (sound_num_channels==2){
-        dma_sound_channel_buf[dma_sound_channel_buf_last_write_t++]=dma_sound_last_sample_r;
-      }
-    }
-  }
-  log(Str("      dma_sound_addr_to_read_next=$")+HEXSl(dma_sound_addr_to_read_next,6)+
-        ", dma_sound_channel_buf_last_write_t="+dma_sound_channel_buf_last_write_t);
-}
-//---------------------------------------------------------------------------
-void event_dma_sound_hit_end()
-{
-  if (dma_sound_control & BIT_0){
-    bool Looping=bool(dma_sound_control & BIT_1);
-
-    log("SOUND: DMA sound buffer finished playing");
-
-    // Fill temporary buffer up to dma_sound_end
-    dma_sound_write_to_buffer(0);
-
-    DMA_SOUND_CHECK_TIMER_A
-
-    // Handle changes to buffer start and end (double buffering)
+  if ((dma_sound_control & BIT_0) && (io_src_b & BIT_0)==0){  //Stopping
     dma_sound_start=next_dma_sound_start;
     dma_sound_end=next_dma_sound_end;
-    dma_sound_start_time=time_of_next_event;
-    dma_sound_addr_to_read_next=dma_sound_start;
-
-    // Handle next frame (if there is one)
-    dma_sound_control&=~BIT_0; //stop playing
-    if (tos_version>=0x106) mfp_gpip_set_bit(MFP_GPIP_MONO_BIT,bool(COLOUR_MONITOR)^bool(dma_sound_control & BIT_0));
-    if (Looping){
-      dma_sound_control|=BIT_0; //Playing again immediately
-      if (tos_version>=0x106) mfp_gpip_set_bit(MFP_GPIP_MONO_BIT,bool(COLOUR_MONITOR)^bool(dma_sound_control & BIT_0));
+    dma_sound_fetch_address=dma_sound_start;
+  }else if ((dma_sound_control & BIT_0)==0 && (io_src_b & BIT_0)){ //Start playing
+    dma_sound_start=next_dma_sound_start;
+    dma_sound_end=next_dma_sound_end;
+    dma_sound_fetch_address=dma_sound_start;
+    if (dma_sound_on_this_screen==0){
+      // Pad buffer with last byte from VBL to current position
+      bool Mono=bool(dma_sound_mode & BIT_7);
+      int freq_idx=0;
+      if (shifter_freq_at_start_of_vbl==60) freq_idx=1;
+      if (shifter_freq_at_start_of_vbl==MONO_HZ) freq_idx=2;
+      WORD w1,w2;
+      dma_sound_get_last_sample(&w1,&w2);
+      for (int y=-scanlines_above_screen[freq_idx];y<scan_y;y++){
+        if (Mono){  //play half as many words
+          dma_sound_samples_countdown+=dma_sound_freq*scanline_time_in_cpu_cycles_at_start_of_vbl/2;
+        }else{ //stereo, 1 word per sample
+          dma_sound_samples_countdown+=dma_sound_freq*scanline_time_in_cpu_cycles_at_start_of_vbl;
+        }
+        int loop=int(Mono ? 2:1);
+        while (dma_sound_samples_countdown>=0){
+          for (int i=0;i<loop;i++){
+            dma_sound_output_countdown+=sound_freq;
+            while (dma_sound_output_countdown>=0){
+              if (dma_sound_channel_buf_last_write_t>=DMA_SOUND_BUFFER_LENGTH) break;
+              dma_sound_channel_buf[dma_sound_channel_buf_last_write_t++]=w1;
+              dma_sound_channel_buf[dma_sound_channel_buf_last_write_t++]=w2;
+              dma_sound_output_countdown-=dma_sound_freq;
+            }
+          }
+          dma_sound_samples_countdown-=n_cpu_cycles_per_second;
+        }
+      }
+      dma_sound_on_this_screen=1;
     }
   }
-  // Set event into future if not playing
-  dma_sound_prepare_for_end(dma_sound_start,time_of_next_event,dma_sound_control & BIT_0);
+  log_to(LOGSECTION_SOUND,EasyStr("SOUND: ")+HEXSl(old_pc,6)+" - DMA sound control set to "+(io_src_b & 3)+" from "+(dma_sound_control & 3));
+  dma_sound_control=io_src_b;
+  if (tos_version>=0x106) mfp_gpip_set_bit(MFP_GPIP_MONO_BIT,bool(COLOUR_MONITOR)^bool(dma_sound_control & BIT_0));
 }
+//---------------------------------------------------------------------------
+void dma_sound_set_mode(BYTE new_mode)
+{
+  dma_sound_mode=new_mode;
+  dma_sound_freq=dma_sound_mode_to_freq[dma_sound_mode & 3];
+  log_to(LOGSECTION_SOUND,EasyStr("SOUND: ")+HEXSl(old_pc,6)+" - DMA sound mode set to $"+HEXSl(dma_sound_mode,2)+" freq="+dma_sound_freq);
+}
+//---------------------------------------------------------------------------
+void dma_sound_fetch()
+{
+  bool Playing=bool(dma_sound_control & BIT_0);
+  bool Mono=bool(dma_sound_mode & BIT_7);
+
+  //we want to play a/b samples, where a is the DMA sound frequency
+  //and b is the number of scanlines a second
+
+  int left_vol_top_val=dma_sound_l_top_val,right_vol_top_val=dma_sound_r_top_val;
+  //this a/b is the same as dma_sound_freq*scanline_time_in_cpu_cycles/8million
+  if (Mono){  //play half as many words
+    dma_sound_samples_countdown+=dma_sound_freq*scanline_time_in_cpu_cycles_at_start_of_vbl/2;
+    left_vol_top_val=(dma_sound_l_top_val >> 1)+(dma_sound_r_top_val >> 1);
+    right_vol_top_val=left_vol_top_val;
+  }else{ //stereo, 1 word per sample
+    dma_sound_samples_countdown+=dma_sound_freq*scanline_time_in_cpu_cycles_at_start_of_vbl;
+  }
+  bool vol_change_l=(left_vol_top_val<128),vol_change_r=(right_vol_top_val<128);
+  while (dma_sound_samples_countdown>=0){
+    //play word from buffer
+    if (dma_sound_internal_buf_len>0){
+      dma_sound_last_word=dma_sound_internal_buf[0];
+      for (int i=0;i<3;i++) dma_sound_internal_buf[i]=dma_sound_internal_buf[i+1];
+      dma_sound_internal_buf_len--;
+
+      if (vol_change_l){
+        int b1=(signed char)(HIBYTE(dma_sound_last_word));
+        b1*=left_vol_top_val;
+        b1/=128;
+        dma_sound_last_word&=0x00ff;
+        dma_sound_last_word|=WORD(BYTE(b1) << 8);
+      }
+      if (vol_change_r){
+        int b2=(signed char)(LOBYTE(dma_sound_last_word));
+        b2*=right_vol_top_val;
+        b2/=128;
+        dma_sound_last_word&=0xff00;
+        dma_sound_last_word|=BYTE(b2);
+      }
+      dma_sound_last_word^=WORD((128 << 8) | 128); //unsign
+    }
+    dma_sound_output_countdown+=sound_freq;
+    WORD w1;
+    WORD w2;
+    if (Mono){       //mono, play half as many words
+      w1=WORD((dma_sound_last_word & 0xff00) >> 2);
+      w2=WORD((dma_sound_last_word & 0x00ff) << 6);
+      // dma_sound_channel_buf always stereo, so put each mono sample in twice
+      while (dma_sound_output_countdown>=0){
+        if (dma_sound_channel_buf_last_write_t>=DMA_SOUND_BUFFER_LENGTH) break;
+        dma_sound_channel_buf[dma_sound_channel_buf_last_write_t++]=w1;
+        dma_sound_channel_buf[dma_sound_channel_buf_last_write_t++]=w1;
+        dma_sound_output_countdown-=dma_sound_freq;
+      }
+      dma_sound_output_countdown+=sound_freq;
+      while (dma_sound_output_countdown>=0){
+        if (dma_sound_channel_buf_last_write_t>=DMA_SOUND_BUFFER_LENGTH) break;
+        dma_sound_channel_buf[dma_sound_channel_buf_last_write_t++]=w2;
+        dma_sound_channel_buf[dma_sound_channel_buf_last_write_t++]=w2;
+        dma_sound_output_countdown-=dma_sound_freq;
+      }
+    }else{//stereo , 1 word per sample
+      if (sound_num_channels==1){
+        //average the channels out
+        w1=WORD(((dma_sound_last_word & 255)+(dma_sound_last_word >> 8)) << 5);
+        w2=0; // skipped
+      }else{
+        w1=WORD((dma_sound_last_word & 0xff00) >> 2);
+        w2=WORD((dma_sound_last_word & 0x00ff) << 6);
+      }
+      while (dma_sound_output_countdown>=0){
+        if (dma_sound_channel_buf_last_write_t>=DMA_SOUND_BUFFER_LENGTH) break;
+        dma_sound_channel_buf[dma_sound_channel_buf_last_write_t++]=w1;
+        dma_sound_channel_buf[dma_sound_channel_buf_last_write_t++]=w2;
+        dma_sound_output_countdown-=dma_sound_freq;
+      }
+    }
+    dma_sound_samples_countdown-=n_cpu_cycles_per_second;
+  }
+  if (Playing==0) return;
+  if (dma_sound_internal_buf_len>=4) return;
+  if (dma_sound_fetch_address>=himem) return;
+  for (int i=0;i<4;i++){
+    if (dma_sound_fetch_address>=dma_sound_end){
+      dma_sound_start=next_dma_sound_start;
+      dma_sound_end=next_dma_sound_end;
+      dma_sound_fetch_address=dma_sound_start;
+      dma_sound_control&=~BIT_0;
+
+      DMA_SOUND_CHECK_TIMER_A
+      if (tos_version>=0x106) mfp_gpip_set_bit(MFP_GPIP_MONO_BIT,bool(COLOUR_MONITOR)^bool(dma_sound_control & BIT_0));
+
+      if (dma_sound_control & BIT_1){
+        dma_sound_control|=BIT_0; //Playing again immediately
+        if (tos_version>=0x106) mfp_gpip_set_bit(MFP_GPIP_MONO_BIT,bool(COLOUR_MONITOR)^bool(dma_sound_control & BIT_0));
+      }else{
+        break;
+      }
+    }
+    dma_sound_internal_buf[dma_sound_internal_buf_len++]=DPEEK(dma_sound_fetch_address);
+    dma_sound_fetch_address+=2;
+    if (dma_sound_internal_buf_len>=4) break;
+  }
+}
+//---------------------------------------------------------------------------
+void dma_sound_get_last_sample(WORD *pw1,WORD *pw2)
+{
+  if (dma_sound_mode & BIT_7){
+    // ST plays HIBYTE, LOBYTE, so last sample is LOBYTE
+    *pw1=WORD((dma_sound_last_word & 0x00ff) << 6);
+    *pw2=*pw1; // play the same in both channels, or ignored in when sound_num_channels==1
+  }else{
+    if (sound_num_channels==1){
+      //average the channels out
+      *pw1=WORD(((dma_sound_last_word & 255)+(dma_sound_last_word >> 8)) << 5);
+      *pw2=0; // skipped
+    }else{
+      *pw1=WORD((dma_sound_last_word & 0xff00) >> 2);
+      *pw2=WORD((dma_sound_last_word & 0x00ff) << 6);
+    }
+  }
+}
+//---------------------------------------------------------------------------
 /*---------------------------------------------------------------------------*/
 /*---------------------------------------------------------------------------*/
 /*                                PSG SOUND                                  */
@@ -698,6 +719,10 @@ void event_dma_sound_hit_end()
       bf=fmod(bf,af); \
       psg_noisecountdown=psg_noisemodulo-(int)bf; \
       psg_noisetoggle=psg_noise[psg_noisecounter];
+
+      /*
+      if (abc==0) log_write(Str("toneperiod=")+toneperiod+" sound_freq="+sound_freq+" psg_tonemodulo_2="+psg_tonemodulo_2); \
+      */
 
 #define PSG_PREPARE_TONE                                 \
       af=((int)toneperiod*sound_freq);                              \
@@ -765,7 +790,7 @@ void psg_write_buffer(int abc,DWORD to_t)
 
   if ((psg_reg[abc+8] & BIT_4)==0){ // Not Enveloped
     int vol=psg_flat_volume_level[psg_reg[abc+8] & 15];
-    if ((psg_reg[PSGR_MIXER] & (1 << abc))==0 && (toneperiod>1)){ //tone enabled
+    if ((psg_reg[PSGR_MIXER] & (1 << abc))==0 && (toneperiod>9)){ //tone enabled
       PSG_PREPARE_TONE
       if ((psg_reg[PSGR_MIXER] & (8 << abc))==0){ //noise enabled
 
@@ -814,7 +839,7 @@ void psg_write_buffer(int abc,DWORD to_t)
 
     PSG_PREPARE_ENVELOPE;
 
-    if ((psg_reg[PSGR_MIXER] & (1 << abc))==0 && (toneperiod>1)){ //tone enabled
+    if ((psg_reg[PSGR_MIXER] & (1 << abc))==0 && (toneperiod>9)){ //tone enabled
       PSG_PREPARE_TONE
       if ((psg_reg[PSGR_MIXER] & (8 << abc))==0){ //noise enabled
         PSG_PREPARE_NOISE
@@ -902,101 +927,162 @@ DWORD psg_adjust_envelope_start_time(DWORD t,DWORD new_envperiod)
 void psg_set_reg(int reg,BYTE old_val,BYTE &new_val)
 {
   // suggestions for global variables:  n_samples_per_vbl=sound_freq/shifter_freq,   shifter_y+(SCANLINES_ABOVE_SCREEN+SCANLINES_BELOW_SCREEN)
-  if(reg==1 || reg==3 || reg==5 || reg==13){
+  if (reg==1 || reg==3 || reg==5 || reg==13){
     new_val&=15;
-  }else if(reg==6 || (reg>=8 && reg<=10)){
+  }else if (reg==6 || (reg>=8 && reg<=10)){
     new_val&=31;
   }
-  if (UseSound==0 || reg>=PSGR_PORT_A) return;
-  WIN_ONLY( if (DSOpen==0) return; )
-	UNIX_ONLY( if (sound_device==-1) return; )
+  if (reg>=PSGR_PORT_A) return;
+  if (old_val==new_val && reg!=PSGR_ENVELOPE_SHAPE) return;
 
-  if (old_val!=new_val || reg==PSGR_ENVELOPE_SHAPE){
-    int cpu_cycles_per_vbl=n_cpu_cycles_per_second/shifter_freq;
+  if (psg_capture_file){
+    psg_capture_check_boundary();
+    DWORD cycle=int(ABSOLUTE_CPU_TIME-psg_capture_cycle_base);
+    if (n_millions_cycles_per_sec!=8){
+      cycle*=8; // this is safe, max 128000000*8
+      cycle/=n_millions_cycles_per_sec;
+    }
+    BYTE reg_byte=BYTE(reg);
+
+//    log_write(Str("--- cycle=")+cycle+" - reg="+reg_byte+" - val="+new_val);
+    fwrite(&cycle,1,sizeof(cycle),psg_capture_file);
+    fwrite(&reg_byte,1,sizeof(reg_byte),psg_capture_file);
+    fwrite(&new_val,1,sizeof(new_val),psg_capture_file);
+  }
+
+  if (SoundActive()==0){
+    log(Str("SOUND: ")+HEXSl(old_pc,6)+" - PSG reg "+reg+" changed to "+new_val+" at "+scanline_cycle_log());
+    return;
+  }
+
+  int cpu_cycles_per_vbl=n_cpu_cycles_per_second/shifter_freq;
 #if SCREENS_PER_SOUND_VBL != 1
-    cpu_cycles_per_vbl*=SCREENS_PER_SOUND_VBL;
-    DWORDLONG a64=(ABSOLUTE_CPU_TIME-cpu_time_of_last_sound_vbl);
+  cpu_cycles_per_vbl*=SCREENS_PER_SOUND_VBL;
+  DWORDLONG a64=(ABSOLUTE_CPU_TIME-cpu_time_of_last_sound_vbl);
 #else
-    DWORDLONG a64=(ABSOLUTE_CPU_TIME-cpu_time_of_last_vbl);
+  DWORDLONG a64=(ABSOLUTE_CPU_TIME-cpu_time_of_last_vbl);
 #endif
 
-    a64*=psg_n_samples_this_vbl;
-    a64/=cpu_cycles_per_vbl;
-    DWORD t=psg_time_of_last_vbl_for_writing+(DWORD)a64;
+  a64*=psg_n_samples_this_vbl;
+  a64/=cpu_cycles_per_vbl;
+  DWORD t=psg_time_of_last_vbl_for_writing+(DWORD)a64;
 
-    log(EasyStr("SOUND: PSG reg ")+reg+" changed to "+new_val+" at time "+(ABSOLUTE_CPU_TIME)+"; samples "+t+"; vbl was at "+psg_time_of_last_vbl_for_writing);
-    switch (reg){
-      case 0:case 1:
-        t=psg_quantize_time(0,t);
-        psg_write_buffer(0,t);
-        psg_tone_start_time[0]=t;
-        break;
-      case 2:case 3:
-        t=psg_quantize_time(1,t);
-        psg_write_buffer(1,t);
-        psg_tone_start_time[1]=t;
-        break;
-      case 4:case 5:
-        t=psg_quantize_time(2,t);
-        psg_write_buffer(2,t);
-        psg_tone_start_time[2]=t;
-        break;
-      case 6:  //changed noise
-        psg_write_buffer(0,t);
-        psg_write_buffer(1,t);
-        psg_write_buffer(2,t);
-        break;
-      case 7:  //mixer
-        psg_write_buffer(0,t);
-        psg_write_buffer(1,t);
-        psg_write_buffer(2,t);
-        break;
-      case 8:case 9:case 10:  //channel A,B,C volume
+  log(EasyStr("SOUND: PSG reg ")+reg+" changed to "+new_val+" at "+scanline_cycle_log()+"; samples "+t+"; vbl was at "+psg_time_of_last_vbl_for_writing);
+  switch (reg){
+    case 0:case 1:
+    case 2:case 3:
+    case 4:case 5:
+    {
+      int abc=reg/2;
+      // Freq is double bufferred, it cannot change until the PSG reaches the end of the current square wave.
+      // psg_tone_start_time[abc] is set to the last end of wave, so if it is in future don't do anything.
+      // Overflow will be a problem, however at 50Khz that will take a day of non-stop output.
+      if (t>psg_tone_start_time[abc]){
+        t=psg_quantize_time(abc,t);
+        psg_write_buffer(abc,t);
+        psg_tone_start_time[abc]=t;
+      }
+      break;
+    }
+    case 6:  //changed noise
+      psg_write_buffer(0,t);
+      psg_write_buffer(1,t);
+      psg_write_buffer(2,t);
+      break;
+    case 7:  //mixer
+//      new_val|=b00111110;
+
+      psg_write_buffer(0,t);
+      psg_write_buffer(1,t);
+      psg_write_buffer(2,t);
+      break;
+    case 8:case 9:case 10:  //channel A,B,C volume
+//      new_val&=0xf;
+
+      // ST doesn't quantize, it changes the level straight away.
 //        t=psg_quantize_time(reg-8,t);
-        psg_write_buffer(reg-8,t);
+      psg_write_buffer(reg-8,t);
 //        psg_tone_start_time[reg-8]=t;
-        break;
-      case 11: //changed envelope period low
-      {
-        psg_write_buffer(0,t);
-        psg_write_buffer(1,t);
-        psg_write_buffer(2,t);
-        int new_envperiod=max( (((int)psg_reg[PSGR_ENVELOPE_PERIOD_HIGH]) <<8) + new_val,1);
-        psg_envelope_start_time=psg_adjust_envelope_start_time(t,new_envperiod);
-        break;
-      }
-      case 12: //changed envelope period high
-      {
-        psg_write_buffer(0,t);
-        psg_write_buffer(1,t);
-        psg_write_buffer(2,t);
-        int new_envperiod=max( (((int)new_val) <<8) + psg_reg[PSGR_ENVELOPE_PERIOD_LOW],1);
-        psg_envelope_start_time=psg_adjust_envelope_start_time(t,new_envperiod);
-        break;
-      }
-      case 13: //envelope shape
-      {
+      break;
+    case 11: //changing envelope period low
+    {
+      psg_write_buffer(0,t);
+      psg_write_buffer(1,t);
+      psg_write_buffer(2,t);
+      int new_envperiod=max( (((int)psg_reg[PSGR_ENVELOPE_PERIOD_HIGH]) <<8) + new_val,1);
+      psg_envelope_start_time=psg_adjust_envelope_start_time(t,new_envperiod);
+      break;
+    }
+    case 12: //changing envelope period high
+    {
+      psg_write_buffer(0,t);
+      psg_write_buffer(1,t);
+      psg_write_buffer(2,t);
+      int new_envperiod=max( (((int)new_val) <<8) + psg_reg[PSGR_ENVELOPE_PERIOD_LOW],1);
+      psg_envelope_start_time=psg_adjust_envelope_start_time(t,new_envperiod);
+      break;
+    }
+    case 13: //envelope shape
+    {
 /*
-        DWORD abc_t[3]={t,t,t};
-        for (int abc=0;abc<3;abc++){
-          if (psg_reg[8+abc] & 16) abc_t[abc]=psg_quantize_time(abc,t);
-        }
+      DWORD abc_t[3]={t,t,t};
+      for (int abc=0;abc<3;abc++){
+        if (psg_reg[8+abc] & 16) abc_t[abc]=psg_quantize_time(abc,t);
+      }
 */
 //        t=psg_quantize_envelope_time(t,0,&new_envelope_start_time);
-        psg_write_buffer(0,t);
-        psg_write_buffer(1,t);
-        psg_write_buffer(2,t);
-        psg_envelope_start_time=t;
+      psg_write_buffer(0,t);
+      psg_write_buffer(1,t);
+      psg_write_buffer(2,t);
+      psg_envelope_start_time=t;
 /*
-        for (int abc=0;abc<3;abc++){
-          if (psg_reg[8+abc] & 16) psg_tone_start_time[abc]=abc_t[abc];
-        }
-*/
-        break;
+      for (int abc=0;abc<3;abc++){
+        if (psg_reg[8+abc] & 16) psg_tone_start_time[abc]=abc_t[abc];
       }
+*/
+      break;
     }
   }
 }
+
+void psg_capture(bool start,Str file)
+{
+  if (psg_capture_file){
+    fclose(psg_capture_file);
+    psg_capture_file=NULL;
+  }
+  if (start){
+    psg_capture_file=fopen(file,"wb");
+    if (psg_capture_file){
+      WORD magic=0x2149;
+      DWORD data_start=sizeof(WORD)+sizeof(DWORD)+sizeof(WORD)+sizeof(BYTE)*14;
+      WORD version=1;
+
+      fwrite(&magic,1,sizeof(magic),psg_capture_file);
+      fwrite(&data_start,1,sizeof(data_start),psg_capture_file);
+      fwrite(&version,1,sizeof(version),psg_capture_file);
+      fwrite(psg_reg,14,sizeof(BYTE),psg_capture_file);
+
+      psg_capture_cycle_base=ABSOLUTE_CPU_TIME;
+    }
+  }
+}
+
+void psg_capture_check_boundary()
+{
+  if (int(ABSOLUTE_CPU_TIME-psg_capture_cycle_base)>=(int)n_cpu_cycles_per_second){
+    psg_capture_cycle_base+=n_cpu_cycles_per_second;
+
+//    log_write(Str("--- second boundary"));
+    DWORD cycle=0;
+    BYTE reg_byte=0xff;
+    BYTE new_val=0xff;
+    fwrite(&cycle,1,sizeof(cycle),psg_capture_file);
+    fwrite(&reg_byte,1,sizeof(reg_byte),psg_capture_file);
+    fwrite(&new_val,1,sizeof(new_val),psg_capture_file);
+  }
+}
+
 //---------------------------------------------------------------------------
 //---------------------------------------------------------------------------
 //---------------------------------------------------------------------------

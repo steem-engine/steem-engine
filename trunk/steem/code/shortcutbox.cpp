@@ -1,3 +1,10 @@
+/*---------------------------------------------------------------------------
+FILE: shortcutbox.cpp
+MODULE: Steem
+DESCRIPTION: Functions to implement Steem's flexible shortcuts system that
+maps all sorts of user input to all sorts of emulator functions.
+---------------------------------------------------------------------------*/
+
 #define CUT_PRESSKEY 0
 #define CUT_PRESSCHAR 39
 #define CUT_PLAYMACRO 44
@@ -6,7 +13,7 @@
 #define CUT_TOGGLEFULLSCREEN 17
 #define CUT_TAKESCREENSHOT 29
 
-#define NUM_SHORTCUTS (53+1+1 DEBUG_ONLY(+5))
+#define NUM_SHORTCUTS (54+1+1 DEBUG_ONLY(+5))
 
 const char *ShortcutNames[NUM_SHORTCUTS*2]=
   {
@@ -24,6 +31,8 @@ const char *ShortcutNames[NUM_SHORTCUTS*2]=
 
   "Start Emulation",(char*)1,
   "Stop Emulation",(char*)2,"Toggle Emulation Start/Stop",(char*)CUT_TOGGLESTARTSTOP,
+
+  "Save Over Last Memory Snapshot",(char*)53,"Load Last Memory Snapshot",(char*)54,
 
 #ifdef UNIX
   "Toggle Port 1 Joystick Active",(char*)50,"Toggle Port 0 Joystick Active",(char*)49,
@@ -45,7 +54,7 @@ const char *ShortcutNames[NUM_SHORTCUTS*2]=
 
   "Show Borders (Auto Border Mode Only)",(char*)34,
 
-  "Load Memory Snapshot",(char*)10,"Save Memory Snapshot",(char*)11,"Save Over Last Memory Snapshot",(char*)53,
+  "Load Memory Snapshot",(char*)10,"Save Memory Snapshot",(char*)11,
 
   "Hide Scrolling Message",(char*)14,
 
@@ -256,11 +265,11 @@ void DoShortcutDown(SHORTCUTINFO &Inf)
       PostRunMessage();
       break;
     case 4:
-      reset_st();
+      reset_st(RESET_COLD | RESET_STOP | RESET_CHANGESETTINGS | RESET_BACKUP);
       break;
     case 5:
       SetForegroundWindow(StemWin);
-      reset_st(0);
+      reset_st(RESET_COLD | RESET_NOSTOP | RESET_CHANGESETTINGS | RESET_BACKUP);
       if (runstate!=RUNSTATE_RUNNING) PostRunMessage();
       break;
     case 6:
@@ -304,10 +313,14 @@ void DoShortcutDown(SHORTCUTINFO &Inf)
       }
       break;
 
-    case 10:case 11:case 53:
+    case 10:case 11:case 53:case 54:
     {
       int i=190+Inf.Action; // 200=Load, 201=Save
       if (Inf.Action==53) i=205; // 205=Save Over Last
+      if (Inf.Action==54){
+        if (StateHist[0].Empty()) break;
+        i=210; // 210=Load StateHist[0]
+      }
 #ifdef WIN32
       PostMessage(StemWin,WM_COMMAND,i,0);
 #elif defined(UNIX)
@@ -329,43 +342,39 @@ void DoShortcutDown(SHORTCUTINFO &Inf)
       break;
     case 14:  // Stop current scroller
       if (timeGetTime()<osd_scroller_finish_time) osd_scroller_finish_time=0;
-
       break;
-    case 15:
-      if (FullScreen==0 && Disp.CanGoToFullScreen()){
-#ifdef WIN32
-        PostMessage(StemWin,WM_SYSCOMMAND,SC_MAXIMIZE,0);
-#elif defined(UNIX)
-#endif
-      }
-      break;
-    case 16:
-      if (FullScreen){
-        if (runstate==RUNSTATE_RUNNING) Disp.RunOnChangeToWindow=true;
-#ifdef WIN32
-        PostMessage(StemWin,WM_COMMAND,MAKEWPARAM(106,BN_CLICKED),(LPARAM)GetDlgItem(StemWin,106));
-#elif defined(UNIX)
-        if (runstate==RUNSTATE_RUNNING) PostRunMessage();
-#endif
-      }
-      break;
-    case 17:
-      if (FullScreen==0){
-        if (Disp.CanGoToFullScreen()){
+    case 15:case 16:case 17:
+    {
+      int i=Inf.Action;
+      if (i==17) i=(FullScreen ? 16 /*to windowed*/ :  15 /*to fullscreen*/);
+      if (i==15){
+        if (FullScreen==0 && Disp.CanGoToFullScreen()){
 #ifdef WIN32
           PostMessage(StemWin,WM_SYSCOMMAND,SC_MAXIMIZE,0);
 #elif defined(UNIX)
+          Disp.GoToFullscreenOnRun=true;
+          FullScreenBut.set_check(true);
+          if (runstate==RUNSTATE_RUNNING){
+            runstate=RUNSTATE_STOPPING;
+            RunWhenStop=true;
+          }
 #endif
         }
-      }else{
-        if (runstate==RUNSTATE_RUNNING) Disp.RunOnChangeToWindow=true;
+      }else if (FullScreen){
 #ifdef WIN32
+        if (runstate==RUNSTATE_RUNNING) Disp.RunOnChangeToWindow=true;
         PostMessage(StemWin,WM_COMMAND,MAKEWPARAM(106,BN_CLICKED),(LPARAM)GetDlgItem(StemWin,106));
 #elif defined(UNIX)
-        if (runstate==RUNSTATE_RUNNING) PostRunMessage();
+        Disp.GoToFullscreenOnRun=0;
+        FullScreenBut.set_check(0);
+        if (runstate==RUNSTATE_RUNNING){
+          runstate=RUNSTATE_STOPPING;
+          RunWhenStop=true;
+        }
 #endif
       }
       break;
+    }
     case 18:
       CutButtonDown[0]=true;
       break;
@@ -409,7 +418,7 @@ void DoShortcutDown(SHORTCUTINFO &Inf)
       }
       break;
     case 27:
-      reset_st(0,true);
+      reset_st(RESET_WARM | RESET_NOSTOP | RESET_CHANGESETTINGS | RESET_BACKUP);
       break;
     case 28:
       fast_forward_change(true,true);
@@ -1154,6 +1163,7 @@ LRESULT __stdcall TShortcutBox::WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lP
 
       HWND NewParent=(HWND)lPar;
       if (NewParent){
+        This->CheckFSPosition(NewParent);
         SetWindowPos(Win,NULL,This->FSLeft,This->FSTop,0,0,SWP_NOZORDER | SWP_NOSIZE);
       }else{
         SetWindowPos(Win,NULL,This->Left,This->Top,0,0,SWP_NOZORDER | SWP_NOSIZE);

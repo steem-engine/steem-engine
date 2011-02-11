@@ -1,21 +1,59 @@
+/*---------------------------------------------------------------------------
+FILE: diskman.cpp
+MODULE: Steem
+DESCRIPTION: This file contains the code for Steem's disk manager. Some of
+these functions are used in the emulation of Steem for vital processes such
+as changing disk images and determining what files are disks.
+---------------------------------------------------------------------------*/
+
 //---------------------------------------------------------------------------
-inline int ExtensionIsDisk(char *Ext)
+bool ExtensionIsPastiDisk(char *Ext)
+{
+#if USE_PASTI
+  if (Ext==NULL || hPasti==NULL) return false;
+
+  if (*Ext=='.') Ext++;
+
+  char *t=pasti_file_exts;
+  while (*t){
+    if (IsSameStr_I(Ext,t)) return true;
+    t+=strlen(t)+1;
+  }
+#endif
+  return false;
+}
+//---------------------------------------------------------------------------
+int ExtensionIsDisk(char *Ext,bool returnPastiDisksOnlyWhenPastiOn)
 {
   if (Ext==NULL) return 0;
 
   if (*Ext=='.') Ext++;
+
+  int ret=0;
   if (MatchesAnyString_I(Ext,"ST","STT","DIM","MSA",NULL)){
-    return DISK_UNCOMPRESSED;
+    ret=DISK_UNCOMPRESSED;
   }else if (MatchesAnyString_I(Ext,"STZ","ZIP",NULL)){
-    return DISK_COMPRESSED;
+    ret=DISK_COMPRESSED;
 
 #ifdef RAR_SUPPORT
   }else if (MatchesAnyString_I(Ext,"RAR",NULL)){
-    return DISK_COMPRESSED;
+    ret=DISK_COMPRESSED;
+#endif
+  }
+
+#if USE_PASTI
+  if (hPasti && pasti_active){
+    if (ExtensionIsPastiDisk(Ext)){
+      return DISK_PASTI;
+    }else if (ret==DISK_COMPRESSED){
+      return ret;
+    }else{
+      if (returnPastiDisksOnlyWhenPastiOn) return 0;
+    }
+  }
 #endif
 
-  }
-  return 0;
+  return ret;
 }
 //---------------------------------------------------------------------------
 EasyStr TDiskManager::CreateDiskName(char *Name,char *DiskInZip)
@@ -51,14 +89,11 @@ void TDiskManager::PerformInsertAction(int Action,EasyStr Name,EasyStr Path,Easy
     }
 #endif
 
-    reset_st(0);
+    reset_st(RESET_COLD | RESET_NOSTOP | RESET_CHANGESETTINGS | RESET_BACKUP);
     if (runstate!=RUNSTATE_RUNNING){
       PostRunMessage();
     }else{
       SetStemMouseMode(STEM_MOUSEMODE_WINDOW);
-      disable_mouse_until=timeGetTime()+2000;
-      keyboard_buffer_length=0;
-      keyboard_buffer[0]=0;
       osd_init_run(true);
     }
   }
@@ -67,6 +102,17 @@ void TDiskManager::PerformInsertAction(int Action,EasyStr Name,EasyStr Path,Easy
 void TDiskManager::SetNumFloppies(int NewNum)
 {
   num_connected_floppies=NewNum;
+
+#if USE_PASTI
+  if (hPasti){
+    struct pastiCONFIGINFO pci;
+    pci.flags=PASTI_CFDRIVES;
+    pci.ndrives=NewNum;
+    pci.drvFlags=0;
+    pasti->Config(&pci);
+  }
+#endif
+
 #ifdef WIN32
   if (Handle) if (GetDlgItem(Handle,99)) InvalidateRect(GetDlgItem(Handle,99),NULL,0);
 #elif defined(UNIX)
@@ -108,7 +154,7 @@ TDiskManager::TDiskManager()
 
   HideBroken=0;
 
-  DiskDiag=NULL;LinksDiag=NULL;ImportDiag=NULL;PropDiag=NULL;ContentDiag=NULL;
+  DiskDiag=NULL;LinksDiag=NULL;ImportDiag=NULL;PropDiag=NULL;ContentDiag=NULL;DatabaseDiag=NULL;
 
   BytesPerSectorIdx=2;SecsPerTrackIdx=1;TracksIdx=5;SidesIdx=1;
 
@@ -245,9 +291,13 @@ void TDiskManager::Show()
                 PBS_RIGHTCLICK,102,80,21,21,Handle,(HMENU)84,HInstance,NULL);
   ToolAddWindow(ToolTip,Win,T("Disk Manager options"));
 
+  Win=CreateWindow("Steem Flat PicButton",Str(RC_ICO_DISKMANTOOLS),WS_CHILD | WS_VISIBLE | WS_TABSTOP |
+                PBS_RIGHTCLICK,125,80,21,21,Handle,(HMENU)85,HInstance,NULL);
+  ToolAddWindow(ToolTip,Win,T("Disk image management tools"));
+
   Win=CreateWindow("Combobox","",WS_CHILDWINDOW | WS_VISIBLE | WS_TABSTOP | WS_VSCROLL |
                 CBS_HASSTRINGS | CBS_DROPDOWNLIST,
-                128,80,45,200,Handle,(HMENU)90,HInstance,NULL);
+                125+26,80,45,200,Handle,(HMENU)90,HInstance,NULL);
   char Root[4]={0,':','\\',0};
   for (int d=0;d<27;d++){
     Root[0]=char('A'+d);
@@ -257,7 +307,7 @@ void TDiskManager::Show()
   }
 
   CreateWindowEx(512,"Steem Path Display","",WS_CHILD | WS_VISIBLE,
-                175,80,300,20,Handle,(HMENU)97,HInstance,NULL);
+                125+26+50,80,300,20,Handle,(HMENU)97,HInstance,NULL);
 
 
   Win=CreateWindow("Steem Disk Manager Drive Icon","A",WS_CHILD | WS_VISIBLE,
@@ -356,7 +406,9 @@ void TDiskManager::LoadIcons()
   if (VisibleDiag()) SetClassLong(VisibleDiag(),GCL_HICON,long(hGUIIconSmall[RC_ICO_DRIVE]));
   if (GetDlgItem(Handle,10)){
     // Update controls
-    for (int id=80;id<85;id++) PostMessage(GetDlgItem(Handle,id),BM_RELOADICON,0,0);
+    for (int id=80;id<90;id++){
+      if (GetDlgItem(Handle,id)) PostMessage(GetDlgItem(Handle,id),BM_RELOADICON,0,0);
+    }
     PostMessage(GetDlgItem(Handle,10),BM_RELOADICON,0,0);
     PostMessage(GetDlgItem(GetDlgItem(Handle,98),100),BM_RELOADICON,0,0);
     PostMessage(GetDlgItem(GetDlgItem(Handle,99),100),BM_RELOADICON,0,0);
@@ -555,7 +607,7 @@ void TDiskManager::SetDir(EasyStr NewFol,bool AddToHistory,
             Files.Add(Inf);
           }else{
             int Type=ExtensionIsDisk(Extension);
-            if (Type==DISK_UNCOMPRESSED){
+            if (Type==DISK_UNCOMPRESSED || Type==DISK_PASTI){
               Inf=new DiskManFileInfo;
               Inf->Name=Name;
               Inf->Path=Path;
@@ -834,14 +886,13 @@ void TDiskManager::AddFileOrFolderContextMenu(HMENU Pop,DiskManFileInfo *Inf)
                         (UINT)((MultiDisk==0) ? 1012:int(IRRPop)),T("Insert, Reset and &Run"));
         InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_SEPARATOR,999,NULL);
 
-#ifndef NO_GETCONTENTS
         InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_STRING,1015,T("Get &Contents"));
         HMENU ContentsPop=CreatePopupMenu();
         AddFoldersToMenu(ContentsPop,7000,"",0);
         InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_STRING | MF_POPUP,int(ContentsPop),
                         T("Get Contents and Create Shortcuts In"));
-        InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_SEPARATOR,999,NULL);
-#endif
+        InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_SEPARATOR,0,NULL);
+
         if (Inf->LinkPath.NotEmpty()){
           InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_STRING,1090,T("&Go To Disk"));
           InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_STRING,1092,T("Open Disk's Folder in Explorer"));
@@ -1136,18 +1187,19 @@ LRESULT __stdcall TDiskManager::WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lP
             InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_STRING | int(num_connected_floppies==1 ? MF_CHECKED:0),2012,T("Disconnect Drive B"));
             InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_STRING | int(floppy_instant_sector_access==0 ? MF_CHECKED:0),2013,T("Accurate Disk Access Times (Slow)"));
             InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_STRING | int(FloppyArchiveIsReadWrite ? MF_CHECKED:0),2014,T("Read/Write Archives (Changes Lost On Eject)"));
-
             InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_SEPARATOR,1999,NULL);
+#if USE_PASTI
+            if (hPasti){
+              InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_STRING | int(pasti_active ? MF_CHECKED:0),2023,T("Use Pasti"));
+              InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_STRING,2024,T("Pasti Configuration"));
+//              InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_STRING | int(pasti_use_all_possible_disks ? MF_CHECKED:0),
+//                                    2024,T("Use Pasti For All Compatible Images"));
+              InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_SEPARATOR,1999,NULL);
+            }
+#endif
             InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_STRING | int(This->AutoInsert2 ? MF_CHECKED:0),2016,T("Automatically Insert &Second Disk"));
             InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_STRING | int(This->HideBroken ? MF_CHECKED:0),2002,T("Hide &Broken Shortcuts"));
             InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_STRING | int(This->EjectDisksWhenQuit ? MF_CHECKED:0),2011,T("E&ject Disks When Quit"));
-            InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_SEPARATOR,1999,NULL);
-            InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_STRING,2003,T("Open Current Folder In &Explorer")+"\10F4");
-            InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_STRING | int(This->ExplorerFolders ? MF_CHECKED:0),2004,T("&Folders Pane in Explorer"));
-            InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_STRING,2010,T("Find In Current Folder"));
-            InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_STRING,2030,T("Run MSA Converter")+"\10F6");
-            InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_SEPARATOR,1999,NULL);
-            InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_STRING,2001,T("Import &WinSTon Favourites"));
             InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_SEPARATOR,1999,NULL);
             InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_STRING,2007,T("Double Click On Disk Does &Nothing"));
             InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_STRING,2008,T("Double Click On Disk Inserts In &Drive A"));
@@ -1168,6 +1220,33 @@ LRESULT __stdcall TDiskManager::WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lP
             CheckMenuRadioItem(SpacingPop,2020,2022,2020+This->IconSpacing,MF_BYCOMMAND);
 
             InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_STRING | MF_POPUP,(UINT)SpacingPop,T("&Icon Spacing"));
+
+            RECT rc;
+            GetWindowRect(HWND(lPar),&rc);
+            TrackPopupMenu(Pop,TPM_LEFTALIGN | TPM_LEFTBUTTON | TPM_RIGHTBUTTON,
+                            rc.left,rc.bottom,0,Win,NULL);
+
+            DestroyMenu(Pop);
+
+            SendMessage(HWND(lPar),BM_SETCHECK,0,0);
+          }
+          break;
+        case 85:  // Options
+          if (This->Dragging>-1) break;
+
+          if (HIWORD(wPar)==BN_CLICKED){
+            SendMessage(HWND(lPar),BM_SETCHECK,1,0);
+
+            HMENU Pop=CreatePopupMenu();
+
+            InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_STRING,2025,T("Search Disk Image Database")+"\10F9");
+            InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_SEPARATOR,0,NULL);
+            InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_STRING,2003,T("Open Current Folder In &Explorer")+"\10F4");
+            InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_STRING | int(This->ExplorerFolders ? MF_CHECKED:0),2004,T("&Folders Pane in Explorer"));
+            InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_STRING,2010,T("Find In Current Folder"));
+            InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_STRING,2030,T("Run MSA Converter")+"\10F6");
+            InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_SEPARATOR,0,NULL);
+            InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_STRING,2001,T("Import &WinSTon Favourites"));
 
             RECT rc;
             GetWindowRect(HWND(lPar),&rc);
@@ -1224,10 +1303,11 @@ LRESULT __stdcall TDiskManager::WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lP
           }else{
             Alert(EasyStr(T("Could not create the disk image "))+STName,T("Error"),MB_ICONEXCLAMATION);
           }
+
+
           return 0;
         }
         case 1002:  // Custom disk image
-          EnableWindow(Win,0);
           This->ShowDiskDiag();
           break;
         case 1005:
@@ -1368,7 +1448,6 @@ LRESULT __stdcall TDiskManager::WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lP
           DiskManFileInfo *Inf=This->GetItemInf(This->MenuTarget);
           if (Inf){
             This->PropInf=*Inf;
-            EnableWindow(Win,0);
             This->ShowPropDiag();
           }
           break;
@@ -1411,7 +1490,6 @@ LRESULT __stdcall TDiskManager::WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lP
           This->DoubleClickAction=LOWORD(wPar)-2007;
           break;
         case 2001:  // Import
-          EnableWindow(Win,0);
           This->ShowImportDiag();
           break;
         case 2010:
@@ -1447,6 +1525,36 @@ LRESULT __stdcall TDiskManager::WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lP
             This->SetDiskViewMode(This->SmallIcons ? LVS_SMALLVIEW:LVS_ICON);
             This->RefreshDiskView();
           }
+          break;
+#if USE_PASTI
+        case 2023:case 2024:
+          if (hPasti==NULL) break;
+          if (LOWORD(wPar)==2024){
+            pasti->DlgConfig(HWND(FullScreen ? StemWin:This->Handle),0,NULL);
+          }
+          if (LOWORD(wPar)==2023){
+            bool cancel=false;
+            if (pc!=rom_addr){
+              int i=Alert(T("Changing this setting necessitates a cold reset.")+"\n"+T("Do you want to reset now?"),
+                              T("Reset?"),MB_ICONQUESTION | MB_YESNO);
+              if (i==IDYES){
+                reset_st(0); //cold reset
+              }else{
+                cancel=true;
+              }
+            }
+            if(!cancel){
+              pasti_active=!pasti_active;
+              This->EjectDisk(0);
+              This->EjectDisk(1);
+              This->RefreshDiskView();
+              CheckResetDisplay();
+            }
+          }
+          break;
+#endif
+        case 2025:
+          This->ShowDatabaseDiag();
           break;
       }
       if (LOWORD(wPar)>=4000 && LOWORD(wPar)<5000){
@@ -1520,6 +1628,7 @@ LRESULT __stdcall TDiskManager::WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lP
           int Action=(LOWORD(wPar)-8005) % 5;
           switch (Action){
             case 0:
+
               This->QuickFol[n]=This->DisksFol;
               break;
             case 1:
@@ -1592,7 +1701,6 @@ LRESULT __stdcall TDiskManager::WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lP
             }
           }
         }
-#ifndef NO_GETCONTENTS
       }else if ((LOWORD(wPar)>=7000 && LOWORD(wPar)<7020) || LOWORD(wPar)==1015){
         // Get contents [and create shortcuts in DestFol]
         Str DestFol;
@@ -1606,40 +1714,26 @@ LRESULT __stdcall TDiskManager::WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lP
 
         DiskManFileInfo *Inf=This->GetItemInf(This->MenuTarget);
 
-        char *StrList[20];
-        Str Contents[20],SelLink;
-
-        for (int i=0;i<20;i++){
-          Contents[i].SetLength(1024);
-          StrList[i]=Contents[i].Text;
-        }
-
-        GetContents_GetZipCRCsProc=GCGetCRC;
-        strcpy(GetContents_ListFile,RunDir+SLASH+"disk image list.txt");
-        int nLinks=GetContentsFromDiskImage(Inf->Path,StrList,20,GC_ONAMBIGUITY_GUESS);
-        if (nLinks>0){
+        This->GetContentsSL(Inf->Path);
+        if (This->contents_sl.NumStrings){
           if (DestFol.NotEmpty()){
-            int start_i=1;
-            if (nLinks==1) start_i=0;
-            for (int i=start_i;i<nLinks;i++){
-              SelLink=GetUniquePath(DestFol,Str(StrList[i])+".lnk");
+            // 0 = path, 1 = disk name, 2+ = contents
+            Str ShortName=This->GetContentsGetAppendName(This->contents_sl[1].String);
+            Str SelLink;
+            int start_i=2;
+            if (This->contents_sl.NumStrings==1) start_i=1;
+            for (int i=start_i;i<This->contents_sl.NumStrings;i++){
+              SelLink=GetUniquePath(DestFol,Str(This->contents_sl[i].String)+" ("+ShortName+").lnk");
               CreateLink(SelLink,Inf->Path);
             }
             if (SelLink.NotEmpty() && IsSameStr_I(DestFol,This->DisksFol)){
               This->RefreshDiskView("",0,SelLink);
             }
           }else{
-            This->contents_sl.Sort=eslNoSort;
-            This->contents_sl.Add(Inf->Path);
-            for (int i=0;i<nLinks;i++) This->contents_sl.Add(StrList[i]);
             This->ContentsLinksPath=This->DisksFol;
-            EnableWindow(Win,0);
             This->ShowContentDiag();
           }
-        }else{
-          Alert(T("Sorry this disk image was not recognised"),T("Unrecognised Disk Image"),MB_ICONINFORMATION);
         }
-#endif
       }else if (LOWORD(wPar)>=9000 && LOWORD(wPar)<10000){
         DiskManFileInfo *Inf=This->GetItemInf(This->MenuTarget);
         if (Inf){
@@ -1712,15 +1806,20 @@ LRESULT __stdcall TDiskManager::WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lP
             break;
           }
         }
-        InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_STRING,1005,EasyStr(T("Refresh"))+" \10ESC");
-        InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_SEPARATOR,999,NULL);
-        InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_STRING,2003,T("Open Current Folder In &Explorer")+"\10F4");
-        InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_STRING,2010,T("Find In Current Folder"));
-        InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_STRING,2030,T("Run MSA Converter")+"\10F6");
-        InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_SEPARATOR,999,NULL);
-        InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_STRING,1000,T("New &Folder"));
-        InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_STRING,1001,T("New Standard &Disk Image"));
-        InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_STRING,1002,T("New Custom Disk &Image"));
+        HMENU FolOptionsPop=Pop;
+        if (GetScreenHeight()<600){
+          FolOptionsPop=CreatePopupMenu();
+          InsertMenu(Pop,0xffffffff,MF_BYPOSITION | MF_POPUP | MF_STRING,(UINT)FolOptionsPop,T("More Options"));
+        }
+        InsertMenu(FolOptionsPop,0xffffffff,MF_BYPOSITION | MF_STRING,1005,Str(T("Refresh"))+" \10ESC");
+        InsertMenu(FolOptionsPop,0xffffffff,MF_BYPOSITION | MF_SEPARATOR,999,NULL);
+        InsertMenu(FolOptionsPop,0xffffffff,MF_BYPOSITION | MF_STRING,2003,T("Open Current Folder In &Explorer")+"\10F4");
+        InsertMenu(FolOptionsPop,0xffffffff,MF_BYPOSITION | MF_STRING,2010,T("Find In Current Folder"));
+        InsertMenu(FolOptionsPop,0xffffffff,MF_BYPOSITION | MF_STRING,2030,T("Run MSA Converter")+"\10F6");
+        InsertMenu(FolOptionsPop,0xffffffff,MF_BYPOSITION | MF_SEPARATOR,999,NULL);
+        InsertMenu(FolOptionsPop,0xffffffff,MF_BYPOSITION | MF_STRING,1000,T("New &Folder"));
+        InsertMenu(FolOptionsPop,0xffffffff,MF_BYPOSITION | MF_STRING,1001,T("New Standard &Disk Image"));
+        InsertMenu(FolOptionsPop,0xffffffff,MF_BYPOSITION | MF_STRING,1002,T("New Custom Disk &Image"));
 
         POINT pt;
         GetCursorPos(&pt);
@@ -1862,6 +1961,7 @@ LRESULT __stdcall TDiskManager::WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lP
                   FloppyDrive[disk].SetDisk(This->DisksFol+"\\"+OldName+Extension,DiskInZip[disk]);
                   FloppyDrive[disk].DiskName=OldDiskName[disk];
                 }
+
               }
             }
             return 0;
@@ -1915,6 +2015,9 @@ LRESULT __stdcall TDiskManager::WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lP
                 break;
               case VK_F6:
                 PostMessage(Win,WM_COMMAND,2030,0);
+                break;
+              case VK_F9:
+                PostMessage(Win,WM_COMMAND,2025,0);
                 break;
             }
             break;
@@ -2077,6 +2180,7 @@ LRESULT __stdcall TDiskManager::WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lP
             if (LastSlash==NULL){
               LastSlash=strrchr(Fol,':');
             }
+
           }
           if (LastSlash!=NULL){
             *LastSlash=0;
@@ -2107,6 +2211,7 @@ LRESULT __stdcall TDiskManager::WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lP
           fos.hwnd=HWND(FullScreen ? StemWin:This->Handle);
           fos.wFunc=FO_DELETE;
           fos.pFrom=Fol;
+
           fos.pTo="\0\0";
           fos.fFlags=FILEOP_FLAGS(int((GetKeyState(VK_SHIFT)<0) ? 0:FOF_ALLOWUNDO) | int(FullScreen ? FOF_SILENT:0));
           fos.hNameMappings=NULL;
@@ -2142,7 +2247,7 @@ LRESULT __stdcall TDiskManager::WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lP
       if (GetDlgItem(Win,10)){
         SetWindowPos(GetDlgItem(Win,10),0,LOWORD(lPar)-70,10,0,0,SWP_NOSIZE | SWP_NOZORDER);
 
-        SetWindowPos(GetDlgItem(Win,97),0,0,0,LOWORD(lPar)-186,21,SWP_NOMOVE | SWP_NOZORDER);
+        SetWindowPos(GetDlgItem(Win,97),0,0,0,LOWORD(lPar)-(125+26+50+10),21,SWP_NOMOVE | SWP_NOZORDER);
 
         SetWindowPos(GetDlgItem(Win,102),0,0,0,LOWORD(lPar)-20,HIWORD(lPar)-114,SWP_NOMOVE | SWP_NOZORDER);
         if (This->SmallIcons==0) SendMessage(GetDlgItem(Win,102),LVM_ARRANGE,LVA_DEFAULT,0);
@@ -2181,6 +2286,7 @@ LRESULT __stdcall TDiskManager::WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lP
       HWND NewParent=(HWND)lPar;
       if (NewParent){
 //        SetWindowLong(Win,GWL_STYLE,GetWindowLong(Win,GWL_STYLE) & ~WS_MINIMIZEBOX);
+        This->CheckFSPosition(NewParent);
         SetWindowPos(Win,NULL,This->FSLeft,This->FSTop,This->FSWidth,This->FSHeight,SWP_NOZORDER);
       }else{
 //        SetWindowLong(Win,GWL_STYLE,GetWindowLong(Win,GWL_STYLE) | WS_MINIMIZEBOX);
@@ -2362,12 +2468,7 @@ LRESULT __stdcall TDiskManager::DiskView_WndProc(HWND Win,UINT Mess,WPARAM wPar,
           Name=EasyStr(GetFileNameFromPath(Name));
           char *dot=strrchr(Name,'.');
           if (dot){
-            if (MatchesAnyString_I(dot,".ST",".STT",".MSA",".DIM",".ZIP",".STZ",NULL)){
-              *dot=0;
-            }
-#ifdef RAR_SUPPORT
-            if (IsSameStr_I(dot,".RAR")) *dot=0;
-#endif
+            if (ExtensionIsDisk(dot) || ExtensionIsPastiDisk(dot)) *dot=0;
           }
 
           LinkFile=This->DisksFol+"\\"+Name+".lnk";
@@ -2408,6 +2509,18 @@ LRESULT __stdcall TDiskManager::DiskView_WndProc(HWND Win,UINT Mess,WPARAM wPar,
     return 0;
   }else if (Mess==WM_KEYDOWN && This->Dragging>-1){
     return 0;
+  }else if (Mess==WM_VSCROLL && This->Dragging>-1){
+    ImageList_DragLeave(This->Handle);
+
+    LRESULT Ret=CallWindowProc(This->Old_ListView_WndProc,Win,Mess,wPar,lPar);
+    UpdateWindow(Win);
+
+    POINT mpt;
+    GetCursorPos(&mpt);
+    ScreenToClient(This->Handle,&mpt);
+    ImageList_DragEnter(This->Handle,mpt.x-This->DragWidth,mpt.y-This->DragHeight);
+    This->MoveDrag();
+    return Ret;
   }
   return CallWindowProc(This->Old_ListView_WndProc,Win,Mess,wPar,lPar);
 }
@@ -2442,7 +2555,7 @@ bool TDiskManager::CreateDiskImage(char *STName,int Sectors,int SecsPerTrack,int
     char zeros[512];
     ZeroMemory(zeros,sizeof(zeros));
     for (int n=0;n<Sectors;n++) fwrite(zeros,1,512,f);
-
+//LITTLE-ENDIAN ONLY             ******************************************************
     int buf;
     fseek(f,0,SEEK_SET);
     fputc(0xeb,f);fputc(0x30,f);
@@ -2525,8 +2638,10 @@ bool TDiskManager::AreNewDisksInHistory(int d)
   EasyStr CurrentDiskName=CreateDiskName(FloppyDrive[d].DiskName,FloppyDrive[d].DiskInZip);
   for (int n=0;n<10;n++){
     if (InsertHist[d][n].Path.NotEmpty()){
+
       EasyStr MenuItemText=CreateDiskName(InsertHist[d][n].Name,InsertHist[d][n].DiskInZip);
       if (NotSameStr_I(CurrentDiskName,MenuItemText)){
+
         return true;
       }
     }
@@ -2586,6 +2701,7 @@ bool TDiskManager::InsertDisk(int Drive,EasyStr Name,EasyStr Path,bool DontChang
 
     int Err=FloppyDrive[Drive].SetDisk(Path,DiskInZip);
     if (Err){
+      if (FloppyDrive[Drive].Empty()) EjectDisk(Drive); // Update display
       if (SuppressErr==0){
         switch (Err){
           case FIMAGE_WRONGFORMAT:
@@ -2791,6 +2907,7 @@ void TDiskManager::ExtractArchiveToSTHardDrive(Str Path)
     }
 
     if (Dest.RightChar()!='/' && Dest.RightChar()!='\\'){
+
       if (zippy.extract_file(Path,sl[s].Data[0],Dest,0,sl[s].Data[1])==ZIPPY_FAIL){
         Alert(T("Could not extract files, this archive may be corrupt!"),T("Archive Error"),MB_ICONEXCLAMATION);
         return;
@@ -2818,7 +2935,7 @@ void TDiskManager::EjectDisk(int Drive)
   if (Handle){
     SendMessage(GetDlgItem(Handle,100+Drive),LVM_DELETEITEM,0,0);
     EnableWindow(GetDlgItem(GetDlgItem(Handle,98+Drive),100),AreNewDisksInHistory(Drive));
-  }
+  }     
 #elif defined(UNIX)
   UpdateDiskNames(Drive);
 #endif
@@ -2853,6 +2970,9 @@ void TDiskManager::ExtractDisks(Str Path)
   }
 }
 //---------------------------------------------------------------------------
+
+
+//---------------------------------------------------------------------------
 void TDiskManager::GCGetCRC(char *Path,DWORD *lpCRC,int nCRCs)
 {
   EasyStringList sl;
@@ -2860,6 +2980,223 @@ void TDiskManager::GCGetCRC(char *Path,DWORD *lpCRC,int nCRCs)
   for (int i=0;i<min(sl.NumStrings,nCRCs);i++){
     *(lpCRC++)=DWORD(sl[i].Data[2]);
   }
+}
+//---------------------------------------------------------------------------
+BYTE* TDiskManager::GCConvertToST(char *Path,int Num,int *pLen)
+{
+  char file[MAX_PATH];
+  char real_name[MAX_PATH];
+  bool del=0;
+  *pLen=0;
+  if (FileIsDisk(Path)==DISK_COMPRESSED){
+    EasyStringList sl;
+    zippy.list_contents(Path,&sl,true);
+    if (Num>=sl.NumStrings){
+      *pLen=-1;
+      return NULL;
+    }
+
+    GetTempFileName(WriteDir,"TMP",0,file);
+    zippy.extract_file(Path,sl[Num].Data[0],file,true,0);
+    strcpy(real_name,sl[Num].String);
+    del=true;
+  }else{
+    if (Num>0){
+      *pLen=-1;
+      return NULL;
+    }
+
+    strcpy(file,Path);
+    strcpy(real_name,Path);
+  }
+  char *ext=strrchr(real_name,'.');
+  if (ext==NULL){
+    if (del) DeleteFile(file);
+    return NULL;
+  }
+
+  BYTE *mem=NULL;
+  int len;
+  if (IsSameStr_I(ext,".MSA")){
+    FILE *nf=fopen(file,"rb");
+    if (nf==NULL){
+      if (del) DeleteFile(file);
+      return NULL;
+    }
+
+    WORD ID,MSA_SecsPerTrack,MSA_Sides,StartTrack,MSA_EndTrack;
+    bool Err=0;
+
+    // Read header
+    fread(&ID,2,1,nf);               SWAPBYTES(ID);
+    fread(&MSA_SecsPerTrack,2,1,nf); SWAPBYTES(MSA_SecsPerTrack);
+    fread(&MSA_Sides,2,1,nf);        SWAPBYTES(MSA_Sides);
+    fread(&StartTrack,2,1,nf);       SWAPBYTES(StartTrack);
+    fread(&MSA_EndTrack,2,1,nf);     SWAPBYTES(MSA_EndTrack);
+
+    if (MSA_SecsPerTrack<1 || MSA_SecsPerTrack>FLOPPY_MAX_SECTOR_NUM ||
+        MSA_Sides>1 || StartTrack!=0 ||
+        MSA_EndTrack<1 || MSA_EndTrack>FLOPPY_MAX_TRACK_NUM){
+      Err=true;
+    }
+
+    if (Err==0){
+      *pLen=(MSA_SecsPerTrack*512)*(MSA_EndTrack+1)*(MSA_Sides+1);
+      mem=(BYTE*)malloc(*pLen+16);
+
+      // Read data
+      WORD Len,NumRepeats;
+      BYTE *TrackData=new BYTE[(MSA_SecsPerTrack*512)+16];
+      BYTE *pDat,*pEndDat,dat;
+      BYTE *pSTBuf=mem;
+      for (int n=0;n<=MSA_EndTrack;n++){
+        for (int s=0;s<=MSA_Sides;s++){
+          Len=0;
+          fread(&Len,1,2,nf); SWAPBYTES(Len);
+          if (Len>MSA_SecsPerTrack*512 || Len==0){
+            Err=true;break;
+          }
+          if (WORD(fread(TrackData,1,Len,nf))<Len){
+            Err=true;break;
+          }
+          if (Len==(MSA_SecsPerTrack*512)){
+            memcpy(pSTBuf,TrackData,Len);
+            pSTBuf+=Len;
+          }else{
+            // Convert compressed MSA format track in TrackData to ST format in STBuf
+            BYTE *pSTBufEnd=pSTBuf+(MSA_SecsPerTrack*512);
+            pDat=TrackData;
+            pEndDat=TrackData+Len;
+            while (pDat<pEndDat && pSTBuf<pSTBufEnd){
+              dat=*(pDat++);
+              if (dat==0xE5){
+                dat=*(pDat++);
+                NumRepeats=*LPWORD(pDat);pDat+=2;
+                SWAPBYTES(NumRepeats);
+                for (int s=0;s<NumRepeats && pSTBuf<pSTBufEnd;s++) *(pSTBuf++)=dat;
+              }else{
+                *(pSTBuf++)=dat;
+              }
+            }
+          }
+        }
+        if (Err) break;
+      }
+      delete[] TrackData;
+    }
+    fclose(nf);
+    if (Err){
+      free(mem);
+      mem=NULL;
+      *pLen=0;
+    }
+  }else if (IsSameStr_I(ext,".DIM")){
+    FILE *f=fopen(file,"rb");
+    if (f){
+      len=GetFileLength(f)-32;
+      mem=(BYTE*)malloc(len);
+      fseek(f,32,SEEK_SET);
+      fread(mem,1,len,f);
+      fclose(f);
+      *pLen=len;
+    }
+  }
+  if (del) DeleteFile(file);
+  return mem;
+}
+//---------------------------------------------------------------------------
+void TDiskManager::InitGetContents()
+{
+  GetContents_GetZipCRCsProc=GCGetCRC;
+  GetContents_ConvertToSTProc=GCConvertToST;
+  strcpy(GetContents_ListFile,RunDir+SLASH+"disk image list.txt");
+}
+//---------------------------------------------------------------------------
+bool TDiskManager::GetContentsCheckExist()
+{
+  if (Exists(GetContents_ListFile)) return true;
+
+  int i=Alert(T("Steem cannot find the ST disk image database, would you like to open the disk image database website now?"),
+                  T("Cannot Find Database"),MB_ICONQUESTION | MB_YESNO);
+  if (i==IDYES){
+    WIN_ONLY( ShellExecute(NULL,NULL,DIDATABASE_WEB,"","",SW_SHOWNORMAL); )
+    UNIX_ONLY( shell_execute(Comlines[COMLINE_HTTP],Str("[URL]\n")+DIDATABASE_WEB); )
+  }
+  return 0;
+}
+//---------------------------------------------------------------------------
+void TDiskManager::GetContentsSL(Str Path)
+{
+  contents_sl.DeleteAll();
+
+  if (GetContentsCheckExist()==0) return;
+
+  char buf[1024];
+
+  int nLinks=GetContentsFromDiskImage(Path,buf,1024,GC_ONAMBIGUITY_GUESS);
+  if (nLinks>0){
+    contents_sl.Sort=eslNoSort;
+    contents_sl.Add(Path);
+
+    char *p=buf;
+
+    for (int i=0;i<nLinks;i++){
+      if (p[0]==0) break;
+      contents_sl.Add(p);
+      p+=strlen(p)+1;
+    }
+  }else{
+    Alert(T("Sorry this disk image was not recognised"),T("Unrecognised Disk Image"),MB_ICONINFORMATION);
+  }
+}
+//---------------------------------------------------------------------------
+Str TDiskManager::GetContentsGetAppendName(Str TOSECName)
+{
+  Str FirstName=TOSECName;
+  char *spc=strchr(FirstName,' ');
+  if (spc) *spc=0;
+  Str TOSEC=TOSECName;
+  Str Letter;
+  spc=strstr(TOSEC," of ");
+  if (spc){
+    while (strstr(spc+1," of ")) spc=strstr(spc+1," of "); // find last " of "
+    *(spc--)=0;
+    for (;spc>TOSEC.Text;spc--){
+      if (spc[0]<'0' || spc[0]>'9'){
+        *(spc++)=0;
+        break;
+      }
+    }
+    Letter=char('a'+atoi(spc)-1);
+  }else{
+    for (int i=0;i<10;i++){
+      if (strstr(TOSEC,Str("Part ")+char('A'+i))==TOSEC.Right()-5) Letter=char('a'+i);
+    }
+  }
+  Str Number;
+  for (spc=TOSEC.Text+TOSEC.Length()-1;spc>TOSEC.Text;spc--){
+    if (spc[0]>='0' && spc[0]<='9'){
+      *(spc+1)=0;
+      for (;spc>TOSEC.Text;spc--){
+        if (spc[0]<'0' || spc[0]>'9'){
+          Number=atoi(spc);
+          break;
+        }
+      }
+      break;
+    }
+  }
+
+  if (FirstName=="Automation") FirstName="Auto";
+  if (strstr(TOSEC,"Pompey Pirates")==TOSEC.Text) FirstName="PP";
+  if (strstr(TOSEC,"Sewer Doc")==TOSEC.Text) FirstName="Sewer Doc";
+  if (strstr(TOSEC,"Flame of Finland")==TOSEC.Text) FirstName="FOF";
+  if (strstr(TOSEC,"Persistance of Vision")==TOSEC.Text) FirstName="POV";
+  if (strstr(TOSEC,"ST Format")==TOSEC.Text) FirstName="STF";
+  if (strstr(TOSEC,"Bad Brew Crew")==TOSEC.Text) FirstName="BBC";
+  Str ShortName=FirstName;
+  if (Number.NotEmpty()) ShortName+=Str(" ")+Number+Letter;
+  return ShortName;
 }
 //---------------------------------------------------------------------------
 

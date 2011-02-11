@@ -1,3 +1,10 @@
+/*---------------------------------------------------------------------------
+FILE: osd.cpp
+MODULE: Steem
+DESCRIPTION: Functions to create and draw Steem's on screen display that
+appears when the emulator begins to run to give useful information.
+---------------------------------------------------------------------------*/
+
 void ASMCALL osd_draw_char_dont(long*,BYTE*,long,long,int,long,long) {}
 
 void ASMCALL osd_draw_char_clipped_dont(long*,BYTE*,long,long,int,long,long,RECT*) {}
@@ -70,6 +77,36 @@ void osd_init_draw_static()
   osd_scroller_finish_time=0;
 }
 //---------------------------------------------------------------------------
+EasyStr get_osd_scroller_text(int n) {
+  EasyStr ret = osd_scroller_array[n].String;
+  char *p=strchr(ret.Text,'§'),c;
+  int ic;
+  while (p){
+    ic=(int)(p-ret.Text);
+    c=ret[ic+1];
+    switch (c){
+      case 'V':case 'v':
+        ret=ret.Lefts(ic)+"Steem Engine v"+(char*)stem_version_text+(ret.Text+ic+2);
+        break;
+      case 'B':case 'b':
+        ret=ret.Lefts(ic)+(char*)stem_version_date_text+(ret.Text+ic+2);
+        break;
+      case 'D':case 'd':
+        if (FloppyDrive[0].Empty()){
+          ret=ret.Lefts(ic)+"NO DISK"+(ret.Text+ic+2);
+        }else{
+          ret=ret.Lefts(ic)+FloppyDrive[0].GetDisk()+(ret.Text+ic+2);
+        }
+        break;
+      default:
+        ret=ret.Lefts(ic)+(ret.Text+ic+2);
+        break;
+    }
+    p=strchr(ret.Text+ic+1,'§');
+  }
+  return ret;
+}
+
 void osd_pick_scroller()
 {
   if (osd_show_scrollers==0) return;
@@ -79,33 +116,7 @@ void osd_pick_scroller()
   if ((rand() % CHANCE_OF_SCROLLER)!=0) return;
 
   int n=(rand() % osd_scroller_array.NumStrings);
-  osd_scroller=osd_scroller_array[n].String;
-
-  char *p=strchr(osd_scroller.Text,'§'),c;
-  int ic;
-  while (p){
-    ic=(int)(p-osd_scroller.Text);
-    c=osd_scroller[ic+1];
-    switch (c){
-      case 'V':case 'v':
-        osd_scroller=osd_scroller.Lefts(ic)+"Steem Engine v"+(char*)stem_version_text+(osd_scroller.Text+ic+2);
-        break;
-      case 'B':case 'b':
-        osd_scroller=osd_scroller.Lefts(ic)+(char*)stem_version_date_text+(osd_scroller.Text+ic+2);
-        break;
-      case 'D':case 'd':
-        if (FloppyDrive[0].Empty()){
-          osd_scroller=osd_scroller.Lefts(ic)+"NO DISK"+(osd_scroller.Text+ic+2);
-        }else{
-          osd_scroller=osd_scroller.Lefts(ic)+FloppyDrive[0].GetDisk()+(osd_scroller.Text+ic+2);
-        }
-        break;
-      default:
-        osd_scroller=osd_scroller.Lefts(ic)+(osd_scroller.Text+ic+2);
-        break;
-    }
-    p=strchr(osd_scroller.Text+ic+1,'§');
-  }
+  osd_scroller = get_osd_scroller_text(n);
   strupr(osd_scroller.Text);
 
   osd_shown_scroller=true;
@@ -206,6 +217,7 @@ void osd_draw()
         osd_plasma_pal=new DWORD[PLASMA_MAX*2];
         osd_plasma=new BYTE[PLASMA_W*PLASMA_H];
         BYTE *p=osd_plasma;
+
         for (int y=0;y<PLASMA_H;y++){
           for (int x=0;x<PLASMA_W;x++){
             *(p++) = BYTE(PLASMA_MAX/2 + double(PLASMA_MAX/2-1)*sin(hypot(x+PLASMA_W/8,(PLASMA_H/2-y)*4)/16));
@@ -381,9 +393,9 @@ void osd_draw_plasma(int x,int start_y,int frame)
 
   double tr=double(timer)/1024,tg=double(timer)/4096,tb=double(timer)/2048;
   for (int i=0;i<PLASMA_MAX*2;i++){
-    osd_plasma_pal[i]=colour_convert(BYTE(172 + 63.0 * cos( i * M_PI / 32 + tr )),
-                                     BYTE(172 + 63.0 * sin( i * M_PI / 32 + tg )),
-                                     BYTE(172 - 63.0 * cos( i * M_PI / 32 + tb )) );
+    osd_plasma_pal[i]=colour_convert(BYTE(172+63.0*cos(i*M_PI/32+tr)),
+                                     BYTE(172+63.0*sin(i*M_PI/32+tg)),
+                                     BYTE(172-63.0*cos(i*M_PI/32+tb)) );
   }
 
   int idx1_list[PLASMA_H],idx2_list[PLASMA_H];
@@ -477,17 +489,28 @@ void osd_get_reset_info(EasyStringList *sl)
   }
   sl->Add(t);
 
-  sl->Add(T("ST CPU speed")+": "+(n_cpu_cycles_per_second/1000000)+" "+T("Megahertz"));
+  sl->Add(T("ST CPU speed")+": "+(n_millions_cycles_per_sec)+" "+T("Megahertz"));
 
   t=T("Active drives")+": A";
   if (num_connected_floppies==2) t+=", B";
   for (int n=2;n<26;n++) if (mount_flag[n]) t+=Str(", ")+char('A'+n);
   sl->Add(t);
 
-  if (floppy_instant_sector_access==0){
-    t=T("Drive speed")+": "+T("Slow");
-    sl->Add(t);
+#if USE_PASTI
+  t="";
+  if (pasti_active){
+    t=T("Pasti disk emulation enabled");
+  }else
+#endif
+  {
+    if (floppy_instant_sector_access==0){
+      t=T("Drive speed")+": "+T("Slow");
+    }else{
+      t=T("Drive speed")+": "+T("Fast");
+    }
   }
+  if (t[0]) sl->Add(t);
+
 
   t=T("Active ports")+": ";
   if (MIDIPort.IsOpen()) t+="MIDI ";
@@ -549,6 +572,7 @@ void osd_draw_reset_info(int win_x,int win_y,int win_w,int win_h)
   RECT fr={x-5,y-3,x+hi_tw+5,y+info_h+1};
   FrameRect(osd_ri_dc,&fr,(HBRUSH)GetStockObject(BLACK_BRUSH));
   fr.left++;fr.top++; fr.right--;fr.bottom--;
+
   FillRect(osd_ri_dc,&fr,(HBRUSH)GetStockObject(WHITE_BRUSH));
 #elif defined(UNIX)
   XSetFont(XD,DispGC,hxc::font->fid);

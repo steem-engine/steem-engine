@@ -802,15 +802,26 @@ int TJoystickConfig::button_notify_proc(hxc_button*b,int mess,int*ip)
     UINT r=JoyInfo[This->PCJoyEdit].Range;
     UINT min_l=r/8;
     double conv=double(r) / w;
+    int val=int((b->x+mv)*conv);
     switch (b->id % 10){
       case 2:
-        JoyInfo[This->PCJoyEdit].AxisMin[a]=(UINT)(min(max((b->x+mv)*conv,0),
-                                  JoyInfo[This->PCJoyEdit].AxisMax[a]-min_l));
+      {
+        int max_val=JoyInfo[This->PCJoyEdit].AxisMax[a]-min_l;
+        int min_val=0;
+        if (val>max_val) val=max_val;
+        if (val<min_val) val=min_val;
+        JoyInfo[This->PCJoyEdit].AxisMin[a]=val;
         break;
+      }
       case 3:
-        JoyInfo[This->PCJoyEdit].AxisMax[a]=(UINT)(min(max((b->x+mv)*conv,
-                                  JoyInfo[This->PCJoyEdit].AxisMin[a]+min_l),r));
+      {
+        int max_val=JoyInfo[This->PCJoyEdit].AxisMin[a]+min_l;
+        int min_val=r;
+        if (val>max_val) val=max_val;
+        if (val<min_val) val=min_val;
+        JoyInfo[This->PCJoyEdit].AxisMax[a]=val;
         break;
+      }
       case 4:
       case 5:
       {

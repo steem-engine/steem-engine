@@ -1,14 +1,21 @@
+/*---------------------------------------------------------------------------
+FILE: ikbd.cpp
+MODULE: emu
+DESCRIPTION: The code to emulate the ST's Intellegent Keyboard Controller
+(Motorola 6301) that encompasses mouse, keyboard and joystick input.
+Note that this is functional rather than hardware-level emulation.
+Reprogramming is not implemented.
+---------------------------------------------------------------------------*/
+
 #define LOGSECTION LOGSECTION_IKBD
 //---------------------------------------------------------------------------
 void ikbd_run_start(bool Cold)
 {
   if (Cold){
-    disable_mouse_until=timeGetTime()+2000;
     keyboard_buffer_length=0;
     keyboard_buffer[0]=0;
 //    ZeroMemory(ST_Key_Down,sizeof(ST_Key_Down));
   }else{
-    disable_mouse_until=0;
     UpdateSTKeys();
   }
   mouse_move_since_last_interrupt_x=0;
@@ -67,87 +74,89 @@ void IKBD_VBL()
   if (macro_play_has_joys){
     macro_play_joy();
   }else{
-    joy_read_buttons();
-    for (int Port=0;Port<8;Port++) stick[Port]=joy_get_pos(Port);
+    if (disable_input_vbl_count==0){
+      joy_read_buttons();
+      for (int Port=0;Port<8;Port++) stick[Port]=joy_get_pos(Port);
+    }else{
+      for (int Port=0;Port<8;Port++) stick[Port]=0;
+    }
     if (IsJoyActive(N_JOY_PARALLEL_0)) stick[N_JOY_PARALLEL_0]|=BIT_4;
     if (IsJoyActive(N_JOY_PARALLEL_1)) stick[N_JOY_PARALLEL_1]|=BIT_4;
   }
 
-  if (disable_mouse_until==0 || timer>disable_mouse_until){
-    switch (ikbd.joy_mode){
-      case IKBD_JOY_MODE_DURATION:
-        keyboard_buffer_write( BYTE(int((stick[0] & MSB_B) ? BIT_1:0) | int((stick[1] & MSB_B) ? BIT_0:0)) );
-        keyboard_buffer_write( BYTE(((stick[0] & 0xf) << 4) | (stick[1] & 0xf)) );
-        break;
-      case IKBD_JOY_MODE_AUTO_NOTIFY:
-      {
-        int j=int(ikbd.port_0_joy ? 0:1);
-        for (;j<2;j++){
-          BYTE os=old_stick[j],s=stick[j];
-          // If mouse active then joystick button never down
-          if (ikbd.port_0_joy==0) os&=0x0f, s&=0x0f;
-          if (os!=s) agenda_add(ikbd_send_joystick_message,ikbd_joy_poll_line,j);
-        }
-        break;
+  switch (ikbd.joy_mode){
+    case IKBD_JOY_MODE_DURATION:
+      keyboard_buffer_write( BYTE(int((stick[0] & MSB_B) ? BIT_1:0) | int((stick[1] & MSB_B) ? BIT_0:0)) );
+      keyboard_buffer_write( BYTE(((stick[0] & 0xf) << 4) | (stick[1] & 0xf)) );
+      break;
+    case IKBD_JOY_MODE_AUTO_NOTIFY:
+    {
+      int j=int(ikbd.port_0_joy ? 0:1);
+      for (;j<2;j++){
+        BYTE os=old_stick[j],s=stick[j];
+        // If mouse active then joystick button never down
+        if (ikbd.port_0_joy==0) os&=0x0f, s&=0x0f;
+        if (os!=s) agenda_add(ikbd_send_joystick_message,ikbd_joy_poll_line,j);
       }
-      case IKBD_JOY_MODE_FIRE_BUTTON_DURATION:
-        if (stick[1] & MSB_B){
-          keyboard_buffer_write_string(0xff,0xff,0xff,0xff,0xff,0xff,-1);
+      break;
+    }
+    case IKBD_JOY_MODE_FIRE_BUTTON_DURATION:
+      if (stick[1] & MSB_B){
+        keyboard_buffer_write_string(0xff,0xff,0xff,0xff,0xff,0xff,-1);
+      }else{
+        keyboard_buffer_write_string(0,0,0,0,0,0,-1);
+      }
+      break;
+    case IKBD_JOY_MODE_CURSOR_KEYS:
+    {
+      if (stick[0] & (~old_stick[0]) & 0xc){ //new press left/right
+        ikbd.cursor_key_joy_ticks[0]=timeGetTime(); //reset timer left/right
+        ikbd.cursor_key_joy_ticks[2]=timeGetTime(); //last report
+        if (stick[0] & 4){
+          keyboard_buffer_write(0x4b);
+          keyboard_buffer_write(0x4b | MSB_B);
         }else{
-          keyboard_buffer_write_string(0,0,0,0,0,0,-1);
+          keyboard_buffer_write(0x4d);
+          keyboard_buffer_write(0x4d | MSB_B);
         }
-        break;
-      case IKBD_JOY_MODE_CURSOR_KEYS:
-      {
-        if (stick[0] & (~old_stick[0]) & 0xc){ //new press left/right
-          ikbd.cursor_key_joy_ticks[0]=timeGetTime(); //reset timer left/right
-          ikbd.cursor_key_joy_ticks[2]=timeGetTime(); //last report
-          if (stick[0] & 4){
-            keyboard_buffer_write(0x4b);
-            keyboard_buffer_write(0x4b | MSB_B);
-          }else{
-            keyboard_buffer_write(0x4d);
-            keyboard_buffer_write(0x4d | MSB_B);
-          }
-        }else if (stick[0] & (~old_stick[0]) & 0x3){
-          ikbd.cursor_key_joy_ticks[1]=timeGetTime(); //reset timer up/down
-          ikbd.cursor_key_joy_ticks[3]=timeGetTime(); //last report
-          if (stick[0] & 1){
-            keyboard_buffer_write(0x48);
-            keyboard_buffer_write(0x48 | MSB_B);
-          }else{
-            keyboard_buffer_write(0x50);
-            keyboard_buffer_write(0x50 | MSB_B);
-          }
-        }else if (stick[0]){
-          for (int xy=0;xy<2;xy++){
-            BYTE s=stick[0] & BYTE(0xc >> (xy*2));
-            if (s){ //one of these directions pressed
-              DWORD interval=(timeGetTime()-ikbd.cursor_key_joy_ticks[2+xy])/100;
-              DWORD elapsed=(timeGetTime()-ikbd.cursor_key_joy_ticks[xy])/100;
-              bool report=false;
-              BYTE key;
-              if (elapsed>ikbd.cursor_key_joy_time[xy]){ //>Rx
-                if (interval>ikbd.cursor_key_joy_time[2+xy]){ //Tx
-                  report=true;
-                }
-              }else if (interval>ikbd.cursor_key_joy_time[4+xy]){ //Vx
+      }else if (stick[0] & (~old_stick[0]) & 0x3){
+        ikbd.cursor_key_joy_ticks[1]=timeGetTime(); //reset timer up/down
+        ikbd.cursor_key_joy_ticks[3]=timeGetTime(); //last report
+        if (stick[0] & 1){
+          keyboard_buffer_write(0x48);
+          keyboard_buffer_write(0x48 | MSB_B);
+        }else{
+          keyboard_buffer_write(0x50);
+          keyboard_buffer_write(0x50 | MSB_B);
+        }
+      }else if (stick[0]){
+        for (int xy=0;xy<2;xy++){
+          BYTE s=stick[0] & BYTE(0xc >> (xy*2));
+          if (s){ //one of these directions pressed
+            DWORD interval=(timeGetTime()-ikbd.cursor_key_joy_ticks[2+xy])/100;
+            DWORD elapsed=(timeGetTime()-ikbd.cursor_key_joy_ticks[xy])/100;
+            bool report=false;
+            BYTE key;
+            if (elapsed>ikbd.cursor_key_joy_time[xy]){ //>Rx
+              if (interval>ikbd.cursor_key_joy_time[2+xy]){ //Tx
                 report=true;
               }
-              if (report){
-                if (s & 8) key=0x4d;
-                else if (s & 4) key=0x4b;
-                else if (s & 2) key=0x50;
-                else key=0x48;
-                keyboard_buffer_write(key);
-                keyboard_buffer_write(key | MSB_B);
-                ikbd.cursor_key_joy_ticks[2+xy]=timeGetTime();
-              }
+            }else if (interval>ikbd.cursor_key_joy_time[4+xy]){ //Vx
+              report=true;
+            }
+            if (report){
+              if (s & 8) key=0x4d;
+              else if (s & 4) key=0x4b;
+              else if (s & 2) key=0x50;
+              else key=0x48;
+              keyboard_buffer_write(key);
+              keyboard_buffer_write(key | MSB_B);
+              ikbd.cursor_key_joy_ticks[2+xy]=timeGetTime();
             }
           }
         }
-        break;
       }
+      break;
     }
   }
 
@@ -174,35 +183,41 @@ void IKBD_VBL()
       POINT pt;
       GetCursorPos(&pt);
       if (pt.x!=window_mouse_centre_x || pt.y!=window_mouse_centre_y){
-        mouse_move_since_last_interrupt_x+=(pt.x-window_mouse_centre_x);
-        mouse_move_since_last_interrupt_y+=(pt.y-window_mouse_centre_y);
-        if (mouse_speed!=10){
-          int x_if_0=0;
-          if (mouse_move_since_last_interrupt_x<0) x_if_0=-1;
-          if (mouse_move_since_last_interrupt_x>0) x_if_0=1;
+        // disable_input_vbl_count is used when you reset to prevent TOS getting IKBD messages
+        // before it is ready (causes annoying clicking). It is also used when you change disk
+        // in order to prevent you from continuing before the new disk has been fully inserted.
+        // In the latter case we do not need to disable mouse movement.
+        if (disable_input_vbl_count<=30){
+          mouse_move_since_last_interrupt_x+=(pt.x-window_mouse_centre_x);
+          mouse_move_since_last_interrupt_y+=(pt.y-window_mouse_centre_y);
+          if (mouse_speed!=10){
+            int x_if_0=0;
+            if (mouse_move_since_last_interrupt_x<0) x_if_0=-1;
+            if (mouse_move_since_last_interrupt_x>0) x_if_0=1;
 
-          int y_if_0=0;
-          if (mouse_move_since_last_interrupt_y<0) y_if_0=-1;
-          if (mouse_move_since_last_interrupt_y>0) y_if_0=1;
+            int y_if_0=0;
+            if (mouse_move_since_last_interrupt_y<0) y_if_0=-1;
+            if (mouse_move_since_last_interrupt_y>0) y_if_0=1;
 
-          mouse_move_since_last_interrupt_x*=mouse_speed;
-          mouse_move_since_last_interrupt_y*=mouse_speed;
-          mouse_move_since_last_interrupt_x/=10;
-          mouse_move_since_last_interrupt_y/=10;
-          if (mouse_move_since_last_interrupt_x==0) mouse_move_since_last_interrupt_x=x_if_0;
-          if (mouse_move_since_last_interrupt_y==0) mouse_move_since_last_interrupt_y=y_if_0;
+            mouse_move_since_last_interrupt_x*=mouse_speed;
+            mouse_move_since_last_interrupt_y*=mouse_speed;
+            mouse_move_since_last_interrupt_x/=10;
+            mouse_move_since_last_interrupt_y/=10;
+            if (mouse_move_since_last_interrupt_x==0) mouse_move_since_last_interrupt_x=x_if_0;
+            if (mouse_move_since_last_interrupt_y==0) mouse_move_since_last_interrupt_y=y_if_0;
+          }
+          if (ikbd.mouse_upside_down){
+            mouse_move_since_last_interrupt_y=-mouse_move_since_last_interrupt_y;
+          }
+          mouse_change_since_last_interrupt=true;
         }
-        if (ikbd.mouse_upside_down){
-          mouse_move_since_last_interrupt_y=-mouse_move_since_last_interrupt_y;
-        }
-        mouse_change_since_last_interrupt=true;
 
-#ifdef CYGWIN
-        window_mouse_centre_x=pt.x;
-        window_mouse_centre_y=pt.y;
-#else
-        SetCursorPos(window_mouse_centre_x,window_mouse_centre_y);
-#endif
+        if (no_set_cursor_pos){
+          window_mouse_centre_x=pt.x;
+          window_mouse_centre_y=pt.y;
+        }else{
+          SetCursorPos(window_mouse_centre_x,window_mouse_centre_y);
+        }
       }
     }
     if (macro_record){
@@ -248,11 +263,9 @@ void IKBD_VBL()
     }
 
     if (mouse_change_since_last_interrupt){
-      if (disable_mouse_until==0 || timer>=disable_mouse_until){
-        int max_mouse_move=IKBD_DEFAULT_MOUSE_MOVE_MAX;
-        if (macro_play_has_mouse) max_mouse_move=macro_play_max_mouse_speed;
-        ikbd_mouse_move(mouse_move_since_last_interrupt_x,mouse_move_since_last_interrupt_y,mousek,max_mouse_move);
-      }
+      int max_mouse_move=IKBD_DEFAULT_MOUSE_MOVE_MAX;
+      if (macro_play_has_mouse) max_mouse_move=macro_play_max_mouse_speed;
+      ikbd_mouse_move(mouse_move_since_last_interrupt_x,mouse_move_since_last_interrupt_y,mousek,max_mouse_move);
       mouse_change_since_last_interrupt=false;
       mouse_move_since_last_interrupt_x=0;
       mouse_move_since_last_interrupt_y=0;
@@ -327,6 +340,7 @@ void IKBD_VBL()
   }
 
   macro_advance();
+  if (disable_input_vbl_count) disable_input_vbl_count--;
 }
 //---------------------------------------------------------------------------
 void ikbd_inc_hack(int &hack_val,int inc_val)
@@ -419,12 +433,12 @@ void agenda_ikbd_process(int src)    //intelligent keyboard handle byte
         for (int n=0;n<6;n++){
           int newval=ikbd.command_param[n];
           if ((newval & 0xf0)>=0xa0){ // Invalid high nibble
-            newval&=0xf;
-            newval|=ikbd.clock[n] & 0xf;
+            newval&=0x0f;
+            newval|=ikbd.clock[n] & 0xf0;
           }
           if ((newval & 0xf)>=0xa){ // Invalid low nibble
             newval&=0xf0;
-            newval|=ikbd.clock[n] & 0xf0;
+            newval|=ikbd.clock[n] & 0x0f;
           }
           int val=(newval >> 4)*10 + (newval & 0xf);
           int max_val=ikbd_clock_max_val[n];
@@ -803,7 +817,6 @@ void ikbd_reset(bool Cold)
   agenda_delete(agenda_keyboard_reset);
 
   if (Cold){
-
     ikbd_set_clock_to_correct_time();
 
     ikbd.command_read_count=0;
@@ -921,4 +934,6 @@ void ikbd_send_joystick_message(int jn)
 }
 //---------------------------------------------------------------------------
 #undef LOGSECTION
+
+
 

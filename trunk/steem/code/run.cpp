@@ -1,6 +1,17 @@
+/*---------------------------------------------------------------------------
+FILE: run.cpp
+MODULE: emu
+DESCRIPTION: This file contains Steem's run() function, the routine that
+actually makes Steem go. Also included here is the code for the event system
+that allows time-critical Steem functions (such as VBLs, HBLs and MFP timers)
+to be scheduled to the nearest cycle. Speed limiting and drawing is also
+handled here, in event_scanline and event_vbl_interrupt.
+---------------------------------------------------------------------------*/
+
 //---------------------------------------------------------------------------
 void exception(int exn,exception_action ea,MEM_ADDRESS a)
 {
+  io_word_access=0;
   ioaccess=0;
   ExceptionObject.init(exn,ea,a);
   if (pJmpBuf==NULL){
@@ -13,9 +24,10 @@ void exception(int exn,exception_action ea,MEM_ADDRESS a)
 void run()
 {
   bool ExcepHappened;
-  DEBUG_ONLY( MEM_ADDRESS monitor_altered; )
 
   Disp.RunStart();
+
+  if (psg_always_capture_on_start) psg_capture(true,"test.stym");
 
   GUIRunStart();
 
@@ -75,7 +87,6 @@ void run()
 
   do{
     ExcepHappened=0;
-//    try{
     TRY_M68K_EXCEPTION
       while (runstate==RUNSTATE_RUNNING){
         while (cpu_cycles>0 && runstate==RUNSTATE_RUNNING){
@@ -105,8 +116,7 @@ void run()
 
         DEBUG_ONLY( mode=STEM_MODE_CPU; )
 //---------------------------------------------------------------------------
-      } //more CPU!
-//    }catch (m68k_exception &e){
+      }
     CATCH_M68K_EXCEPTION
       m68k_exception e=ExceptionObject;
       ExcepHappened=true;
@@ -148,7 +158,7 @@ void run()
           ExcepHappened=0;
         }
       }
-      if (do_breakpoint_check) breakpoint_check();
+      if (debug_num_bk) breakpoint_check();
       if (runstate!=RUNSTATE_RUNNING) ExcepHappened=0;
 #endif
     END_M68K_EXCEPTION
@@ -195,6 +205,7 @@ void run()
     RunWhenStop=0;
   }
 #endif
+  psg_capture(0,"");
 }
 //---------------------------------------------------------------------------
 #ifdef _DEBUG_BUILD
@@ -215,7 +226,7 @@ void inline prepare_event_again() //might be an earlier one
   screen_event_vector=(screen_event_pointer->event);
   //  end of new 3/7/2001
 
-  PREPARE_EVENT_CHECK_FOR_DMA_SOUND_END
+//  PREPARE_EVENT_CHECK_FOR_DMA_SOUND_END
 
   //check timers for timeouts
   PREPARE_EVENT_CHECK_FOR_TIMER_TIMEOUTS(0);
@@ -226,6 +237,8 @@ void inline prepare_event_again() //might be an earlier one
   PREPARE_EVENT_CHECK_FOR_TIMER_B
 
   PREPARE_EVENT_CHECK_FOR_DEBUG
+
+  PREPARE_EVENT_CHECK_FOR_PASTI
 
   // cpu_timer must always be set to the next 4 cycle boundary after time_of_next_event
   int oo=time_of_next_event-cpu_timer;
@@ -239,7 +252,7 @@ void inline prepare_next_event()
   time_of_next_event=cpu_time_of_start_of_event_plan + screen_event_pointer->time;
   screen_event_vector=(screen_event_pointer->event);
 
-  PREPARE_EVENT_CHECK_FOR_DMA_SOUND_END
+//  PREPARE_EVENT_CHECK_FOR_DMA_SOUND_END
 
   // check timers for timeouts
   PREPARE_EVENT_CHECK_FOR_TIMER_TIMEOUTS(0);
@@ -250,6 +263,8 @@ void inline prepare_next_event()
   PREPARE_EVENT_CHECK_FOR_TIMER_B
 
   PREPARE_EVENT_CHECK_FOR_DEBUG
+
+  PREPARE_EVENT_CHECK_FOR_PASTI
 
   // It is safe for events to be in past, whatever happens events
   // cannot get into a constant loop.
@@ -316,19 +331,10 @@ void event_timer_b()
       // event_scanline but after a change to mono for left border removal, this
       // stops the border opening on the next line somehow.
 
-//      // Delay timer B because of removed right border?
-//      if (time_of_next_timer_b==cpu_timer_at_start_of_hbl+cpu_cycles_from_hbl_to_timer_b){
-//        draw_check_border_removal();
-//        if (right_border<BORDER_SIDE){
-//          time_of_next_timer_b+=84; // Delay a bit
-//          return;
-//        }
-//      }
       mfp_timer_counter[1]-=64;
-      log_to(LOGSECTION_MFP_TIMERS,EasyStr("MFP: Timer B counter decreased to ")+(mfp_timer_counter[1]/64)+
-              " at scanline "+scan_y+", cycles "+(ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl));
+      log_to(LOGSECTION_MFP_TIMERS,EasyStr("MFP: Timer B counter decreased to ")+(mfp_timer_counter[1]/64)+" at "+scanline_cycle_log());
       if (mfp_timer_counter[1]<64){
-        log(EasyStr("MFP: Timer B timeout at scanline ")+scan_y+", cycles "+(ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl));
+        log(EasyStr("MFP: Timer B timeout at ")+scanline_cycle_log());
         mfp_timer_counter[1]=BYTE_00_TO_256(mfp_reg[MFPR_TBDR])*64;
         mfp_interrupt_pend(MFP_INT_TIMER_B,time_of_next_timer_b);
       }
@@ -360,18 +366,12 @@ void event_hbl()   //just HBL, don't draw yet
   }
 #endif
   if (abs_quick(cpu_timer_at_start_of_hbl-time_of_last_hbl_interrupt)>CYCLES_FROM_START_OF_HBL_IRQ_TO_WHEN_PEND_IS_CLEARED){
-/*
-    if ((sr & SR_IPL)<SR_IPL_2){
-      HBL_INTERRUPT
-    }else{
-      hbl_pending=true;
-    }
-*/
     hbl_pending=true;
   }
+  if (dma_sound_on_this_screen) dma_sound_fetch();
   screen_event_pointer++;
 }
-
+//---------------------------------------------------------------------------
 void event_scanline()
 {
 #define LOGSECTION LOGSECTION_AGENDA
@@ -401,22 +401,9 @@ void event_scanline()
       // Check top/bottom overscan
       int freq_at_trigger=shifter_freq;
       if (screen_res==2) freq_at_trigger=MONO_HZ;
-      if (freq_change_this_scanline){
-/*
-        int t=cpu_timer_at_start_of_hbl+508,i=shifter_freq_change_idx;
-        int end_t=t;
-        t-=28; // This is the most leniant we can be for Lethal Xcess, should be -24 but then Lethal Xcess doesn't work!
-        if (scan_y==225){
-          t=cpu_timer_at_start_of_hbl+460;
-          end_t=cpu_timer_at_start_of_hbl+480;
-        }
-        while (shifter_freq_change_time[i]>=t){
-          if (shifter_freq_change[i]==60 && shifter_freq_change_time[i]<end_t) break;
-          i--; i&=31;
-          if (i==shifter_freq_change_idx) break;
-        }
-        freq_at_trigger=shifter_freq_change[i];
-*/
+      if (emudetect_overscans_fixed){
+        freq_at_trigger=(scan_y==-30 || scan_y==199) ? 60:0;
+      }else if (freq_change_this_scanline){
         // Accurate version!
         int t,i=shifter_freq_change_idx;
         if (scan_y==225){
@@ -467,6 +454,10 @@ void event_scanline()
     if (shifter_freq_change_time[shifter_freq_change_idx]<time_of_next_event-16){
       freq_change_this_scanline=0;
     }
+    if (draw_line_off){
+      palette_convert_all();
+      draw_line_off=0;
+    }
   }
   right_border_changed=0;
 
@@ -482,15 +473,9 @@ void event_scanline()
   }
 #endif
   if (abs_quick(cpu_timer_at_start_of_hbl-time_of_last_hbl_interrupt)>CYCLES_FROM_START_OF_HBL_IRQ_TO_WHEN_PEND_IS_CLEARED){
-/*
-    if ((sr & SR_IPL)<SR_IPL_2){
-      HBL_INTERRUPT
-    }else{
-      hbl_pending=true;
-    }
-*/
     hbl_pending=true;
   }
+  if (dma_sound_on_this_screen) dma_sound_fetch(); 
   screen_event_pointer++;
 }
 //---------------------------------------------------------------------------
@@ -619,7 +604,7 @@ void event_vbl_interrupt()
         frameskip_count=1;   //we are ahead of target so draw the next frame
         speed_limit_wait_till=auto_frameskip_target_time;
       }else{
-        auto_frameskip_target_time+=((run_speed_ticks_per_second+(shifter_freq/2))/shifter_freq);
+        auto_frameskip_target_time+=(run_speed_ticks_per_second+(shifter_freq/2))/shifter_freq;
       }
     }else if (VSyncing){
       frameskip_count=1;   //disable auto frameskip
@@ -663,7 +648,9 @@ void event_vbl_interrupt()
     // it off can be dealt with instantly.
     log_to(LOGSECTION_SPEEDLIMIT,Str("SPEED: Getting message at ")+(timeGetTime()-run_start_time)+" timer="+(timer-run_start_time));
     if (PeekEvent()==PEEKED_NOTHING || m>15){
-      if (slow_motion==0){ // Get more than 15 messages if slow motion is on
+      // Get more than 15 messages if slow motion is on, otherwise GUI will lock up
+      // Should really do something to stop high CPU load when slow_motion is on
+      if (slow_motion==0){
         if (old_slow_motion){
           // Don't sleep if you just turned slow motion off (stops annoying GUI delay)
           frame_delay_timeout=timer;
@@ -672,6 +659,13 @@ void event_vbl_interrupt()
       }
     }
     m++;
+  }
+  if (new_n_cpu_cycles_per_second){
+    if (new_n_cpu_cycles_per_second!=n_cpu_cycles_per_second){
+      n_cpu_cycles_per_second=new_n_cpu_cycles_per_second;
+      prepare_cpu_boosted_event_plans();
+    }
+    new_n_cpu_cycles_per_second=0;
   }
   log_to(LOGSECTION_SPEEDLIMIT,Str("SPEED: Finished getting messages at ")+(timeGetTime()-run_start_time)+" timer="+(timer-run_start_time));
 
@@ -736,12 +730,6 @@ void event_vbl_interrupt()
     avg_frame_time_counter=0;
   }
 
-  if (new_n_cpu_cycles_per_second){
-    n_cpu_cycles_per_second=new_n_cpu_cycles_per_second;
-    prepare_cpu_boosted_event_plans();
-    new_n_cpu_cycles_per_second=0;
-  }
-  
   JoyGetPoses(); // Get the positions of all the PC joysticks
   if (slow_motion){
     // Extra screenshot check (so you actually take a picture of what you see)
@@ -755,7 +743,9 @@ void event_vbl_interrupt()
   IKBD_VBL();    // Handle ST joysticks and mouse
   RS232_VBL();   // Update all flags, check for the phone ringing
   Sound_VBL();   // Write a VBLs worth + a bit of samples to the sound card
-  dma_sound_channel_buf_last_write_t=0;
+  dma_sound_channel_buf_last_write_t=0;  //need to maintain this even if sound off
+  dma_sound_on_this_screen=(dma_sound_control & BIT_0) || dma_sound_internal_buf_len;
+
   log_to(LOGSECTION_SPEEDLIMIT,Str("SPEED: Finished event_vbl tasks at ")+(timeGetTime()-run_start_time)+" timer="+(timer-run_start_time));
 
   //---------- Frameskip -----------
@@ -856,8 +846,10 @@ void event_vbl_interrupt()
 //---------------------------------------------------------------------------
 void prepare_cpu_boosted_event_plans()
 {
+  n_millions_cycles_per_sec=n_cpu_cycles_per_second/1000000;
+
   screen_event_struct *source,*dest;
-  int factor=n_cpu_cycles_per_second/1000000;
+  int factor=n_millions_cycles_per_sec;
   for (int idx=0;idx<3;idx++){ //3 frequencies
     source=event_plan[idx];
     dest=event_plan_boosted[idx];
@@ -872,14 +864,27 @@ void prepare_cpu_boosted_event_plans()
   for (int n=0;n<16;n++){
     mfp_timer_prescale[n]=min((mfp_timer_8mhz_prescale[n]*factor)/8,1000);
   }
-  for (int n=0;n<4;n++){
-    dma_sound_mode_to_cycles_per_byte_stereo[n]=(dma_sound_mode_to_cycles_per_byte_stereo_8mhz[n]*double(factor))/8.0;
-    dma_sound_mode_to_cycles_per_byte_mono[n]=(dma_sound_mode_to_cycles_per_byte_mono_8mhz[n]*double(factor))/8.0;
-  }
-  init_timings();
+//  init_timings();
   mfp_init_timers();
   if (runstate==RUNSTATE_RUNNING) prepare_event_again();
   CheckResetDisplay();
 }
+//---------------------------------------------------------------------------
+#if USE_PASTI
+void event_pasti_update()
+{
+  if (hPasti==NULL || pasti_active==false){
+    pasti_update_time=ABSOLUTE_CPU_TIME+8000000;
+    return;
+  }
+
+  struct pastiIOINFO pioi;
+  pioi.stPC=pc;
+  pioi.cycles=ABSOLUTE_CPU_TIME;
+//  log_to(LOGSECTION_PASTI,Str("PASTI: Update pc=$")+HEXSl(pc,6)+" cycles="+pioi.cycles);
+  pasti->Io(PASTI_IOUPD,&pioi);
+  pasti_handle_return(&pioi);
+}
+#endif
 //---------------------------------------------------------------------------
 

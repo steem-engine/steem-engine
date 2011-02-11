@@ -14,6 +14,7 @@ void TOptionBox::CreatePage(int n)
     case 2:CreateBrightnessPage();break;
     case 11:CreateProfilesPage();break;
     case 6:CreateStartupPage();break;
+    case 15:CreatePathsPage();break;
 	}
 }
 //---------------------------------------------------------------------------
@@ -167,6 +168,7 @@ void TOptionBox::MachineUpdateIfVisible()
     if (NewMemConf0==MEMCONF_512) memconf=int((NewMemConf1==MEMCONF_512) ? 1:0); // 1Mb:512Kb
     if (NewMemConf0==MEMCONF_2MB) memconf=int((NewMemConf1==MEMCONF_2MB) ? 3:2); // 4Mb:2Mb
   }
+
   memory_dd.changesel(memconf);
 
   int monitor_sel=NewMonitorSel;
@@ -513,8 +515,6 @@ void TOptionBox::CreateGeneralPage()
 //---------------------------------------------------------------------------
 void TOptionBox::CreateSoundPage()
 {
-  if (UseSound==0) return;
-
 	int y=10;
 
 	sound_mode_label.create(XD,page_p,page_l,y,0,25,NULL,this,BT_LABEL,T("Output type"),0,BkCol);
@@ -530,42 +530,49 @@ void TOptionBox::CreateSoundPage()
 	sound_mode_dd.changesel(sound_mode);
 	y+=35;
 
-  sound_group.create(XD,page_p,page_l,y,page_w,150,NULL,this,BT_GROUPBOX,
+  sound_group.create(XD,page_p,page_l,y,page_w,210,NULL,this,BT_GROUPBOX,
   											T("Configuration"),0,BkCol);
 
 	int sgy=25;
-	device_label.create(XD,sound_group.handle,10,sgy,0,25,NULL,this,
+
+  hxc_button *but=new hxc_button(XD,sound_group.handle,10,sgy,0,25,NULL,this,BT_LABEL,T("Library"),0,BkCol);
+
+  hxc_dropdown *dd=new hxc_dropdown(XD,sound_group.handle,15+but->w,sgy,(sound_group.w-10-(15+but->w)),300,dd_notify_proc,this);
+  dd->id=5067;
+  dd->additem("None",0);
+#ifndef NO_RTAUDIO
+  dd->additem("RtAudio",XS_RT);
+#endif
+#ifndef NO_PORTAUDIO
+  dd->additem("PortAudio",XS_PA);
+#endif
+  dd->select_item_by_data(x_sound_lib);
+  sgy+=30;
+
+
+  device_label.create(XD,sound_group.handle,10,sgy,0,25,NULL,this,
 											BT_LABEL,T("Device"),0,BkCol);
 
-/*
-	device_ed.set_text(sound_device_name);
-  device_ed.create(XD,sound_group.handle,15+device_label.w,sgy,
-  										(370-(15+device_label.w)),25,edit_notify_proc,this);
-  device_ed.id=5000;
-  sgy+=30;
-*/
-
-  hxc_dropdown *dd=new hxc_dropdown(XD,sound_group.handle,15+device_label.w,sgy,
+  dd=new hxc_dropdown(XD,sound_group.handle,15+device_label.w,sgy,
                         (sound_group.w-10-(15+device_label.w)),300,dd_notify_proc,this);
   dd->id=5000;
-  int c=Pa_CountDevices(),isel=Pa_GetDefaultOutputDeviceID();
-  for (PaDeviceID i=0;i<c;i++){
-    const PaDeviceInfo *pdev=Pa_GetDeviceInfo(i);
-    if (pdev->maxOutputChannels>0){
-      dd->additem((char*)(pdev->name),i);
-      if (IsSameStr_I(pdev->name,sound_device_name)) isel=i;
-    }
-  }
-  dd->select_item_by_data(max(isel,0));
-  sound_device_name=dd->sl[dd->sel].String; // Just in case changed to default
   sgy+=30;
 
-  hxc_button *but=new hxc_button(XD,sound_group.handle,10,sgy,0,25,NULL,this,BT_LABEL,T("Delay"),0,BkCol);
+  but=new hxc_button(XD,sound_group.handle,10,sgy,0,25,NULL,this,BT_LABEL,T("Timing Method"),0,BkCol);
+
+  dd=new hxc_dropdown(XD,sound_group.handle,15+but->w,sgy,(sound_group.w-10-(15+but->w)),300,dd_notify_proc,this);
+  dd->id=5005;
+  dd->additem("Write Cursor",0);
+  dd->additem("Clock",2);
+  dd->select_item_by_data(sound_time_method);
+  sgy+=30;
+
+  but=new hxc_button(XD,sound_group.handle,10,sgy,0,25,NULL,this,BT_LABEL,T("Delay"),0,BkCol);
 
   dd=new hxc_dropdown(XD,sound_group.handle,15+but->w,sgy,(sound_group.w-10-(15+but->w)),300,dd_notify_proc,this);
   dd->id=5004;
   EasyStr Ms=T("Milliseconds");
-  for (int i=20;i<=400;i+=20) dd->additem(Str(i)+" "+Ms,i/20);
+  for (int i=20;i<=800;i+=20) dd->additem(Str(i)+" "+Ms,i/20);
   dd->sel=0;
   dd->select_item_by_data(psg_write_n_screens_ahead);
   sgy+=30;
@@ -594,15 +601,10 @@ void TOptionBox::CreateSoundPage()
 	sound_format_dd.create(XD,sound_group.handle,15+sound_format_label.w,
 							sgy,370-(15+sound_format_label.w),200,dd_notify_proc,this);
   sound_format_dd.id=5003;
-  sound_format_dd.make_empty();
-  sound_format_dd.additem(T("8-Bit Mono"),MAKEWORD(8,1));
-  sound_format_dd.additem(T("8-Bit Stereo"),MAKEWORD(8,2));
-  sound_format_dd.additem(T("16-Bit Mono"),MAKEWORD(16,1));
-  sound_format_dd.additem(T("16-Bit Stereo"),MAKEWORD(16,2));
-	sound_format_dd.select_item_by_data(MAKEWORD(sound_num_bits,sound_num_channels));
-	sound_format_dd.grandfather=page_p;
 
-  y+=160;
+  FillSoundDevicesDD();
+
+  y+=220;
 
   record_group.create(XD,page_p,page_l,y,page_w,90,NULL,this,
   											BT_GROUPBOX,T("Record"),0,BkCol);
@@ -632,6 +634,63 @@ void TOptionBox::CreateSoundPage()
 	internal_speaker_but.set_check(sound_internal_speaker);
 
   XFlush(XD);
+}
+//---------------------------------------------------------------------------
+void TOptionBox::FillSoundDevicesDD()
+{
+  hxc_dropdown *dd=(hxc_dropdown*)hxc::find(sound_group.handle,5000);
+  dd->make_empty();
+#ifndef NO_PORTAUDIO
+  if (UseSound==XS_PA){
+    int c=Pa_CountDevices(),isel=Pa_GetDefaultOutputDeviceID();
+    for (PaDeviceID i=0;i<c;i++){
+      const PaDeviceInfo *pdev=Pa_GetDeviceInfo(i);
+      if (pdev->maxOutputChannels>0){
+        dd->additem((char*)(pdev->name),i);
+        if (IsSameStr_I(pdev->name,sound_device_name)) isel=i;
+      }
+    }
+    dd->select_item_by_data(max(isel,0));
+    sound_device_name=dd->sl[dd->sel].String; // Just in case changed to default
+  }
+#endif
+#ifndef NO_RTAUDIO
+  if (UseSound==XS_RT){
+    RtAudioDeviceInfo radi;
+    int c=rt_audio->getDeviceCount(),isel=0; //isel=default device, find while walking through list
+    for (int i=1;i<=c;i++){
+      radi=rt_audio->getDeviceInfo(i);
+      if (radi.outputChannels>0){
+        dd->additem((char*)(radi.name.c_str()),i);
+        if (radi.isDefault) isel=i;
+      }
+    }
+    for (int i=1;i<=c;i++){
+      if (IsSameStr_I(radi.name.c_str(),sound_device_name)) isel=i;
+    }
+    dd->select_item_by_data(max(isel,0));
+    sound_device_name=dd->sl[dd->sel].String; // Just in case changed to default
+  }
+#endif
+  if (UseSound==0) dd->additem(T("None"));
+
+#ifdef NO_RTAUDIO
+  int rt_unsigned_8bit=0;
+#endif
+  sound_format_dd.make_empty();
+  sound_format_dd.additem(T("8-Bit Mono"),MAKEWORD(8,1));
+  sound_format_dd.additem(T("8-Bit Stereo"),MAKEWORD(8,2));
+  if (x_sound_lib==XS_RT){
+    sound_format_dd.additem(T("8-Bit Mono Unsigned"),MAKELONG(MAKEWORD(8,1),1));
+    sound_format_dd.additem(T("8-Bit Stereo Unsigned"),MAKELONG(MAKEWORD(8,2),1));
+  }
+  sound_format_dd.additem(T("16-Bit Mono"),MAKEWORD(16,1));
+  sound_format_dd.additem(T("16-Bit Stereo"),MAKEWORD(16,2));
+  sound_format_dd.sel=-1;
+	sound_format_dd.select_item_by_data(MAKELONG(MAKEWORD(sound_num_bits,sound_num_channels),rt_unsigned_8bit));
+  if (sound_format_dd.sel==-1){
+  	sound_format_dd.select_item_by_data(MAKEWORD(sound_num_bits,sound_num_channels));
+  }
 }
 //---------------------------------------------------------------------------
 void TOptionBox::CreateDisplayPage()
@@ -890,6 +949,7 @@ void TOptionBox::CreateBrightnessPage()
 
   brightness_sb.horizontal=true;
   brightness_sb.init(256+10,10,brightness+128);
+
   brightness_sb.create(XD,page_p,page_l,y,page_w,25,scrollbar_notify_proc,this);
   brightness_sb.id=10;
   y+=35;
@@ -902,6 +962,7 @@ void TOptionBox::CreateBrightnessPage()
   contrast_sb.init(256+10,10,contrast+128);
   contrast_sb.create(XD,page_p,page_l,y,page_w,25,scrollbar_notify_proc,this);
   contrast_sb.id=11;
+
   y+=35;
 
   scrollbar_notify_proc(&contrast_sb,SBN_SCROLL,contrast_sb.pos); // update the label text
@@ -933,11 +994,6 @@ void TOptionBox::CreateStartupPage()
               T("Never use shared memory extension"),101,BkCol);
   no_shm_but.set_check(GetCSFInt("Options","NoSHM",0,INIFile));
   y+=35;
-
-  hxc_button *p_but=new hxc_button(XD,page_p,page_l,y,0,25,
-              button_notify_proc,this,BT_CHECKBOX,
-              T("Never use PortAudio"),102,BkCol);
-  p_but->set_check(GetCSFInt("Options","NoPortAudio",0,INIFile));
 
   XFlush(XD);
 }
@@ -1005,6 +1061,35 @@ void TOptionBox::CreateProfilesPage()
 	}
   UpdateProfileDisplay();
 
+  XFlush(XD);
+}
+//---------------------------------------------------------------------------
+void TOptionBox::CreatePathsPage()
+{
+	int y=10;
+  hxc_edit *p_ed;
+  hxc_button *p_but;
+  
+  Str Comline_Desc[NUM_COMLINES];
+  Comline_Desc[COMLINE_HTTP]=T("Web");
+  Comline_Desc[COMLINE_FTP]=T("FTP");
+  Comline_Desc[COMLINE_MAILTO]=T("E-mail");
+  Comline_Desc[COMLINE_FM]=T("File Manager");
+  Comline_Desc[COMLINE_FIND]=T("Find File(s)");
+
+  for (int i=0;i<NUM_COMLINES;i++){
+    p_but=new hxc_button(XD,page_p,page_l,y,0,25,NULL,this,BT_LABEL,Comline_Desc[i],0,BkCol);
+
+    p_ed=new hxc_edit(XD,page_p,page_l+p_but->w+5,y,page_w-p_but->w-5-20,25,edit_notify_proc,this);
+    p_ed->set_text(Comlines[i]);
+    p_ed->id=15000+i*10;
+  
+    p_but=new hxc_button(XD,page_p,page_l+page_w-20,y,20,25,button_notify_proc,this,
+    										BT_ICON,"",15001+i*10,BkCol);
+    p_but->set_icon(NULL,1);
+    y+=30;
+  }
+  
   XFlush(XD);
 }
 //---------------------------------------------------------------------------

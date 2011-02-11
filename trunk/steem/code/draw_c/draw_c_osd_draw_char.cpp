@@ -1,3 +1,9 @@
+/*---------------------------------------------------------------------------
+FILE: draw_c_osd_draw_char.cpp
+MODULE: draw_c
+DESCRIPTION: C++ OSD drawing routine.
+---------------------------------------------------------------------------*/
+
 BYTE* dadd=draw_mem+x*bpp+y*draw_line_length,*daddl=dadd;
 DWORD dw0,dw1;
 

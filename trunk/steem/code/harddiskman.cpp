@@ -1,8 +1,14 @@
+/*---------------------------------------------------------------------------
+FILE: harddiskman.cpp
+MODULE: Steem
+DESCRIPTION: The code for the hard drive manager dialog.
+---------------------------------------------------------------------------*/
+
 //---------------------------------------------------------------------------
 void THardDiskManager::update_mount()
 {
   for (int n=2;n<26;n++){
-    if (IsMountedDrive(char(n+'A'))){
+    if (IsMountedDrive(char(n+'A')) && DisableHardDrives==0){
       mount_flag[n]=true;
       mount_path[n]=GetMountedDrivePath(char(n+'A'));
     }else{
@@ -78,6 +84,7 @@ THardDiskManager::THardDiskManager()
     Drive[i].Letter=(char)('C'+i);
   }
   nDrives=0;
+  DisableHardDrives=0;
   update_mount();
 
   ApplyChanges=0;
@@ -119,9 +126,11 @@ void THardDiskManager::Show()
 
   if (FullScreen) MakeParent(StemWin);
 
-  SendMessage( CreateWindow("Button",T("All &Off"),WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
-                             10,10,150,23,Handle,(HMENU)90,HInstance,NULL)
-                    ,WM_SETFONT,(UINT)Font,0);
+  int w=GetCheckBoxSize(Font,T("&Disable All Hard Drives")).Width;
+  Win=CreateWindow("Button",T("&Disable All Hard Drives"),WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+                             10,10,w,23,Handle,(HMENU)90,HInstance,NULL);
+  SendMessage(Win,BM_SETCHECK,(UINT)(DisableHardDrives ? BST_CHECKED:BST_UNCHECKED),0);
+  SendMessage(Win,WM_SETFONT,(UINT)Font,0);
 
   SendMessage( CreateWindow("Button",T("&New Hard Drive"),WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_PUSHBUTTON,
                             300,10,200,23,Handle,(HMENU)10,HInstance,NULL)
@@ -170,6 +179,7 @@ void THardDiskManager::Show()
     OldDrive=NULL;
   }
   for (int i=0;i<nDrives;i++) OldDrive[i]=Drive[i];
+  OldDisableHardDrives=DisableHardDrives;
 
   ShowWindow(Handle,SW_SHOW);
   SetFocus(GetDlgItem(Handle,int(nDrives ? 100:IDOK)));
@@ -303,9 +313,9 @@ void THardDiskManager::Hide()
 #endif
   }else{
     nDrives=nOldDrives;
-    for (int i=0;i<nOldDrives;i++){
-      Drive[i]=OldDrive[i];
-    }
+    for (int i=0;i<nOldDrives;i++) Drive[i]=OldDrive[i];
+    DisableHardDrives=OldDisableHardDrives;
+    update_mount();
   }
 
   if (OldDrive) delete[] OldDrive;
@@ -354,9 +364,7 @@ LRESULT __stdcall THardDiskManager::WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARA
           }
         }
       }else if (ID==90){
-        for (int i=0;i<This->nDrives;i++){
-          SendMessage(GetDlgItem(This->Handle,300+i),CB_SETCURSEL,0,0);
-        }
+        This->DisableHardDrives=SendMessage(HWND(lPar),BM_GETCHECK,0,0)==BST_CHECKED;
       }else if (ID==IDOK || ID==IDCANCEL){
         if (HIWORD(wPar)==BN_CLICKED){
           if (ID==IDOK){
@@ -422,6 +430,7 @@ LRESULT __stdcall THardDiskManager::WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARA
 
       HWND NewParent=(HWND)lPar;
       if (NewParent){
+        This->CheckFSPosition(NewParent);
         SetWindowPos(Win,NULL,This->FSLeft,This->FSTop,0,0,SWP_NOZORDER | SWP_NOSIZE);
       }else{
         SetWindowPos(Win,NULL,This->Left,This->Top,0,0,SWP_NOZORDER | SWP_NOSIZE);

@@ -1,3 +1,10 @@
+/*---------------------------------------------------------------------------
+FILE: stjoy.cpp
+MODULE: Steem
+DESCRIPTION: This file contains both the code for the Steem joysticks dialog
+and the code to read the PC joysticks.
+---------------------------------------------------------------------------*/
+
 //---------------------------------------------------------------------------
 bool IsToggled(int j)
 {
@@ -75,7 +82,7 @@ BYTE joy_get_pos(int Port)
   if (IsToggled(Port)==0) return BYTE(Ret);
 
   for (int n=0;n<4;n++){
-    if (IsDirIDPressed(Joy[Port].DirID[n],Joy[Port].DeadZone,true)) Ret|=(1 << n);
+    if (IsDirIDPressed(Joy[Port].DirID[n],Joy[Port].DeadZone,true,true /*Diag POV*/)) Ret|=(1 << n);
   }
   // Don't allow both up and down or left and right to be pressed at the same time
   if ((Ret & (1 | 2))==(1 | 2)) Ret&=~(1 | 2);
@@ -133,7 +140,7 @@ void TJoystickConfig::CreateJoyAnyButtonMasks()
   // as fire when Any Button On.. is used
   int n;
   for (int j=0;j<MAX_PC_JOYS;j++){
-    JoyAnyButtonMask[j]=DWORD(pow(2,JoyInfo[j].NumButtons)-1);
+    JoyAnyButtonMask[j]=DWORD(pow(2.0,double(JoyInfo[j].NumButtons))-1);
     for (int Port=0;Port<8;Port++){
       for (n=0;n<6;n++){
         if (n==4) n++; //Fire
@@ -205,7 +212,7 @@ DWORD GetJagPadDown(int n,DWORD Mask)
 
   // Directions
   for (int b=0;b<4;b++){
-    if (Mask & (1 << (17+b))) if (IsDirIDPressed(Joy[n].DirID[b],Joy[n].DeadZone,true)) Ret|=(1 << (17+b));
+    if (Mask & (1 << (17+b))) if (IsDirIDPressed(Joy[n].DirID[b],Joy[n].DeadZone,true,true /*Diag POV*/)) Ret|=(1 << (17+b));
   }
 
   // Don't allow both up and down or left and right to be pressed at the same time
@@ -335,9 +342,7 @@ BYTE JoyReadSTEAddress(MEM_ADDRESS addr,bool *pIllegal)
         Ret|=((stick[N_JOY_STE_B_1] & b0001) << 15);
       }
 
-//          Ret &= ~paddles_ReadMask;
       Ret=~Ret;
-
       return BYTE((addr==0xff9202) ? HIBYTE(Ret):LOBYTE(Ret));
     }
     case 0xff9210: return 0xff;
@@ -1045,6 +1050,7 @@ LRESULT __stdcall TJoystickConfig::WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM
 
       HWND NewParent=(HWND)lPar;
       if (NewParent){
+        This->CheckFSPosition(NewParent);
         SetWindowPos(Win,NULL,This->FSLeft,This->FSTop,0,0,SWP_NOZORDER | SWP_NOSIZE);
       }else{
         SetWindowPos(Win,NULL,This->Left,This->Top,0,0,SWP_NOZORDER | SWP_NOSIZE);
@@ -1109,7 +1115,8 @@ LRESULT __stdcall TJoystickConfig::DeadZoneWndProc(HWND Win,UINT Mess,WPARAM wPa
     int hx=rc.right/2,hy=rc.bottom/2;
 
     int DirPos[4],*OldDirPos=(int*)MAKELONG(GetWindowWord(Win,0),GetWindowWord(Win,2));
-    for (int n=0;n<4;n++){
+    int n;
+    for (n=0;n<4;n++){
       DirPos[n]=0;
 
       int DirID=Joy[Port].DirID[n];
@@ -1134,17 +1141,14 @@ LRESULT __stdcall TJoystickConfig::DeadZoneWndProc(HWND Win,UINT Mess,WPARAM wPa
                 }
               }
             }
-          }else if (ID>=200 && JoyInfo[JoyNum].AxisExists[AXIS_POV]){  // POV
-            if (POV_CONV(JoyPos[JoyNum].dwPOV)==DWORD(ID-200)) DirPos[n]=int((n<2) ? hy:hx);
-          }else{
-            if (JoyPos[JoyNum].dwButtons & (1 << (ID-100))) DirPos[n]=int((n<2) ? hy:hx);
+          }else{  // Other
+            if (IsDirIDPressed(DirID,Joy[Port].DeadZone,0,true /*diag pov*/)) DirPos[n]=int((n<2) ? hy:hx);
           }
         }
       }else{
         if (IsDirIDPressed(DirID,Joy[Port].DeadZone,0)) DirPos[n]=int((n<2) ? hy:hx);
       }
     }
-    int n;
     for (n=0;n<4;n++){
       if ((DirPos[n]*100)>=(hx * Joy[Port].DeadZone)) break;
     }

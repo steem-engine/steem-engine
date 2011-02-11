@@ -20,7 +20,7 @@ EXT bool ikbd_keys_disabled();
 EXT void ikbd_mouse_move(int,int,int,int DEFVAL(IKBD_DEFAULT_MOUSE_MOVE_MAX));
 
 EXT bool ST_Key_Down[128];
-EXT DWORD disable_mouse_until INIT(0);
+EXT int disable_input_vbl_count INIT(0);
 EXT int ikbd_joy_poll_line INIT(0),ikbd_mouse_poll_line INIT(0),ikbd_key_poll_line INIT(0);
 
 #define MAX_KEYBOARD_BUFFER_SIZE 1024
@@ -41,6 +41,12 @@ extern bool CutTaskSwitchVKDown[4];
 EXT int mouse_move_since_last_interrupt_x,mouse_move_since_last_interrupt_y;
 EXT bool mouse_change_since_last_interrupt;
 EXT int mousek;
+
+#ifndef CYGWIN
+EXT int no_set_cursor_pos INIT(0);
+#else
+EXT int no_set_cursor_pos INIT(true);
+#endif
 
 #ifdef IN_EMU
 
@@ -95,7 +101,7 @@ void ikbd_send_joystick_message(int);
 #define IKBD_JOY_MODE_FIRE_BUTTON_DURATION 101
 
 #define IKBD_SCANLINES_FROM_ABS_MOUSE_POLL_TO_SEND int((MONO) ? 50:30)
-#define IKBD_SCANLINES_FROM_JOY_POLL_TO_SEND int((MONO) ? 16:10)
+#define IKBD_SCANLINES_FROM_JOY_POLL_TO_SEND int((MONO) ? 32:20)
 
 #define RMB_DOWN(mk) (mk & 1)
 #define LMB_DOWN(mk) (mk & 2)

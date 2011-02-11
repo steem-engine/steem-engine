@@ -73,10 +73,10 @@ void stemdos_get_PC_path();
 typedef struct{
   bool open;
   FILE *f;
-  bool set_to_read_only_on_close;
   int owner_program;
   Str filename;
   WORD date,time;
+  DWORD attrib;
 }stemdos_file_struct;
 stemdos_file_struct stemdos_file[46];
 stemdos_file_struct stemdos_new_file;
@@ -142,16 +142,16 @@ short stemdos_save_sr;
 
 int stemdos_current_drive;
 
-void inline stemdos_trap_1_Fdup();
-void inline stemdos_trap_1_Mfree(MEM_ADDRESS ad);
+NOT_DEBUG(inline) void stemdos_trap_1_Fdup();
+NOT_DEBUG(inline) void stemdos_trap_1_Mfree(MEM_ADDRESS ad);
 
 /*
 void inline stemdos_trap_1_Dgetdrv();
 void inline stemdos_trap_1_Dgetpath();
 */
-void inline stemdos_trap_1_Fgetdta();
-void inline stemdos_trap_1_Fclose(int);
-void inline stemdos_trap_1_Pexec_basepage();
+NOT_DEBUG(inline) void stemdos_trap_1_Fgetdta();
+NOT_DEBUG(inline) void stemdos_trap_1_Fclose(int);
+NOT_DEBUG(inline) void stemdos_trap_1_Pexec_basepage();
 
 void stemdos_finished();
 void stemdos_final_rte(); //clear stack from original GEMDOS call

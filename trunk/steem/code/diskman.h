@@ -1,8 +1,17 @@
 #define DISK_UNCOMPRESSED 1
 #define DISK_COMPRESSED 2
+#define DISK_PASTI 3
+
+#ifdef IN_MAIN
+#define EXT
+#define INIT(s) =s
+#else
+#define EXT extern
+#define INIT(s)
+#endif
 
 #define FileIsDisk(s) ExtensionIsDisk(strrchr(s,'.'))
-inline int ExtensionIsDisk(char*);
+int ExtensionIsDisk(char*,bool returnPastiDisksOnlyWhenPastiOn INIT(true));
 
 typedef struct{
   EasyStr Name,Path,LinkPath;
@@ -25,6 +34,10 @@ private:
   void PerformInsertAction(int,EasyStr,EasyStr,EasyStr);
   void ExtractArchiveToSTHardDrive(Str);
   static void GCGetCRC(char*,DWORD*,int);
+  static BYTE* GCConvertToST(char *,int,int *);
+  void GetContentsSL(Str);
+  bool GetContentsCheckExist();
+  Str GetContentsGetAppendName(Str);
 
 #ifdef WIN32
   static LRESULT __stdcall WndProc(HWND,UINT,WPARAM,LPARAM);
@@ -71,10 +84,14 @@ private:
   void UpdateDiskNames(int);
   void ToggleReadOnly(int);
   Str GetCustomDiskImage(int*,int*,int*);
+  void set_home(Str);
 
   static int dir_lv_notify_handler(hxc_dir_lv*,int,int);
   static int button_notify_handler(hxc_button*,int,int*);
 	static int menu_popup_notifyproc(hxc_popup*,int,int);
+  static int diag_lv_np(hxc_listview *,int,int);
+  static int diag_but_np(hxc_button *,int,int*);
+  static int diag_ed_np(hxc_edit *,int,int);
 
   int ArchiveTypeIdx;
   bool TempEject_InDrive[2];
@@ -101,7 +118,9 @@ public:
   EasyStr CreateDiskName(char *,char *);
   void SetNumFloppies(int);
   void ExtractDisks(Str);
-  
+  void InitGetContents();
+  void ShowDatabaseDiag(),ShowContentDiag();
+
 #ifdef WIN32
   bool HasHandledMessage(MSG*);
   void SetDir(EasyStr,bool,EasyStr="",bool=0,EasyStr="",int=0);
@@ -121,7 +140,7 @@ public:
     SendMessage(HWND(LV ? LV:DiskView),LVM_GETITEM,0,(LPARAM)&lvi);
     return (DiskManFileInfo*)lvi.lParam;
   }
-  void ShowContentDiag(),ShowDiskDiag(),ShowLinksDiag(),ShowImportDiag(),ShowPropDiag();
+  void ShowLinksDiag(),ShowImportDiag(),ShowPropDiag(),ShowDiskDiag();
   int GetDiskSelectionSize();
   void SetDiskViewMode(int);
   void LoadIcons();
@@ -130,9 +149,10 @@ public:
 
   HWND DiskView;
   HICON DriveIcon[2],AccurateFDCIcon,DisableDiskIcon;
-  HWND ContentDiag,DiskDiag,LinksDiag,ImportDiag,PropDiag,DiagFocus;
+  HWND DatabaseDiag,ContentDiag,DiskDiag,LinksDiag,ImportDiag,PropDiag,DiagFocus;
 
-  HWND VisibleDiag() { return HWND(long(DiskDiag) | long(LinksDiag) | long(ImportDiag) | long(PropDiag) | long(ContentDiag)); }
+  HWND VisibleDiag() { return HWND(long(DiskDiag) | long(LinksDiag) | long(ImportDiag) |
+                          long(PropDiag) | long(ContentDiag) | long(DatabaseDiag)); }  
 
   bool AtHome;
   bool ExplorerFolders;
@@ -140,9 +160,9 @@ public:
 
   EasyStr WinSTonPath,WinSTonDiskPath,ImportPath;
   bool ImportOnlyIfExist;
-  int ImportConflictAction,ContentConflictAction;
+  int ImportConflictAction;
 
-  EasyStr MultipleLinksPath,LinksTargetPath,ContentsLinksPath;
+  EasyStr MultipleLinksPath,LinksTargetPath;
 
   bool DoExtraShortcutCheck;
 #elif defined(UNIX)
@@ -152,6 +172,9 @@ public:
 	bool HideBroken,CloseAfterIRR;
   int SaveScroll;
   EasyStr SaveSelPath;
+
+  Str ContentsLinksPath;
+  int ContentConflictAction;
 
   int Width,Height,FSWidth,FSHeight;
   bool Maximized,FSMaximized;

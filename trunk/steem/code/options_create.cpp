@@ -1,3 +1,9 @@
+/*---------------------------------------------------------------------------
+FILE: options_create.cpp
+MODULE: Steem
+DESCRIPTION: Functions to create the pages of the options dialog box.
+---------------------------------------------------------------------------*/
+
 //---------------------------------------------------------------------------
 void TOptionBox::CreatePage(int n)
 {
@@ -1005,7 +1011,7 @@ void TOptionBox::CreateFullscreenPage()
   int disabledflag=0;
   if (draw_fs_blit_mode==DFSM_STRETCHBLIT || draw_fs_blit_mode==DFSM_LAPTOP) disabledflag=WS_DISABLED;
   w=GetCheckBoxSize(Font,T("Scanline Grille")).Width;
-  Win=CreateWindow("Button","Scanline Grille",WS_CHILD | WS_TABSTOP | BS_AUTOCHECKBOX | disabledflag,
+  Win=CreateWindow("Button",T("Scanline Grille"),WS_CHILD | WS_TABSTOP | BS_AUTOCHECKBOX | disabledflag,
                           page_l,y,w,23,Handle,(HMENU)280,HInstance,NULL);
   SendMessage(Win,BM_SETCHECK,(draw_fs_fx==DFSFX_GRILLE ? BST_CHECKED:BST_UNCHECKED),0);
   y+=30;
@@ -1355,6 +1361,8 @@ void TOptionBox::CreateSoundPage()
                           BS_CHECKBOX | DisableIfMute,
                           page_l+10,y,Wid,23,Handle,(HMENU)7102,HInstance,NULL);
   SendMessage(Win,BM_SETCHECK,sound_write_primary,0);
+  ToolAddWindow(ToolTip,Win,T("Steem tries to output sound in a way that is friendly to other programs.")+" "+
+                            T("However some sound cards do not like that, if you are having problems check this option to make Steem take full control."));
   y+=30;
 
   Wid=GetTextSize(Font,T("Timing method")).Width;
@@ -1606,10 +1614,13 @@ void TOptionBox::CreateAssocPage()
   AssAddToExtensionsLV(".ST",T("Disk Image"),0);
   AssAddToExtensionsLV(".STT",T("Disk Image"),1);
   AssAddToExtensionsLV(".MSA",T("Disk Image"),2);
-  AssAddToExtensionsLV(".DIM",T("Disk Image"),3);
-  AssAddToExtensionsLV(".STZ",T("Zipped Disk Image"),4);
-  AssAddToExtensionsLV(".STS",T("Memory Snapshot"),5);
-  AssAddToExtensionsLV(".STC",T("Cartridge Image"),6);
+#if USE_PASTI
+  if (hPasti) AssAddToExtensionsLV(".STX",T("Pasti Disk Image"),3);
+#endif
+  AssAddToExtensionsLV(".DIM",T("Disk Image"),4);
+  AssAddToExtensionsLV(".STZ",T("Zipped Disk Image"),5);
+  AssAddToExtensionsLV(".STS",T("Memory Snapshot"),6);
+  AssAddToExtensionsLV(".STC",T("Cartridge Image"),7);
   Scroller.AutoSize(5,5);
 
   int Wid=GetCheckBoxSize(Font,T("Always open files in new window")).Width;
@@ -1821,8 +1832,4 @@ void TOptionBox::CreateIconsPage()
   ShowPageControls();
 }
 //---------------------------------------------------------------------------
-
-
-
-
 

@@ -1,3 +1,10 @@
+/*---------------------------------------------------------------------------
+FILE: options.cpp
+MODULE: Steem
+DESCRIPTION: The code for Steem's option dialog that allows the user to
+change Steem's many options to their heart's delight.
+---------------------------------------------------------------------------*/
+
 //---------------------------------------------------------------------------
 bool TOptionBox::ChangeBorderModeRequest(int newborder)
 {
@@ -176,7 +183,9 @@ int TOptionBox::TOSLangToFlagIdx(int Lang)
     case 3: return 4;  //German
     case 11: return 5; //Italian
     case 13: return 6; //Swedish
+    case 14: return 9; //Russian
     case 17: return 7; //Swiss German
+    case 27: return 8; //Dutch
   }
   return -1;
 }
@@ -200,9 +209,10 @@ void TOptionBox::TOSRefreshBox(EasyStr Sel)
 	tos_lv.sl.Sort=eslNoSort;	
 	tos_lv.lpig=&IcoTOSFlags;
 
-	tos_lv.columns.DeleteAll();	
-	tos_lv.columns.Add(5+8+5+hxc::get_text_width(XD,"8.88")+15);	
+	tos_lv.columns.DeleteAll();
+	tos_lv.columns.Add(5+8+5+hxc::get_text_width(XD,"8.88")+15);
 	tos_lv.columns.Add(page_w-hxc::get_text_width(XD,"12/12/2000")-15);
+  tos_lv.text_trunc_mode=LVTTM_CUT;
 
 	EasyStringList eslTOS;
 	eslTOS.Sort2=eslSortByData0;
@@ -1052,10 +1062,11 @@ LRESULT __stdcall TOptionBox::WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lPar
               case 5100: Ext=".ST";AssociateSteem(Ext,"st_disk_image",true,T("ST Disk Image"),DISK_ICON_NUM,0); break;
               case 5101: Ext=".STT";AssociateSteem(Ext,"st_disk_image",true,T("ST Disk Image"),DISK_ICON_NUM,0); break;
               case 5102: Ext=".MSA";AssociateSteem(Ext,"st_disk_image",true,T("ST Disk Image"),DISK_ICON_NUM,0); break;
-              case 5103: Ext=".DIM";AssociateSteem(Ext,"st_disk_image",true,T("ST Disk Image"),DISK_ICON_NUM,0); break;
-              case 5104: Ext=".STZ";AssociateSteem(Ext,"st_disk_image",true,T("ST Disk Image"),DISK_ICON_NUM,0); break;
-              case 5105: Ext=".STS";AssociateSteem(Ext,"steem_memory_snapshot",true,T("Steem Memory Snapshot"),SNAP_ICON_NUM,0); break;
-              case 5106: Ext=".STC";AssociateSteem(Ext,"st_cartridge",true,T("ST ROM Cartridge"),CART_ICON_NUM,0); break;
+              case 5103: Ext=".STX";AssociateSteem(Ext,"st_pasti_disk_image",true,T("ST Disk Image"),DISK_ICON_NUM,0); break;
+              case 5104: Ext=".DIM";AssociateSteem(Ext,"st_disk_image",true,T("ST Disk Image"),DISK_ICON_NUM,0); break;
+              case 5105: Ext=".STZ";AssociateSteem(Ext,"st_disk_image",true,T("ST Disk Image"),DISK_ICON_NUM,0); break;
+              case 5106: Ext=".STS";AssociateSteem(Ext,"steem_memory_snapshot",true,T("Steem Memory Snapshot"),SNAP_ICON_NUM,0); break;
+              case 5107: Ext=".STC";AssociateSteem(Ext,"st_cartridge",true,T("ST ROM Cartridge"),CART_ICON_NUM,0); break;
             }
             HWND But=HWND(lPar);
             if (IsSteemAssociated(Ext)){
@@ -1266,7 +1277,7 @@ LRESULT __stdcall TOptionBox::WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lPar
           }
           break;
         case 8601: // Cold reset
-          if (HIWORD(wPar)==BN_CLICKED) reset_st();
+          if (HIWORD(wPar)==BN_CLICKED) reset_st(RESET_COLD | RESET_STOP | RESET_CHANGESETTINGS | RESET_BACKUP);
           break;
         case 8401: // Keyboard language
           if (HIWORD(wPar)==CBN_SELENDOK){
@@ -1305,7 +1316,7 @@ LRESULT __stdcall TOptionBox::WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lPar
             char *files=new char[MAX_PATH*80+1];
             ZeroMemory(files,MAX_PATH*80+1);
             ofn.lStructSize=sizeof(OPENFILENAME);
-            ofn.hwndOwner=Win;
+            ofn.hwndOwner=HWND(FullScreen ? StemWin:Win);
             ofn.hInstance=(HINSTANCE)GetModuleHandle(NULL);
             ofn.lpstrFilter=FSTypes(3,NULL);
             ofn.lpstrCustomFilter=NULL;
@@ -1942,6 +1953,7 @@ LRESULT __stdcall TOptionBox::WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lPar
 
       HWND NewParent=(HWND)lPar;
       if (NewParent){
+        This->CheckFSPosition(NewParent);
         SetWindowPos(Win,NULL,This->FSLeft,This->FSTop,0,0,SWP_NOZORDER | SWP_NOSIZE);
       }else{
         SetWindowPos(Win,NULL,This->Left,This->Top,0,0,SWP_NOZORDER | SWP_NOSIZE);

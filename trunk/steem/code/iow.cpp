@@ -1,3 +1,11 @@
+/*---------------------------------------------------------------------------
+FILE: iow.cpp
+MODULE: emu
+DESCRIPTION: I/O address writes. This file contains crucial core functions
+that deal with writes to ST I/O addresses ($ff8000 onwards), this is the only
+route of communication between programs and the chips in the emulated ST.
+---------------------------------------------------------------------------*/
+
 #define LOGSECTION LOGSECTION_IO
 /*
   Secret addresses:
@@ -31,7 +39,7 @@ void ASMCALL io_write_b(MEM_ADDRESS addr,BYTE io_src_b)
   log_io_write(addr,io_src_b);
 
 #ifdef _DEBUG_BUILD
-  debug_check_io_monitor(addr,0,io_src_b);
+  DEBUG_CHECK_WRITE_IO_B(addr,io_src_b);
 #endif
 
 #ifdef ONEGAME
@@ -47,7 +55,21 @@ void ASMCALL io_write_b(MEM_ADDRESS addr,BYTE io_src_b)
   switch (addr & 0xffff00){   //0xfffe00
     case 0xfffc00:{  //--------------------------------------- ACIAs
       // Only cause bus jam once per word
-      DEBUG_ONLY( if (mode==STEM_MODE_CPU) ) if (io_word_access==0 || (addr & 1)==0) BUS_JAM_TIME(8);
+      DEBUG_ONLY( if (mode==STEM_MODE_CPU) )
+      {
+        if (io_word_access==0 || (addr & 1)==0){
+//          if (passed VBL or HBL point){
+//            BUS_JAM_TIME(4);
+//          }else{
+//          int waitTable[10]={0,9,8,7,6,5,4,3,2,1};
+//          BUS_JAM_TIME(waitTable[ABSOLUTE_CPU_TIME % 10]+6);
+          int rel_cycle=ABSOLUTE_CPU_TIME-shifter_cycle_base;
+          rel_cycle=8000000-rel_cycle;
+          rel_cycle%=10;
+          BUS_JAM_TIME(rel_cycle+6);
+//          BUS_JAM_TIME(8);
+        }
+      }
 
       switch (addr){
     /******************** Keyboard ACIA ************************/
@@ -278,31 +300,7 @@ void ASMCALL io_write_b(MEM_ADDRESS addr,BYTE io_src_b)
           case 0xff8900:   //Nowt
             break;
           case 0xff8901:   //DMA control register
-            if ((dma_sound_control & BIT_0) && (io_src_b & BIT_0)==0){  //Stopping
-              dma_sound_write_to_buffer(ABSOLUTE_CPU_TIME);
-
-              dma_sound_start=next_dma_sound_start;
-              dma_sound_end=next_dma_sound_end;
-              dma_sound_addr_to_read_next=dma_sound_start;
-
-              DMA_SOUND_CHECK_TIMER_A;
-              dma_sound_prepare_for_end(0,0,0); // Stop event
-              ioaccess|=IOACCESS_FLAG_FOR_CHECK_INTRS; // Do this to prepare event again
-            }else if ((dma_sound_control & BIT_0)==0 && (io_src_b & BIT_0)){ //Start playing
-              dma_sound_write_to_buffer(ABSOLUTE_CPU_TIME);
-
-              dma_sound_start_time=ABSOLUTE_CPU_TIME;
-              dma_sound_start=next_dma_sound_start;
-              dma_sound_end=next_dma_sound_end;
-              dma_sound_countdown=0;
-              dma_sound_addr_to_read_next=dma_sound_start;
-              dma_sound_prepare_for_end(dma_sound_start,ABSOLUTE_CPU_TIME,true);
-              ioaccess|=IOACCESS_FLAG_FOR_CHECK_INTRS; // Do this to prepare event again
-            }
-            dma_sound_control=io_src_b;
-            if (tos_version>=0x106) mfp_gpip_set_bit(MFP_GPIP_MONO_BIT,bool(COLOUR_MONITOR)^bool(dma_sound_control & BIT_0));
-
-            log_to(LOGSECTION_SOUND,EasyStr("SOUND: ")+HEXSl(old_pc,6)+" - DMA sound control set to "+(dma_sound_control & 3));
+            dma_sound_set_control(io_src_b);
             break;
           case 0xff8903:   //HiByte of frame start address
           case 0xff8905:   //MidByte of frame start address
@@ -314,7 +312,7 @@ void ASMCALL io_write_b(MEM_ADDRESS addr,BYTE io_src_b)
             }
             if ((dma_sound_control & BIT_0)==0){
               dma_sound_start=next_dma_sound_start;
-              dma_sound_addr_to_read_next=dma_sound_start;
+              dma_sound_fetch_address=dma_sound_start;
             }
             log_to(LOGSECTION_SOUND,EasyStr("SOUND: ")+HEXSl(old_pc,6)+" - DMA sound start address set to "+HEXSl(next_dma_sound_start,6));
             break;
@@ -330,11 +328,7 @@ void ASMCALL io_write_b(MEM_ADDRESS addr,BYTE io_src_b)
             log_to(LOGSECTION_SOUND,EasyStr("SOUND: ")+HEXSl(old_pc,6)+" - DMA sound end address set to "+HEXSl(next_dma_sound_end,6));
             break;
           case 0xff8921:   //Sound mode control
-            dma_sound_write_to_buffer(ABSOLUTE_CPU_TIME);
-
-            dma_sound_mode=io_src_b;
-            dma_sound_freq=dma_sound_mode_to_freq[(dma_sound_mode & BIT_7)!=0][dma_sound_mode & 3];
-            log_to(LOGSECTION_SOUND,EasyStr("SOUND: ")+HEXSl(old_pc,6)+" - DMA sound mode set to "+HEXSl(dma_sound_mode,2)+" freq="+dma_sound_freq);
+            dma_sound_set_mode(io_src_b);
             break;
 
           case 0xff8922: // Set high byte of MicroWire_Data
@@ -430,10 +424,14 @@ void ASMCALL io_write_b(MEM_ADDRESS addr,BYTE io_src_b)
         psg_reg[psg_reg_select]=io_src_b;
 
         if (psg_reg_select==PSGR_PORT_A){
+#if USE_PASTI
+          if (hPasti && pasti_active) pasti->WritePorta(io_src_b,ABSOLUTE_CPU_TIME);
+#endif
+
           SerialPort.SetDTR(io_src_b & BIT_4);
           SerialPort.SetRTS(io_src_b & BIT_3);
-#ifdef ENABLE_LOGFILE
           if ((old_val & (BIT_1+BIT_2))!=(io_src_b & (BIT_1+BIT_2))){
+#ifdef ENABLE_LOGFILE
             if ((psg_reg[PSGR_PORT_A] & BIT_1)==0){ //drive 0
               log_to_section(LOGSECTION_FDC,Str("FDC: ")+HEXSl(old_pc,6)+" - Set current drive to A:");
             }else if ((psg_reg[PSGR_PORT_A] & BIT_2)==0){ //drive 1
@@ -441,9 +439,12 @@ void ASMCALL io_write_b(MEM_ADDRESS addr,BYTE io_src_b)
             }else{                             //who knows?
               log_to_section(LOGSECTION_FDC,Str("FDC: ")+HEXSl(old_pc,6)+" - Unset current drive - guess A:");
             }
-            disk_light_off_time=timer+DisableDiskLightAfter;
-          }
 #endif
+            // disk_light_off_time can only get this far in the future when using pasti
+            if (int(disk_light_off_time)-int(timer) < 1000*10){
+              disk_light_off_time=timer+DisableDiskLightAfter;
+            }
+          }
         }else if (psg_reg_select==PSGR_PORT_B){
           if (ParallelPort.IsOpen()){
             if (ParallelPort.OutputByte(io_src_b)==0){
@@ -472,6 +473,32 @@ void ASMCALL io_write_b(MEM_ADDRESS addr,BYTE io_src_b)
         log_to_section(LOGSECTION_FDC,a);
 #endif
 */
+        if (addr<0xff8604) exception(BOMBS_BUS_ERROR,EA_WRITE,addr);
+        if (addr<0xff8608 && io_word_access==0) exception(BOMBS_BUS_ERROR,EA_WRITE,addr);
+#if USE_PASTI
+        if (hPasti && pasti_active){
+          WORD data=io_src_b;
+          if (addr<0xff8608){ // word only
+            if (addr & 1){
+              data=MAKEWORD(io_src_b,pasti_store_byte_access);
+              addr&=~1;
+            }else{
+              pasti_store_byte_access=io_src_b;
+              break;
+            }
+          }
+          struct pastiIOINFO pioi;
+          pioi.addr=addr;
+          pioi.data=data;
+          pioi.stPC=pc;
+          pioi.cycles=ABSOLUTE_CPU_TIME;
+//          log_to(LOGSECTION_PASTI,Str("PASTI: IO write addr=$")+HEXSl(addr,6)+" data=$"+
+//                            HEXSl(io_src_b,2)+" ("+io_src_b+") pc=$"+HEXSl(pc,6)+" cycles="+pioi.cycles);
+          pasti->Io(PASTI_IOWRITE,&pioi);
+          pasti_handle_return(&pioi);
+          break;
+        }
+#endif
         switch (addr){
           case 0xff8604:  //high byte of FDC access
             if (dma_mode & BIT_4){ //write DMA sector counter, 0x190
@@ -595,23 +622,21 @@ void ASMCALL io_write_b(MEM_ADDRESS addr,BYTE io_src_b)
         exception(BOMBS_BUS_ERROR,EA_WRITE,addr);
       }else if (addr>=0xff8240 && addr<0xff8260){  //palette
         int n=(addr-0xff8240) >> 1;
-        BYTE *lpPalEntry=lpWORD_B_0(STpal+n);
-        if ((addr & 1)==0){
-          lpPalEntry+=MORE_SIGNIFICANT_BYTE_OFFSET;
-          io_src_b&=0xf;
-        }
-        if (*lpPalEntry!=io_src_b){
-          *lpPalEntry=io_src_b;
-          PAL_DPEEK(n*2)=STpal[n];
+        // Writing byte to palette writes that byte to both the low and high byte!
+        WORD new_pal=MAKEWORD(io_src_b,io_src_b & 0xf);
+        if (STpal[n]!=new_pal){
+          STpal[n]=new_pal;
+          PAL_DPEEK(n*2)=new_pal;
           log_to(LOGSECTION_VIDEO,EasyStr("VIDEO: ")+HEXSl(old_pc,6)+" - Palette change at scan_y="+scan_y+" cycle "+(ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl));
           if (draw_lock) draw_scanline_to((ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl)+1);
-          if (flashlight_flag==0 DEBUG_ONLY( && debug_cycle_colours==0) ){
+          if (flashlight_flag==0 && draw_line_off==0 DEBUG_ONLY( && debug_cycle_colours==0) ){
             palette_convert(n);
           }
         }
       }else{
         switch(addr){
         case 0xff8201:  //high byte of screen memory address
+          if (mem_len<=FOUR_MEGS) io_src_b&=b00111111;
           DWORD_B_2(&xbios2)=io_src_b;
           DWORD_B_0(&xbios2)=0;
           log_to(LOGSECTION_VIDEO,EasyStr("VIDEO: ")+HEXSl(old_pc,6)+" - Set screen base to "+HEXSl(xbios2,6));
@@ -633,21 +658,31 @@ void ASMCALL io_write_b(MEM_ADDRESS addr,BYTE io_src_b)
 
           draw_scanline_to(dst); // This makes shifter_draw_pointer up to date
           MEM_ADDRESS nsdp=shifter_draw_pointer;
+          if (mem_len<=FOUR_MEGS && addr==0xff8205) io_src_b&=b00111111;
           DWORD_B(&nsdp,(0xff8209-addr)/2)=io_src_b;
-          nsdp%=FOUR_MEGS;
+
+/*
+          if (shifter_hscroll){
+            if (dst>=CYCLES_FROM_HBL_TO_LEFT_BORDER_OPEN-32 && dst<CYCLES_FROM_HBL_TO_LEFT_BORDER_OPEN+320-16){
+              log_to(LOGSECTION_VIDEO,Str("ATTANT: addr=")+HEXSl(addr,6));
+              if (addr==0xff8209){
+                // If you set low byte while on screen with hscroll on then sdp will
+                // be an extra raster ahead. Steem's sdp is always 1 raster ahead, so
+                // correct for that here.
+                nsdp-=8;
+              }
+            }
+          }
+*/
+
 //          int off=(get_shifter_draw_pointer(ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl)&-8)-shifter_draw_pointer;
 //          shifter_draw_pointer=nsdp-off;
           shifter_draw_pointer_at_start_of_line-=shifter_draw_pointer;
           shifter_draw_pointer_at_start_of_line+=nsdp;
           shifter_draw_pointer=nsdp;
 
-          if (dst>=CYCLES_FROM_HBL_TO_LEFT_BORDER_OPEN-32){
-//            shifter_skip_raster_for_hscroll=0; // already fetched first raster if hscroll on
-          }
-
           log_to(LOGSECTION_VIDEO,Str("VIDEO: ")+HEXSl(old_pc,6)+" - Set shifter draw pointer to "+
-                    HEXSl(shifter_draw_pointer,6)+" at scanline "+scan_y+", cycle "+
-                    (ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl)+", aligned to "+dst);
+                    HEXSl(shifter_draw_pointer,6)+" at "+scanline_cycle_log()+", aligned to "+dst);
           break;
         }
         case 0xff820d:  //low byte of screen memory address
@@ -668,7 +703,7 @@ void ASMCALL io_write_b(MEM_ADDRESS addr,BYTE io_src_b)
 
           if (shifter_freq!=new_freq){
             log_to(LOGSECTION_VIDEO,EasyStr("VIDEO: ")+HEXSl(old_pc,6)+" - Changed frequency to "+new_freq+
-                            " at scanline "+scan_y+" cycle "+(ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl));
+                            " at "+scanline_cycle_log());
             shifter_freq=new_freq;
             CALC_SHIFTER_FREQ_IDX;
             if (shifter_freq_change[shifter_freq_change_idx]!=MONO_HZ){
@@ -687,8 +722,7 @@ void ASMCALL io_write_b(MEM_ADDRESS addr,BYTE io_src_b)
           draw_scanline_to(ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl); // Update sdp if off right
           shifter_fetch_extra_words=(BYTE)io_src_b;
           log_to(LOGSECTION_VIDEO,EasyStr("VIDEO: ")+HEXSl(old_pc,6)+" - Set shifter_fetch_extra_words to "+
-                    (shifter_fetch_extra_words)+" at scanline "+scan_y+", cycle "+
-                    (ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl));
+                    (shifter_fetch_extra_words)+" at "+scanline_cycle_log());
           break;
         case 0xff8264:  // Set hscroll and don't change line length
           // This is an odd register, when you change hscroll below to non-zero each
@@ -697,24 +731,37 @@ void ASMCALL io_write_b(MEM_ADDRESS addr,BYTE io_src_b)
           // 16 pixels. If you have got hscroll extra fetch turned on then setting this
           // to 0 confuses the shifter and causes it to shrink the left border by 16 pixels.
         case 0xff8265:  // Hscroll
-          draw_scanline_to(ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl); // Update sdp if off right
+        {
+          int cycles_in=int(ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl);
+/*
+          int dst=cycles_in;
+          dst-=CYCLES_FROM_HBL_TO_LEFT_BORDER_OPEN;
+          dst+=15;dst&=-16;
+          dst+=CYCLES_FROM_HBL_TO_LEFT_BORDER_OPEN;
+*/
+//          log_write(Str("draw_scanline_to(")+Str(dst)+")");
+
+          draw_scanline_to(cycles_in); // Update sdp if off right
           shifter_pixel-=shifter_hscroll;
           shifter_hscroll=io_src_b & 0xf;
           shifter_pixel+=shifter_hscroll;
 
           log_to(LOGSECTION_VIDEO,EasyStr("VIDEO: ")+HEXSl(old_pc,6)+" - Set horizontal scroll ("+HEXSl(addr,6)+
-                    ") to "+(shifter_hscroll)+" at scanline "+scan_y+", cycle "+(ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl));
+                    ") to "+(shifter_hscroll)+" at "+scanline_cycle_log());
           if (addr==0xff8265) shifter_hscroll_extra_fetch=(shifter_hscroll!=0);
 
-          if (ABSOLUTE_CPU_TIME<=cpu_timer_at_start_of_hbl+CYCLES_FROM_HBL_TO_LEFT_BORDER_OPEN-32){
+          if (cycles_in<=CYCLES_FROM_HBL_TO_LEFT_BORDER_OPEN-32){
             if (left_border>0){ // Don't do this if left border removed!
-              shifter_skip_raster_for_hscroll=(shifter_hscroll!=0 && shifter_hscroll_extra_fetch);
+              shifter_skip_raster_for_hscroll = shifter_hscroll!=0;
               left_border=BORDER_SIDE;
               if (shifter_hscroll) left_border+=16;
               if (shifter_hscroll_extra_fetch) left_border-=16;
             }
           }
+
+
           break;
+        }
         case 0xff8260: //resolution
           if (screen_res>=2 || emudetect_falcon_mode!=EMUD_FALC_MODE_OFF) return;
 #ifndef NO_CRAZY_MONITOR
@@ -846,7 +893,7 @@ void ASMCALL io_write_b(MEM_ADDRESS addr,BYTE io_src_b)
           case 0xffc107: snapshot_loaded=bool(io_src_b); break;
           case 0xffc11a: emudetect_write_logs_to_printer=bool(io_src_b); break;
           case 0xffc11b:
-            if (extended_monitor==0 && screen_res<2) emudetect_falcon_mode=BYTE(io_src_b);
+            if (extended_monitor==0 && screen_res<2 && BytesPerPixel>1) emudetect_falcon_mode=BYTE(io_src_b);
             break;
           case 0xffc11c:
             emudetect_falcon_mode_size=BYTE((io_src_b & 1)+1);
@@ -855,6 +902,7 @@ void ASMCALL io_write_b(MEM_ADDRESS addr,BYTE io_src_b)
             // scanlines is doubled, if we change to 400 with double height lines then arg!
             draw_set_jumps_and_source();
             break;
+          case 0xffc11d: emudetect_overscans_fixed=bool(io_src_b); break;
         }
         if (addr<0xffc120) break; // No exception!
       }
@@ -884,10 +932,7 @@ void ASMCALL io_write_b(MEM_ADDRESS addr,BYTE io_src_b)
 void ASMCALL io_write_w(MEM_ADDRESS addr,WORD io_src_w)
 {
   if (addr>=0xff8240 && addr<0xff8260){  //palette
-#ifdef _DEBUG_BUILD
-    debug_check_io_monitor(addr,0,HIBYTE(io_src_w));
-    debug_check_io_monitor(addr+1,0,LOBYTE(io_src_w));
-#endif
+    DEBUG_CHECK_WRITE_IO_W(addr,io_src_w);
     int n=(addr-0xff8240) >> 1;
     io_src_w&=0xfff;
     if (STpal[n]!=io_src_w){
@@ -895,7 +940,7 @@ void ASMCALL io_write_w(MEM_ADDRESS addr,WORD io_src_w)
       PAL_DPEEK(n*2)=STpal[n];
       log_to(LOGSECTION_VIDEO,Str("VIDEO: ")+HEXSl(old_pc,6)+" - Palette change at scan_y="+scan_y+" cycles so far="+(ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl));
       if (draw_lock) draw_scanline_to((ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl)+1);
-      if (flashlight_flag==0 DEBUG_ONLY( && debug_cycle_colours==0) ){
+      if (flashlight_flag==0 && draw_line_off==0 DEBUG_ONLY( && debug_cycle_colours==0) ){
         palette_convert(n);
       }
     }

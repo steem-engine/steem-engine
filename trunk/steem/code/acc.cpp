@@ -1,3 +1,9 @@
+/*---------------------------------------------------------------------------
+FILE: acc.cpp
+MODULE: Steem
+DESCRIPTION: Completely random accessory functions.
+---------------------------------------------------------------------------*/
+
 // Porting: GetNearestPaletteIndex  get_text_width flush_message_queue
 
 /*void inline log(EasyStr a){
@@ -375,6 +381,148 @@ MEM_ADDRESS oi(MEM_ADDRESS ad,int of) //offset by instruction
   }
   return 0;
 }
+#endif
 
+void acc_parse_search_string(Str OriginalText,DynamicArray<BYTE> &ByteList,bool &WordOnly)
+{
+  bool ReturnLengths=WordOnly;
+  ByteList.DeleteAll();
+  WordOnly=0;
+  char *Buf=new char[OriginalText.Length()+1];
+  strcpy(Buf,OriginalText);
+  for (int i=0;i<OriginalText.Length();i++){
+    if (Buf[i]==' ' || Buf[i]=='\t') Buf[i]=0;
+  }
+
+  char *pBuf=Buf,*pBufEnd=Buf+OriginalText.Length();
+  while (pBuf<pBufEnd){
+    Str Text=pBuf;
+    if (Text[0]=='\"' || (Text[0]>'F' && Text[0]<='Z') || (Text[0]>'f' && Text[0]<='z')){
+      if (Text[0]=='\"') Text.Delete(0,1);
+      if (Text.RightChar()=='\"') *(Text.Right())=0;
+      for (int i=0;i<Text.Length();i++){
+        ByteList.Add(Text[i]);
+        if (ReturnLengths) ByteList.Add(1);
+      }
+    }else if (Text[0]){
+      strupr(Text);
+
+      if (Text.RightChar()=='W'){
+        *(Text.Right())=0; // Just in case this messes with the atoi etc..
+        WordOnly=true;
+      }
+      DWORD Num=0;
+      int NumLen=0;
+      if (Text.Lefts(2)=="0X" || Text[0]=='$' || Text[0]>='A' && Text[0]<='F'){
+        char *t=Text.Text;
+        if (t[1]=='X') t+=2;
+        else if (t[0]=='$') t++;
+        int HexLen=0;
+        while (*t){
+          if (((*t)>='A' && (*t)<='F')==0 && ((*t)>='0' && (*t)<='9')==0) break;
+          HexLen++;
+          t++;
+        }
+        if (HexLen>0){
+          NumLen=min((HexLen+1)/2,4);
+          Num=HexToVal(Text);
+        }
+      }else if (Text[0]=='%'){  // Binary
+        int BinLen=0;
+        for (;BinLen<Text.Length();BinLen++){
+          if (Text[BinLen+1]!='0' && Text[BinLen+1]!='1') break;
+        }
+        if (BinLen>0 && BinLen<=32){
+          NumLen=(BinLen+7)/8;
+          int Bit=0;
+          for (int n=BinLen;n>0;n--){
+            if (Text[n]=='1') Num |= 1 << Bit;
+            Bit++;
+          }
+        }
+      }else{                    // Decimal
+        NumLen=0;
+        if (Text.Rights(2)==".W"){
+          NumLen=2;
+          *(Text.Right()-1)=0;
+        }else if (Text.Rights(2)==".L"){
+          NumLen=4;
+          *(Text.Right()-1)=0;
+        }
+        Num=(DWORD)atoi(Text);
+        if ((Num || Text[0]=='0' || Text.Lefts(2)=="-0") && NumLen==0){
+          if (Num<=0xff){
+            NumLen=1;
+          }else if (Num<=0xffff){
+            NumLen=2;
+          }else if (Num<=0xffffff){
+            NumLen=3;
+          }else{
+            NumLen=4;
+          }
+        }
+      }
+      if (NumLen){
+#ifndef BIG_ENDIAN_PROCESSOR
+        BYTE *lpHiNum=LPBYTE(&Num)+NumLen-1;
+        int mem_dir=-1;
+#else
+        BYTE *lpHiNum=LPBYTE(&Num);
+        int mem_dir=1;
+#endif
+        for (int i=0;i<NumLen;i++){
+          ByteList.Add(*(lpHiNum+i*mem_dir));
+          if (ReturnLengths) ByteList.Add(BYTE(NumLen));
+        }
+      }
+    }
+    pBuf+=strlen(pBuf)+1;
+  }
+  delete[] Buf;
+}
+//---------------------------------------------------------------------------
+MEM_ADDRESS acc_find_bytes(DynamicArray<BYTE> &BytesToFind,bool WordOnly,MEM_ADDRESS ad,int dir)
+{
+  BYTE ToFind=BytesToFind[0];
+  bool Found=0;
+  int n;
+  LOOP{
+    if (ad>=himem && ad<rom_addr){
+      ad=(MEM_ADDRESS)(dir>0 ? rom_addr:himem-1);
+    }
+    if (ad>=rom_addr+tos_len || ad>0xffffff) break;
+
+    if (((ad & 1) && WordOnly)==0){ // if odd and word-only then skip byte
+      n=-1;
+      if (ad<himem){
+        if (PEEK(ad)==ToFind){
+          if (ad+BytesToFind.NumItems<=himem){
+            for (n=1;n<BytesToFind.NumItems;n++) if ( PEEK(ad+n)!=BytesToFind[n] ) break;
+          }
+        }
+      }else{
+        if (ROM_PEEK(ad-rom_addr)==ToFind){
+          if (ad+BytesToFind.NumItems<=rom_addr+tos_len){
+            for (n=1;n<BytesToFind.NumItems;n++) if ( ROM_PEEK(ad+n-rom_addr)!=BytesToFind[n] ) break;
+          }
+        }
+      }
+      if (n>=BytesToFind.NumItems){
+        Found=true;
+        break;
+      }
+    }
+
+    ad+=dir;
+  }
+  if (Found) return ad;
+  return 0xffffffff;
+}
+//---------------------------------------------------------------------------
+#ifdef ENABLE_LOGFILE
+Str scanline_cycle_log()
+{
+  return Str("scanline ")+scan_y+" cycles "+(ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl);
+}
 #endif
 

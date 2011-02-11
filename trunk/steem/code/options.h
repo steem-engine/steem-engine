@@ -33,6 +33,7 @@ private:
   static int dir_lv_notify_proc(hxc_dir_lv*,int,int);
 
   void DrawBrightnessBitmap(XImage*),UpdateProfileDisplay(Str="",int=-1);
+  void FillSoundDevicesDD();
 
   int page_p;
 
@@ -96,6 +97,8 @@ private:
 
   hxc_button osd_disable_but;
 
+  hxc_listview drop_lv;
+
   static hxc_dir_lv dir_lv;
 #endif
   void FullscreenBrightnessBitmap();
@@ -119,6 +122,8 @@ public:
 	void CreateFullscreenPage(),CreateMIDIPage();
   void CreateUpdatePage(),CreateAssocPage();
   void IconsAddToScroller(),CreateIconsPage();
+#else
+  void CreatePathsPage();
 #endif
 
   void UpdateSoundFreq();

@@ -1,3 +1,10 @@
+/*---------------------------------------------------------------------------
+FILE: stemdos.cpp
+MODULE: emu
+DESCRIPTION: Steem's virtual hard drive emulation. This is achieved through
+intercepting ST OS calls and translating them to PC OS calls.
+---------------------------------------------------------------------------*/
+
 #ifndef DISABLE_STEMDOS
 
 // Find "Allow wildcards?"
@@ -161,19 +168,23 @@ void stemdos_open_file(int param)
   stemdos_get_PC_path();
   log(EasyStr("STEMDOS: PC filename is ")+PC_filename);
 
-  stemdos_new_file.set_to_read_only_on_close=0;
+  stemdos_new_file.attrib=0;
   r[0]=0;
   if (PC_filename.RightChar()==SLASHCHAR){ // Don't allow empty names
     r[0]=-34;
   }else if (stemdos_command==0x3d){ //open
     DWORD Attrib=stemdos_search_wildcard_PC_path();
     if (Attrib!=0xffffffff){
-      if ((Attrib & FILE_ATTRIBUTE_READONLY) && param!=0){
+      if (Attrib & FILE_ATTRIBUTE_DIRECTORY){
+        r[0]=-34;
+        log("STEMDOS: Attempting to open a directory, failing");
+      }else if ((Attrib & FILE_ATTRIBUTE_READONLY) && param!=0){
         r[0]=-36;
         log("STEMDOS: Attempting to open read-only file for write, failing");
       }else{
-        stemdos_new_file.set_to_read_only_on_close=bool(Attrib & FILE_ATTRIBUTE_READONLY);
-        SetFileAttributes(PC_filename,Attrib & ~FILE_ATTRIBUTE_READONLY);
+        stemdos_new_file.attrib=Attrib & (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_READONLY);
+        Attrib&=~(FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_READONLY);
+        SetFileAttributes(PC_filename,Attrib);
         log(EasyStr("STEMDOS: The file exists, PC filename is ")+PC_filename);
 
         char *pc_mode="r+b"; // Don't wipe the file but allow writing
@@ -215,16 +226,18 @@ void stemdos_open_file(int param)
       fclose(f);
 #endif
 
-      DWORD win_attr=0;
-      if (param & 2) win_attr|=FILE_ATTRIBUTE_HIDDEN;
-      if (param & 4) win_attr|=FILE_ATTRIBUTE_SYSTEM;
-      if (param & 1) stemdos_new_file.set_to_read_only_on_close=true;
-      SetFileAttributes(PC_filename,win_attr);
+      stemdos_new_file.attrib=0;
+      if (param & 2) stemdos_new_file.attrib|=FILE_ATTRIBUTE_HIDDEN;
+      if (param & 4) stemdos_new_file.attrib|=FILE_ATTRIBUTE_SYSTEM;
+      if (param & 1) stemdos_new_file.attrib|=FILE_ATTRIBUTE_READONLY;
+
+      // QUESTION: Is this closing/reopening necessary any more?
+      SetFileAttributes(PC_filename,0);
       log("STEMDOS: Set new attributes for Fcreate file");
 
       f=fopen(PC_filename,"w+b");
       log("STEMDOS: Opened Fcreate file for write");
-      fseek(f,0,SEEK_SET); // Always start at offset 0
+      if (f!=NULL) fseek(f,0,SEEK_SET); // Always start at offset 0
     }
     if (f==NULL) r[0]=-34;
   }
@@ -282,10 +295,12 @@ void stemdos_close_file(stemdos_file_struct* sfs)
 #endif
     }
 
-    if (sfs->set_to_read_only_on_close){
+    if (sfs->attrib){
       DWORD win_attr=GetFileAttributes(sfs->filename);
-      SetFileAttributes(sfs->filename,win_attr | FILE_ATTRIBUTE_READONLY);
-      sfs->set_to_read_only_on_close=false;
+      win_attr&=~(FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_READONLY);
+      win_attr|=sfs->attrib & (FILE_ATTRIBUTE_HIDDEN | FILE_ATTRIBUTE_SYSTEM | FILE_ATTRIBUTE_READONLY);
+      SetFileAttributes(sfs->filename,win_attr);
+      sfs->attrib=0;
     }
     sfs->open=false;
   }
@@ -583,10 +598,10 @@ void stemdos_Dfree(int dr)
   DWORD dw[4];
   GetDiskFreeSpace(root_path.Text,&(dw[3]),&(dw[2]),&(dw[0]),&(dw[1]));
 
-  // max clusers under 64Mb
+  // max clusers under 0x3e88888 (about 64Mb)
   // Clusters free * sectors per cluster * bytes per sector = num bytes free
-  if (DWORDLONG(dw[0])*dw[3]*dw[2]>=0x4000000){
-    dw[0]=max(0x4000000/(dw[3]*dw[2]),DWORD(1));
+  if (DWORDLONG(dw[0])*dw[3]*dw[2]>=0x3e88888){
+    dw[0]=max(0x3e88888/(dw[3]*dw[2]),DWORD(1));
   }
 
   for (int n=0;n<4;n++) m68k_lpoke(stemdos_dfree_buffer+n*4,dw[n]);
@@ -604,8 +619,8 @@ void stemdos_Dfree(int dr)
     total_units=sfs.f_blocks;
     free_units=sfs.f_bavail;
   }
-  if (((long double)free_units) * bytes_per_sector*sectors_per_unit>=0x4000000){ // 64Mb
-    free_units=max(0x4000000/(bytes_per_sector*sectors_per_unit),1);
+  if (((long double)free_units) * bytes_per_sector*sectors_per_unit>=0x3e88888){ // 64Mb
+    free_units=max(0x3e88888/(bytes_per_sector*sectors_per_unit),1);
   }
 #endif
 
@@ -1632,7 +1647,7 @@ void stemdos_check_paths()
   }
 }
 
-void inline stemdos_trap_1_Fdup(){
+NOT_DEBUG(inline) void stemdos_trap_1_Fdup(){
   m68k_PUSH_W(3);
   m68k_PUSH_W(0x45);
 
@@ -1653,18 +1668,18 @@ void inline stemdos_trap_1_Dgetpath(){
 }
 */
 
-void inline stemdos_trap_1_Fgetdta(){
+NOT_DEBUG(inline) void stemdos_trap_1_Fgetdta(){
   m68k_PUSH_W(0x2f);
   STEMDOS_TRAP_1;
 }
 
-void inline stemdos_trap_1_Fclose(int h){
+NOT_DEBUG(inline) void stemdos_trap_1_Fclose(int h){
   m68k_PUSH_W(LOWORD(h));
   m68k_PUSH_W(0x3e);
   STEMDOS_TRAP_1;
 }
 
-void inline stemdos_trap_1_Pexec_basepage(){
+NOT_DEBUG(inline) void stemdos_trap_1_Pexec_basepage(){
   m68k_PUSH_L(stemdos_Pexec_env);
   m68k_PUSH_L(stemdos_Pexec_com);
   m68k_PUSH_L(0);
@@ -1674,7 +1689,7 @@ void inline stemdos_trap_1_Pexec_basepage(){
   m68k_interrupt(os_gemdos_vector);             //want to return from this interrupt into GEMDOS
 }
 
-void inline stemdos_trap_1_Mfree(MEM_ADDRESS ad){
+NOT_DEBUG(inline) void stemdos_trap_1_Mfree(MEM_ADDRESS ad){
   m68k_PUSH_L(ad);
   m68k_PUSH_W(0x49);
   m68k_interrupt(os_gemdos_vector);
@@ -1704,7 +1719,7 @@ void stemdos_init()
   }
   stemdos_new_file.open=false;
   stemdos_new_file.f=NULL;
-  stemdos_new_file.set_to_read_only_on_close=0;
+  stemdos_new_file.attrib=0;
   stemdos_new_file.owner_program=0;
   stemdos_new_file.filename="";
   stemdos_new_file.date=0;
@@ -1712,7 +1727,7 @@ void stemdos_init()
   for (int n=0;n<46;n++){
     stemdos_file[n].open=false;
     stemdos_file[n].f=NULL;
-    stemdos_file[n].set_to_read_only_on_close=0;
+    stemdos_file[n].attrib=0;
     stemdos_file[n].owner_program=0;
     stemdos_file[n].filename="";
     stemdos_file[n].date=0;

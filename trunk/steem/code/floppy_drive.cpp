@@ -1,3 +1,12 @@
+/*---------------------------------------------------------------------------
+FILE: floppydrive.cpp
+MODULE: Steem
+DESCRIPTION: These functions define the TFloppyImage class, a core object
+that handles all disk image-related functions. The emulator uses SeekSector
+to move to the correct place in the disk image file and then reads/writes
+data.
+---------------------------------------------------------------------------*/
+
 #define LOGSECTION LOGSECTION_FDC
 
 int TFloppyImage::SetDisk(EasyStr File,EasyStr CompressedDiskName,BPBINFO *pDetectBPB,BPBINFO *pFileBPB)
@@ -10,19 +19,21 @@ int TFloppyImage::SetDisk(EasyStr File,EasyStr CompressedDiskName,BPBINFO *pDete
 
   bool FileIsReadOnly=bool(GetFileAttributes(File) & FILE_ATTRIBUTE_READONLY);
 
-  bool MSA=0,STT=0,DIM=0;
+  Str Ext;
+  bool MSA,STT,DIM,f_PastiDisk=0;
   char *dot=strrchr(File,'.');
-  if (dot){
-    MSA=IsSameStr_I(dot,".MSA");
-    STT=IsSameStr_I(dot,".STT");
-    DIM=IsSameStr_I(dot,".DIM");
-  }
+  if (dot) Ext=dot+1;
+
+  MSA=IsSameStr_I(Ext,"MSA");
+  STT=IsSameStr_I(Ext,"STT");
+  DIM=IsSameStr_I(Ext,"DIM");
 
   // NewDiskInZip will be blank for default disk, RealDiskInZip will be the
   // actual name of the file in the zip that is a disk image
   EasyStr NewDiskInZip,RealDiskInZip;
 
-  if (ExtensionIsDisk(dot)==DISK_COMPRESSED){
+  int Type=ExtensionIsDisk(dot);
+  if (Type==DISK_COMPRESSED){
     if (!enable_zip) return FIMAGE_WRONGFORMAT;
 
     int HOffset=-1;
@@ -31,12 +42,17 @@ int TFloppyImage::SetDisk(EasyStr File,EasyStr CompressedDiskName,BPBINFO *pDete
       CorruptZip=0;
       do{
         EasyStr fn=zippy.filename_in_zip();
-        if (FileIsDisk(fn)==DISK_UNCOMPRESSED){
+        Type=FileIsDisk(fn);
+        if (Type==DISK_UNCOMPRESSED || Type==DISK_PASTI){
           if (CompressedDiskName.Empty() || IsSameStr_I(CompressedDiskName,fn.Text)){
             // Blank DiskInZip name means default disk (first in zip)
-            MSA=has_extension(fn,"MSA");
-            STT=has_extension(fn,"STT");
-            DIM=has_extension(fn,"DIM");
+            if (Type==DISK_PASTI){
+              f_PastiDisk=true;
+            }else{
+              MSA=has_extension(fn,"MSA");
+              STT=has_extension(fn,"STT");
+              DIM=has_extension(fn,"DIM");
+            }
             HOffset=zippy.current_file_offset;
             NewDiskInZip=CompressedDiskName;
             RealDiskInZip=fn.Text;
@@ -64,323 +80,383 @@ int TFloppyImage::SetDisk(EasyStr File,EasyStr CompressedDiskName,BPBINFO *pDete
       if (CorruptZip) return FIMAGE_CORRUPTZIP;
       return FIMAGE_NODISKSINZIP;
     }
-  }
-
-  // Open for read for an MSA (going to convert to ST and write to that)
-  // and if the file is read-only, otherwise open for update
-  FILE *nf=fopen(File,LPSTR((MSA || FileIsReadOnly) ? "rb":"r+b"));
-  if (nf==NULL){
-    if (NewZipTemp.NotEmpty()) DeleteFile(NewZipTemp);
-    return FIMAGE_CANTOPEN;
-  }
-
-  if (GetFileLength(nf)<512){
-    fclose(nf);
-    if (NewZipTemp.NotEmpty()) DeleteFile(NewZipTemp);
+  }else if (Type==DISK_PASTI){
+    f_PastiDisk=true;
+  }else if (Type==0){
     return FIMAGE_WRONGFORMAT;
   }
 
-  fseek(nf,0,SEEK_SET);
+  int drive=-1;
+  if (this==&FloppyDrive[0]) drive=0;
+  if (this==&FloppyDrive[1]) drive=1;
+  if (drive==-1) f_PastiDisk=0; // Never use pasti for extra drives
+  if (f_PastiDisk){
+#if USE_PASTI
+    int Ret=0;
+    if (drive>=0 && hPasti){
+      RemoveDisk();
 
-  EasyStr NewMSATemp="";
-  short MSA_SecsPerTrack,MSA_EndTrack,MSA_Sides;
-  if (MSA){
-    NewMSATemp.SetLength(MAX_PATH);
-    GetTempFileName(WriteDir,"MSA",0,NewMSATemp);
+      FILE *nf=fopen(File,"rb");
+      if (nf){
+        PastiBufLen=GetFileLength(nf);
+        PastiBuf=new BYTE[PastiBufLen+16];
+        fread(PastiBuf,1,PastiBufLen,nf);
+        fclose(nf);
 
-    FILE *tf=fopen(NewMSATemp,"wb");
-    if (tf){
-      bool Err=0;
-      short ID,StartTrack;
-
-      fseek(nf,0,SEEK_SET);
-
-      // Read header
-      fread(&ID,2,1,nf);               SWAPBYTES(ID);
-      fread(&MSA_SecsPerTrack,2,1,nf); SWAPBYTES(MSA_SecsPerTrack);
-      fread(&MSA_Sides,2,1,nf);        SWAPBYTES(MSA_Sides);
-      fread(&StartTrack,2,1,nf);       SWAPBYTES(StartTrack);
-      fread(&MSA_EndTrack,2,1,nf);     SWAPBYTES(MSA_EndTrack);
-
-      if (MSA_SecsPerTrack<1 || MSA_SecsPerTrack>FLOPPY_MAX_SECTOR_NUM ||
-          MSA_Sides<0 || MSA_Sides>1 ||
-          StartTrack<0 || StartTrack>FLOPPY_MAX_TRACK_NUM || StartTrack>=MSA_EndTrack ||
-          MSA_EndTrack<1 || MSA_EndTrack>FLOPPY_MAX_TRACK_NUM){
-        Err=true;
-      }
-
-      if (Err==0){
-        // Read data
-        WORD Len,NumRepeats;
-        BYTE *TrackData=new BYTE[(MSA_SecsPerTrack*512)+16];
-        BYTE *pDat,*pEndDat,dat;
-        BYTE *STBuf=new BYTE[(MSA_SecsPerTrack*512)+16];
-        BYTE *pSTBuf,*pSTBufEnd=STBuf+(MSA_SecsPerTrack*512)+8;
-        for (int n=0;n<=MSA_EndTrack;n++){
-          for (int s=0;s<=MSA_Sides;s++){
-            if (n>=StartTrack){
-              Len=0;
-              fread(&Len,1,2,nf); SWAPBYTES(Len);
-              if (Len>MSA_SecsPerTrack*512 || Len==0){
-                Err=true;break;
-              }
-              if (WORD(fread(TrackData,1,Len,nf))<Len){
-                Err=true;break;
-              }
-              if (Len==(MSA_SecsPerTrack*512)){
-                fwrite(TrackData,Len,1,tf);
-              }else{
-                // Convert compressed MSA format track in TrackData to ST format in STBuf
-                pSTBuf=STBuf;
-                pDat=TrackData;
-                pEndDat=TrackData+Len;
-                while (pDat<pEndDat && pSTBuf<pSTBufEnd){
-                  dat=*(pDat++);
-                  if (dat==0xE5){
-                    dat=*(pDat++);
-                    NumRepeats=*LPWORD(pDat);pDat+=2;
-                    SWAPBYTES(NumRepeats);
-                    for (int s=0;s<NumRepeats && pSTBuf<pSTBufEnd;s++) *(pSTBuf++)=dat;
-                  }else{
-                    *(pSTBuf++)=dat;
-                  }
-                }
-                if (pSTBuf>=pSTBufEnd){
-                  Err=true;break;
-                }
-                fwrite(STBuf,MSA_SecsPerTrack*512,1,tf);
-              }
-            }else{
-              ZeroMemory(TrackData,MSA_SecsPerTrack*512);
-              if (n==0 && s==0){   // Write BPB
-                *LPWORD(TrackData+11)=512;
-                TrackData[13]=2;           // SectorsPerCluster
-
-                *LPWORD(TrackData+17)=112; // nDirEntries
-                *LPWORD(TrackData+19)=WORD(MSA_EndTrack * MSA_SecsPerTrack);
-
-                *LPWORD(TrackData+22)=3;   // SectorsPerFAT
-                *LPWORD(TrackData+24)=MSA_SecsPerTrack;
-                *LPWORD(TrackData+26)=MSA_Sides;
-                *LPWORD(TrackData+28)=0;
-              }
-              fwrite(TrackData,MSA_SecsPerTrack*512,1,tf);
-            }
-          }
-          if (Err) break;
+        Str RealFile=File;
+        if (NewZipTemp.NotEmpty()) RealFile=RealDiskInZip;
+        struct pastiDISKIMGINFO pdi;
+        pdi.imgType=PASTI_ITPROT;
+        if (has_extension(RealFile,"ST")) pdi.imgType=PASTI_ITST;
+        if (has_extension(RealFile,"MSA")) pdi.imgType=PASTI_ITMSA;
+        if (pdi.imgType==PASTI_ITPROT && NewZipTemp.Empty()){
+          pdi.mode=PASTI_LDFNAME;
+        }else{
+          pdi.mode=PASTI_LDMEM;
         }
-        delete[] TrackData;
-        delete[] STBuf;
-      }
+        pdi.fileName=RealFile;
+        pdi.fileBuf=PastiBuf;
+        pdi.fileLength=PastiBufLen;
+        pdi.bufSize=PastiBufLen+16;
+        pdi.bDirty=0;
 
-      fclose(tf);
-      fclose(nf);
-
-      if (Err==0){
-        SetFileAttributes(NewMSATemp,FILE_ATTRIBUTE_HIDDEN);
-        nf=fopen(NewMSATemp,"r+b");
-        Err=(nf==NULL);
-      }
-
-      if (Err){
-        DeleteFile(NewMSATemp);
-        if (NewZipTemp.NotEmpty()) DeleteFile(NewZipTemp);
-        return FIMAGE_WRONGFORMAT;
+        BOOL bMediachDelay=TRUE;
+        if (pc==rom_addr) bMediachDelay=FALSE;
+        if (pasti->ImgLoad(drive,FileIsReadOnly,bMediachDelay,ABSOLUTE_CPU_TIME,&pdi)==FALSE) Ret=FIMAGE_CANTOPEN;
+      }else{
+        Ret=FIMAGE_CANTOPEN;
       }
     }else{
-      // Couldn't open NewMSATemp
-      fclose(nf);
+      Ret=FIMAGE_WRONGFORMAT;
+    }
+    if (Ret){
+      delete[] PastiBuf;
+      PastiBuf=NULL;
+      if (NewZipTemp.NotEmpty()) DeleteFile(NewZipTemp);
+      return Ret;
+    }
+#endif
+  }else{
+    // Open for read for an MSA (going to convert to ST and write to that)
+    // and if the file is read-only, otherwise open for update
+    FILE *nf=fopen(File,LPSTR((MSA || FileIsReadOnly) ? "rb":"r+b"));
+    if (nf==NULL){
       if (NewZipTemp.NotEmpty()) DeleteFile(NewZipTemp);
       return FIMAGE_CANTOPEN;
     }
-  }
 
-  bool f_ValidBPB=true;
-  DWORD f_DiskFileLen=GetFileLength(nf);
-  if (STT){
-    bool Err=0;
-    DWORD Magic;
-    WORD Version,Flags,AllTrackFlags,NumTracks,NumSides;
-
-    fread(&Magic,4,1,nf);
-    fread(&Version,2,1,nf);
-    fread(&Flags,2,1,nf);
-    fread(&AllTrackFlags,2,1,nf);
-    fread(&NumTracks,2,1,nf);
-    fread(&NumSides,2,1,nf);
-    Err=(Magic!=MAKECHARCONST('S','T','E','M') || Version!=1 || (AllTrackFlags & BIT_0)==0);
-    if (Err==0){
-      ZeroMemory(STT_TrackStart,sizeof(STT_TrackStart));
-      ZeroMemory(STT_TrackLen,sizeof(STT_TrackLen));
-      for (int s=0;s<NumSides;s++){
-        for (int t=0;t<NumTracks;t++){
-          fread(&STT_TrackStart[s][t],4,1,nf);
-          fread(&STT_TrackLen[s][t],2,1,nf);
-        }
-      }
-    }else{
+    if (GetFileLength(nf)<512){
       fclose(nf);
-
-      if (NewMSATemp.NotEmpty()) DeleteFile(NewMSATemp);
       if (NewZipTemp.NotEmpty()) DeleteFile(NewZipTemp);
-
       return FIMAGE_WRONGFORMAT;
     }
 
     fseek(nf,0,SEEK_SET);
 
-    RemoveDisk();
-    f=nf;
-    STT_File=true;
-    TracksPerSide=NumTracks;
-    Sides=NumSides;
+    EasyStr NewMSATemp="";
+    short MSA_SecsPerTrack,MSA_EndTrack,MSA_Sides;
+    if (MSA){
+      NewMSATemp.SetLength(MAX_PATH);
+      GetTempFileName(WriteDir,"MSA",0,NewMSATemp);
 
-    BytesPerSector=512;
-    SectorsPerTrack=0xff; // Variable
-  }else{
-    BPBINFO bpbi={0,0,0,0};
-    int HeaderLen=int(DIM ? 32:0);
-    f_DiskFileLen-=HeaderLen;
+      FILE *tf=fopen(NewMSATemp,"wb");
+      if (tf){
+        bool Err=0;
+        short ID,StartTrack;
 
-    if (DIM){
-      int Err=0;
+        fseek(nf,0,SEEK_SET);
 
-      fseek(nf,0,SEEK_SET);
-      WORD Magic;
-      fread(&Magic,1,2,nf);
-      if (Magic!=0x4242){
-        Err=FIMAGE_DIMNOMAGIC;
+        // Read header
+        fread(&ID,2,1,nf);               SWAPBYTES(ID);
+        fread(&MSA_SecsPerTrack,2,1,nf); SWAPBYTES(MSA_SecsPerTrack);
+        fread(&MSA_Sides,2,1,nf);        SWAPBYTES(MSA_Sides);
+        fread(&StartTrack,2,1,nf);       SWAPBYTES(StartTrack);
+        fread(&MSA_EndTrack,2,1,nf);     SWAPBYTES(MSA_EndTrack);
+
+        if (MSA_SecsPerTrack<1 || MSA_SecsPerTrack>FLOPPY_MAX_SECTOR_NUM ||
+            MSA_Sides<0 || MSA_Sides>1 ||
+            StartTrack<0 || StartTrack>FLOPPY_MAX_TRACK_NUM || StartTrack>=MSA_EndTrack ||
+            MSA_EndTrack<1 || MSA_EndTrack>FLOPPY_MAX_TRACK_NUM){
+          Err=true;
+        }
+
+        if (Err==0){
+          // Read data
+          WORD Len,NumRepeats;
+          BYTE *TrackData=new BYTE[(MSA_SecsPerTrack*512)+16];
+          BYTE *pDat,*pEndDat,dat;
+          BYTE *STBuf=new BYTE[(MSA_SecsPerTrack*512)+16];
+          BYTE *pSTBuf,*pSTBufEnd=STBuf+(MSA_SecsPerTrack*512)+8;
+          for (int n=0;n<=MSA_EndTrack;n++){
+            for (int s=0;s<=MSA_Sides;s++){
+              if (n>=StartTrack){
+                Len=0;
+                fread(&Len,1,2,nf); SWAPBYTES(Len);
+                if (Len>MSA_SecsPerTrack*512 || Len==0){
+                  Err=true;break;
+                }
+                if (WORD(fread(TrackData,1,Len,nf))<Len){
+                  Err=true;break;
+                }
+                if (Len==(MSA_SecsPerTrack*512)){
+                  fwrite(TrackData,Len,1,tf);
+                }else{
+                  // Convert compressed MSA format track in TrackData to ST format in STBuf
+                  pSTBuf=STBuf;
+                  pDat=TrackData;
+                  pEndDat=TrackData+Len;
+                  while (pDat<pEndDat && pSTBuf<pSTBufEnd){
+                    dat=*(pDat++);
+                    if (dat==0xE5){
+                      dat=*(pDat++);
+                      NumRepeats=*LPWORD(pDat);pDat+=2;
+                      SWAPBYTES(NumRepeats);
+                      for (int s=0;s<NumRepeats && pSTBuf<pSTBufEnd;s++) *(pSTBuf++)=dat;
+                    }else{
+                      *(pSTBuf++)=dat;
+                    }
+                  }
+                  if (pSTBuf>=pSTBufEnd){
+                    Err=true;break;
+                  }
+                  fwrite(STBuf,MSA_SecsPerTrack*512,1,tf);
+                }
+              }else{
+                ZeroMemory(TrackData,MSA_SecsPerTrack*512);
+                if (n==0 && s==0){   // Write BPB
+                  *LPWORD(TrackData+11)=512;
+                  TrackData[13]=2;           // SectorsPerCluster
+
+                  *LPWORD(TrackData+17)=112; // nDirEntries
+                  *LPWORD(TrackData+19)=WORD(MSA_EndTrack * MSA_SecsPerTrack);
+
+                  *LPWORD(TrackData+22)=3;   // SectorsPerFAT
+                  *LPWORD(TrackData+24)=MSA_SecsPerTrack;
+                  *LPWORD(TrackData+26)=MSA_Sides;
+                  *LPWORD(TrackData+28)=0;
+                }
+                fwrite(TrackData,MSA_SecsPerTrack*512,1,tf);
+              }
+            }
+            if (Err) break;
+          }
+          delete[] TrackData;
+          delete[] STBuf;
+        }
+
+        fclose(tf);
+        fclose(nf);
+
+        if (Err==0){
+          SetFileAttributes(NewMSATemp,FILE_ATTRIBUTE_HIDDEN);
+          nf=fopen(NewMSATemp,"r+b");
+          Err=(nf==NULL);
+        }
+
+        if (Err){
+          DeleteFile(NewMSATemp);
+          if (NewZipTemp.NotEmpty()) DeleteFile(NewZipTemp);
+          return FIMAGE_WRONGFORMAT;
+        }
       }else{
-        BYTE UsedSectors;
-        fseek(nf,3,SEEK_SET);
-        fread(&UsedSectors,1,1,nf);
-        if (UsedSectors!=0) Err=FIMAGE_DIMTYPENOTSUPPORTED;
+        // Couldn't open NewMSATemp
+        fclose(nf);
+        if (NewZipTemp.NotEmpty()) DeleteFile(NewZipTemp);
+        return FIMAGE_CANTOPEN;
       }
+    }
 
-      if (Err){
+    bool f_ValidBPB=true;
+    DWORD f_DiskFileLen=GetFileLength(nf);
+    if (STT){
+      bool Err=0;
+      DWORD Magic;
+      WORD Version,Flags,AllTrackFlags,NumTracks,NumSides;
+
+      fread(&Magic,4,1,nf);
+      fread(&Version,2,1,nf);
+      fread(&Flags,2,1,nf);
+      fread(&AllTrackFlags,2,1,nf);
+      fread(&NumTracks,2,1,nf);
+      fread(&NumSides,2,1,nf);
+      Err=(Magic!=MAKECHARCONST('S','T','E','M') || Version!=1 || (AllTrackFlags & BIT_0)==0);
+      if (Err==0){
+        ZeroMemory(STT_TrackStart,sizeof(STT_TrackStart));
+        ZeroMemory(STT_TrackLen,sizeof(STT_TrackLen));
+        for (int s=0;s<NumSides;s++){
+          for (int t=0;t<NumTracks;t++){
+            fread(&STT_TrackStart[s][t],4,1,nf);
+            fread(&STT_TrackLen[s][t],2,1,nf);
+          }
+        }
+      }else{
         fclose(nf);
 
         if (NewMSATemp.NotEmpty()) DeleteFile(NewMSATemp);
         if (NewZipTemp.NotEmpty()) DeleteFile(NewZipTemp);
 
-        return Err;
+        return FIMAGE_WRONGFORMAT;
       }
-    }
 
-    // Always append the name of the real disk file in the zip to the name
-    // of the steembpb file, even if we are using default disk
-    // This is so we don't need 2 .steembpb files for the default disk
-    EasyStr BPBFile=OriginalFile+RealDiskInZip+".steembpb";
-    bool HasBPBFile=(GetCSFInt("BPB","Sides",0,BPBFile)!=0);
+      fseek(nf,0,SEEK_SET);
 
-    if (MSA){
-      bpbi.BytesPerSector=512;
+      RemoveDisk();
+      f=nf;
+      STT_File=true;
+      TracksPerSide=NumTracks;
+      Sides=NumSides;
+
+      BytesPerSector=512;
+      SectorsPerTrack=0xff; // Variable
     }else{
-      fseek(nf,HeaderLen+11,SEEK_SET);
-      fread(&bpbi.BytesPerSector,2,1,nf);
-    }
-    fseek(nf,HeaderLen+19,SEEK_SET);
-    fread(&bpbi.Sectors,2,1,nf);
-    fseek(nf,HeaderLen+24,SEEK_SET);
-    fread(&bpbi.SectorsPerTrack,2,1,nf);
-    fread(&bpbi.Sides,2,1,nf);
-    if (pFileBPB) *pFileBPB=bpbi; // Store BPB exactly as it is in the file (for DiskMan)
+      BPBINFO bpbi={0,0,0,0};
+      int HeaderLen=int(DIM ? 32:0);
+      f_DiskFileLen-=HeaderLen;
 
-    // A BPB is corrupt when one of its fields is totally wrong
-    bool BPBCorrupt=0;
-    if (bpbi.BytesPerSector!=128 && bpbi.BytesPerSector!=256 &&
-          bpbi.BytesPerSector!=512 && bpbi.BytesPerSector!=1024) BPBCorrupt=true;
-    if (bpbi.SectorsPerTrack<1 || bpbi.SectorsPerTrack>FLOPPY_MAX_SECTOR_NUM) BPBCorrupt=true;
-    if (bpbi.Sides<1 || bpbi.Sides>2) BPBCorrupt=true;
+      if (DIM){
+        int Err=0;
 
-    // Has to be exact length for Steem to accept it
-    if (DWORD(bpbi.Sectors*bpbi.BytesPerSector)!=f_DiskFileLen || BPBCorrupt){
-      f_ValidBPB=0;
-      // If the BPB is only a few sectors out then we don't want to destroy
-      // the value in BytesPerSector.
-      if (BPBCorrupt) bpbi.BytesPerSector=512; // 99.9% of ST disks used sectors this size
-    }
-
-    if (f_ValidBPB==0){
-      if (MSA){
-        // Probably got a better chance of being right than guessing
-        bpbi.SectorsPerTrack=MSA_SecsPerTrack;
-        bpbi.Sides=short(MSA_Sides+1);
-        bpbi.Sectors=short((MSA_EndTrack+1)*bpbi.SectorsPerTrack*bpbi.Sides);
-      }else{
-        // BPB's wrong, time to guess the format
-        bpbi.SectorsPerTrack=0;
-
-        bpbi.Sectors=short(f_DiskFileLen/bpbi.BytesPerSector);
-        bpbi.Sides=WORD((bpbi.Sectors<1100) ? 1:2); // Total guess
-
-        // Work out bpbi.SectorsPerTrack from bpbi.Sides and bpbi.Sectors
-        bool Found=0;
-        for (;;){
-          for (int t=75;t<=FLOPPY_MAX_TRACK_NUM;t++){
-            for (int s=8;s<=13;s++){
-              if (bpbi.Sectors==(t+1)*s*bpbi.Sides){
-                bpbi.SectorsPerTrack=WORD(s);
-                Found=true;
-                break;
-              }
-            }
-            if (Found) break;
-          }
-          if (Found) break;
-
-          if (bpbi.Sectors<10) break;
-
-          bpbi.Sectors--;
+        fseek(nf,0,SEEK_SET);
+        WORD Magic;
+        fread(&Magic,1,2,nf);
+        if (Magic!=0x4242){
+          Err=FIMAGE_DIMNOMAGIC;
+        }else{
+          BYTE UsedSectors;
+          fseek(nf,3,SEEK_SET);
+          fread(&UsedSectors,1,1,nf);
+          if (UsedSectors!=0) Err=FIMAGE_DIMTYPENOTSUPPORTED;
         }
-        if (bpbi.SectorsPerTrack==0 && HasBPBFile==0){
+
+        if (Err){
           fclose(nf);
 
           if (NewMSATemp.NotEmpty()) DeleteFile(NewMSATemp);
           if (NewZipTemp.NotEmpty()) DeleteFile(NewZipTemp);
 
-          return FIMAGE_WRONGFORMAT;
+          return Err;
         }
       }
+
+      // Always append the name of the real disk file in the zip to the name
+      // of the steembpb file, even if we are using default disk
+      // This is so we don't need 2 .steembpb files for the default disk
+      EasyStr BPBFile=OriginalFile+RealDiskInZip+".steembpb";
+      bool HasBPBFile=(GetCSFInt("BPB","Sides",0,BPBFile)!=0);
+
+      if (MSA){
+        bpbi.BytesPerSector=512;
+      }else{
+        fseek(nf,HeaderLen+11,SEEK_SET);
+        fread(&bpbi.BytesPerSector,2,1,nf);
+      }
+      fseek(nf,HeaderLen+19,SEEK_SET);
+      fread(&bpbi.Sectors,2,1,nf);
+      fseek(nf,HeaderLen+24,SEEK_SET);
+      fread(&bpbi.SectorsPerTrack,2,1,nf);
+      fread(&bpbi.Sides,2,1,nf);
+      if (pFileBPB) *pFileBPB=bpbi; // Store BPB exactly as it is in the file (for DiskMan)
+
+      // A BPB is corrupt when one of its fields is totally wrong
+      bool BPBCorrupt=0;
+      if (bpbi.BytesPerSector!=128 && bpbi.BytesPerSector!=256 &&
+            bpbi.BytesPerSector!=512 && bpbi.BytesPerSector!=1024) BPBCorrupt=true;
+      if (bpbi.SectorsPerTrack<1 || bpbi.SectorsPerTrack>FLOPPY_MAX_SECTOR_NUM) BPBCorrupt=true;
+      if (bpbi.Sides<1 || bpbi.Sides>2) BPBCorrupt=true;
+
+      // Has to be exact length for Steem to accept it
+      if (DWORD(bpbi.Sectors*bpbi.BytesPerSector)!=f_DiskFileLen || BPBCorrupt){
+        f_ValidBPB=0;
+        // If the BPB is only a few sectors out then we don't want to destroy
+        // the value in BytesPerSector.
+        if (BPBCorrupt) bpbi.BytesPerSector=512; // 99.9% of ST disks used sectors this size
+      }
+
+      if (f_ValidBPB==0){
+        if (MSA){
+          // Probably got a better chance of being right than guessing
+          bpbi.SectorsPerTrack=MSA_SecsPerTrack;
+          bpbi.Sides=short(MSA_Sides+1);
+          bpbi.Sectors=short((MSA_EndTrack+1)*bpbi.SectorsPerTrack*bpbi.Sides);
+        }else{
+          // BPB's wrong, time to guess the format
+          bpbi.SectorsPerTrack=0;
+
+          bpbi.Sectors=short(f_DiskFileLen/bpbi.BytesPerSector);
+          bpbi.Sides=WORD((bpbi.Sectors<1100) ? 1:2); // Total guess
+
+          // Work out bpbi.SectorsPerTrack from bpbi.Sides and bpbi.Sectors
+          bool Found=0;
+          for (;;){
+            for (int t=75;t<=FLOPPY_MAX_TRACK_NUM;t++){
+              for (int s=8;s<=13;s++){
+                if (bpbi.Sectors==(t+1)*s*bpbi.Sides){
+                  bpbi.SectorsPerTrack=WORD(s);
+                  Found=true;
+                  break;
+                }
+              }
+              if (Found) break;
+            }
+            if (Found) break;
+
+            if (bpbi.Sectors<10) break;
+
+            bpbi.Sectors--;
+          }
+          if (bpbi.SectorsPerTrack==0 && HasBPBFile==0){
+            fclose(nf);
+
+            if (NewMSATemp.NotEmpty()) DeleteFile(NewMSATemp);
+            if (NewZipTemp.NotEmpty()) DeleteFile(NewZipTemp);
+
+            return FIMAGE_WRONGFORMAT;
+          }
+        }
+      }
+      if (pDetectBPB) *pDetectBPB=bpbi; // Steem's best guess (or the BPB if it is valid)
+
+      if (HasBPBFile){
+        // User specified disk parameters
+        ConfigStoreFile CSF(BPBFile);
+        bpbi.Sides=CSF.GetInt("BPB","Sides",2);
+        bpbi.SectorsPerTrack=CSF.GetInt("BPB","SectorsPerTrack",9);
+        bpbi.BytesPerSector=CSF.GetInt("BPB","BytesPerSector",512);
+        bpbi.Sectors=CSF.GetInt("BPB","Sectors",1440);
+        CSF.Close();
+      }
+
+      fseek(nf,HeaderLen,SEEK_SET);
+
+      RemoveDisk();
+
+      f=nf;
+      BytesPerSector=short(bpbi.BytesPerSector);
+      SectorsPerTrack=short(bpbi.SectorsPerTrack);
+      Sides=short(bpbi.Sides);
+
+      TracksPerSide=short(short(bpbi.Sectors/SectorsPerTrack)/Sides);
+
+      DIM_File=DIM;
     }
-    if (pDetectBPB) *pDetectBPB=bpbi; // Steem's best guess (or the BPB if it is valid)
-
-    if (HasBPBFile){
-      // User specified disk parameters
-      ConfigStoreFile CSF(BPBFile);
-      bpbi.Sides=CSF.GetInt("BPB","Sides",2);
-      bpbi.SectorsPerTrack=CSF.GetInt("BPB","SectorsPerTrack",9);
-      bpbi.BytesPerSector=CSF.GetInt("BPB","BytesPerSector",512);
-      bpbi.Sectors=CSF.GetInt("BPB","Sectors",1440);
-      CSF.Close();
-    }
-
-    fseek(nf,HeaderLen,SEEK_SET);
-
-    RemoveDisk();
-
-    f=nf;
-    BytesPerSector=short(bpbi.BytesPerSector);
-    SectorsPerTrack=short(bpbi.SectorsPerTrack);
-    Sides=short(bpbi.Sides);
-
-    TracksPerSide=short(short(bpbi.Sectors/SectorsPerTrack)/Sides);
-
-    DIM_File=DIM;
+    MSATempFile=NewMSATemp;
+    ValidBPB=f_ValidBPB;
+    DiskFileLen=f_DiskFileLen;
   }
 
   ReadOnly=FileIsReadOnly;
   ZipTempFile=NewZipTemp;
   DiskInZip=NewDiskInZip;
-  MSATempFile=NewMSATemp;
   ImageFile=OriginalFile;
-  ValidBPB=f_ValidBPB;
-  DiskFileLen=f_DiskFileLen;
+  PastiDisk=f_PastiDisk;
   WrittenTo=0;
 
   // Media change, write protect for 10 VBLs, unprotect for 10 VBLs, wp for 10
   if (this==&FloppyDrive[0]) floppy_mediach[0]=30;
   if (this==&FloppyDrive[1]) floppy_mediach[1]=30;
+  // disable input for pasti
+  disable_input_vbl_count=max(disable_input_vbl_count,30);
+
 
   log("");
   log(EasyStr("FDC: Inserted disk ")+OriginalFile);
@@ -395,7 +471,7 @@ int TFloppyImage::SetDisk(EasyStr File,EasyStr CompressedDiskName,BPBINFO *pDete
 //---------------------------------------------------------------------------
 bool TFloppyImage::ReinsertDisk()
 {
-  if (Empty()) return 0;
+  if (Empty() || PastiDisk) return 0;
 
   fclose(f);
   if (ZipTempFile.NotEmpty()) ReadOnly=(FloppyArchiveIsReadWrite==0);
@@ -415,7 +491,7 @@ bool TFloppyImage::ReinsertDisk()
 //---------------------------------------------------------------------------
 bool TFloppyImage::OpenFormatFile()
 {
-  if (f==NULL || ReadOnly || Format_f || STT_File) return 0;
+  if (f==NULL || ReadOnly || Format_f || STT_File || PastiDisk) return 0;
 
   // The format file is just a max size ST file, any formatted tracks
   // go in here and then are merged with unformatted tracks when
@@ -448,7 +524,7 @@ bool TFloppyImage::OpenFormatFile()
 //---------------------------------------------------------------------------
 bool TFloppyImage::ReopenFormatFile()
 {
-  if (Format_f==NULL || f==NULL || ReadOnly) return 0;
+  if (Format_f==NULL || f==NULL || ReadOnly || PastiDisk) return 0;
 
   fclose(Format_f);
 
@@ -877,12 +953,39 @@ void TFloppyImage::RemoveDisk(bool LoseChanges)
         }
         fwrite(MSADataBuf,1,long(pD)-long(MSADataBuf),MSA);
         fclose(MSA);
-        
+
         delete[] MSADataBuf;
       }
       WIN_ONLY( if (stem_mousemode!=STEM_MOUSEMODE_WINDOW) SetCursor(PCArrow); )
     }
   }
+
+#if USE_PASTI
+  if (PastiDisk){
+    int drive=-1;
+    if (this==&FloppyDrive[0]) drive=0;
+    if (this==&FloppyDrive[1]) drive=1;
+    if (ZipTempFile.Empty() && ReadOnly==0 && drive>=0 && hPasti && LoseChanges==0){
+      struct pastiDISKIMGINFO pdi;
+      pdi.mode=PASTI_LDFNAME;
+      pdi.fileName=ImageFile;
+      pdi.fileBuf=PastiBuf;
+      pdi.bufSize=PastiBufLen;
+      if (pasti->SaveImg(drive,0,&pdi)==FALSE){
+        int err=pasti->GetLastError();
+        if (err!=pastiErrUnimpl){
+          Alert(T("Unable to save to disk image, changes have been lost!"),T("Disk Image Error"),MB_OK);
+        }
+      }
+    }
+    pasti->Eject(drive,ABSOLUTE_CPU_TIME);
+  }
+#endif
+  if (PastiBuf) delete[] PastiBuf;
+  PastiBuf=NULL;
+  PastiBufLen=0;
+  PastiDisk=0;
+
   if (f) fclose(f);
   f=NULL;
   if (Format_f) fclose(Format_f);

@@ -1,3 +1,12 @@
+/*---------------------------------------------------------------------------
+FILE: draw.cpp
+MODULE: emu
+DESCRIPTION: Routines to handle Steem's video output. draw_routines_init
+initialises the system, draw_begin locks output, draw_scanline is used to
+draw one line, draw_end unlocks output and draw_blit blits the drawn output
+to the PC display. 
+---------------------------------------------------------------------------*/
+
 //---------------------------------------------------------------------------
 void ASMCALL draw_scanline_dont(int,int,int,int) {}
 
@@ -16,10 +25,11 @@ void ASMCALL draw_scanline_dont(int,int,int,int) {}
     }                                                              \
     draw_dest_ad=draw_store_dest_ad+amount_drawn;                    \
     draw_store_dest_ad=NULL;                                           \
-    draw_scanline=draw_store_draw_scanline;                              \
+    draw_scanline=draw_store_draw_scanline; \
   }
+
 #else
-#define DRAW_BUFFERED_SCANLINE_TO_VIDEO 
+#define DRAW_BUFFERED_SCANLINE_TO_VIDEO
 #endif
 //---------------------------------------------------------------------------
 void draw_begin()
@@ -38,6 +48,22 @@ void draw_begin()
   // draw_first_scanline_for_border, draw_last_scanline_for_border
 //  init_screen();
 
+  if (border & 1){
+    draw_first_possible_line=draw_first_scanline_for_border;
+    draw_last_possible_line=draw_last_scanline_for_border;
+  }else{
+    draw_first_possible_line=0;
+    draw_last_possible_line=shifter_y;
+    if (FullScreen && overscan && (border==2)){ //hack overscan
+      draw_last_possible_line+=40;
+      draw_fs_topgap=0;
+    }else{
+      draw_fs_topgap=40;
+    }
+  }
+  UNIX_ONLY( draw_fs_topgap=0; )
+  if (draw_grille_black>0) Disp.DrawFullScreenLetterbox();
+
   if (Disp.Lock()!=DD_OK) return;
 
   if (BytesPerPixel==1) palette_copy();
@@ -55,23 +81,7 @@ void draw_begin()
   draw_dest_next_scanline=draw_dest_ad+draw_dest_increase_y;
   WIN_ONLY( draw_store_dest_ad=NULL; )
 
-  if (border & 1){
-    draw_first_possible_line=draw_first_scanline_for_border;
-    draw_last_possible_line=draw_last_scanline_for_border;
-  }else{
-    draw_first_possible_line=0;
-    draw_last_possible_line=shifter_y;
-    if (FullScreen && overscan && (border==2)){ //hack overscan
-      draw_last_possible_line+=40;
-      draw_fs_topgap=0;
-    }else{
-      draw_fs_topgap=40;
-    }
-  }
-  UNIX_ONLY( draw_fs_topgap=0; )
-
   if (draw_grille_black>0){
-    Disp.DrawFullScreenLetterbox();
     bool using_grille=0;
     if (draw_dest_increase_y>draw_line_length){
 #ifdef WIN32
@@ -313,7 +323,7 @@ void draw_end()
 #ifdef SHOW_WAVEFORM
   Disp.DrawWaveform();
 #endif
-  osd_draw_end();
+  osd_draw_end(); // resets osd_draw function pointers
 
   draw_scanline=draw_scanline_dont;
   WIN_ONLY( draw_store_dest_ad=NULL; )
@@ -329,6 +339,7 @@ void draw_end()
 void draw_check_border_removal()
 {
 //  if (shifter_freq_at_start_of_vbl!=50) return;
+  if (screen_res>=2) return;
   if (scan_y<shifter_first_draw_line || scan_y>=shifter_last_draw_line) return;
 
   int act=ABSOLUTE_CPU_TIME,t,i;
@@ -356,7 +367,7 @@ void draw_check_border_removal()
             (shifter_freq_change_time[i]-cpu_timer_at_start_of_hbl));
 
           shifter_draw_pointer+=8;
-          overscan_add_extra+=OVERSCAN_ADD_EXTRA_FOR_LEFT_BORDER_REMOVAL;
+          if (shifter_freq_at_start_of_vbl==50) overscan_add_extra+=OVERSCAN_ADD_EXTRA_FOR_LEFT_BORDER_REMOVAL;
           left_border=0;
 
 
@@ -401,21 +412,59 @@ void draw_check_border_removal()
     }
   }
 */
-
-  // Not sure about this!
-  if (left_border==BORDER_SIDE && shifter_freq_at_start_of_vbl==50){
-    t=cpu_timer_at_start_of_hbl+60; // Check 60Hz border off (50Hz border off-4)
-    if (act>t){
-      i=shifter_freq_change_idx;
-      while (shifter_freq_change_time[i]>t){
-        i--;i&=31;
-        if (i==shifter_freq_change_idx){ i=-1;break; }
+  //  This must disable the display of a line. No change to sdp or border removal
+  //  just disable output, i.e draw a black line.
+  if (shifter_freq_at_start_of_vbl==50){
+    if (draw_line_off==0){
+      t=cpu_timer_at_start_of_hbl+28; //trigger point
+      if (act>t){
+        i=shifter_freq_change_idx;
+        while (shifter_freq_change_time[i]>t){
+          i--; i&=31;
+          if (i==shifter_freq_change_idx){ i=-1;break; }
+        }
+        if (i>=0){
+          if (shifter_freq_change[i]==60 && shifter_freq_change_time[i]==t){
+            log_to(LOGSECTION_VIDEO,EasyStr("VIDEO: Disabling this whole line, there was a change to 60Hz at ")+
+                      (shifter_freq_change_time[i]-cpu_timer_at_start_of_hbl));
+            draw_line_off=true;
+            memset(PCpal,0,sizeof(long)*16);
+          }
+        }
       }
-      if (i>=0) if (shifter_freq_change[i]==60){ //remove small amount of left border
-        log_to(LOGSECTION_VIDEO,EasyStr("VIDEO: LEFT BORDER SHRUNK by 4 pixels - there was a change to 60 at absolute cycle ")+shifter_freq_change_time[i]);
-        left_border-=4;
-        overscan_add_extra=OVERSCAN_ADD_EXTRA_FOR_SMALL_LEFT_BORDER_REMOVAL;
-        overscan=OVERSCAN_MAX_COUNTDOWN;
+    }
+
+    // This should move the line left, and increase its length by 2 bytes, but
+    // not change fetching position
+    if (left_border==BORDER_SIDE){
+      t=cpu_timer_at_start_of_hbl+58; // Check 60Hz border off (50Hz border off-4)
+      if (act>t){
+        i=shifter_freq_change_idx;
+        while (shifter_freq_change_time[i]>t){
+          i--;i&=31;
+          if (i==shifter_freq_change_idx){ i=-1;break; }
+        }
+        if (i>=0 && shifter_freq_change[i]==60){
+          log_to(LOGSECTION_VIDEO,EasyStr("VIDEO: LEFT BORDER SHRUNK by 4 pixels - there was a change to 60 at absolute cycle ")+shifter_freq_change_time[i]);
+          left_border-=4;
+          overscan_add_extra=OVERSCAN_ADD_EXTRA_FOR_SMALL_LEFT_BORDER_REMOVAL;
+          overscan=OVERSCAN_MAX_COUNTDOWN;
+  /*
+        }else if (overscan_add_extra==0){
+          t=cpu_timer_at_start_of_hbl+38;
+          i=shifter_freq_change_idx;
+          while (shifter_freq_change_time[i]>t){
+            i--;i&=31;
+            if (i==shifter_freq_change_idx){ i=-1;break; }
+          }
+          if (i>=0) if (shifter_freq_change[i]==60){
+            log_to(LOGSECTION_VIDEO,EasyStr("VIDEO: Shifting screen by a word - there was a change to 60 at absolute cycle ")+shifter_freq_change_time[i]);
+            shifter_draw_pointer_at_start_of_line+=2;
+            shifter_draw_pointer+=2;
+            overscan_add_extra=2;
+          }
+  */
+        }
       }
     }
   }
@@ -647,8 +696,8 @@ void inline draw_scanline_to_end()
         // then the picture must be 400 pixels high. So to make it work we
         // draw two different lines at the end of each scanline.
         // To make it more confusing in some drawing modes if
-        // emudetect_falcon_mode_size==1 then we have to draw two identical
-        // lines! That is handled by the draw_scanline routine. 
+        // emudetect_falcon_mode_size==1 we have to draw two identical
+        // lines. That is handled by the draw_scanline routine. 
         for (int n=0;n<emudetect_falcon_mode_size;n++){
           if (in_pic){
             nsdp=shifter_draw_pointer + pic*emudetect_falcon_mode;
@@ -755,7 +804,7 @@ void inline draw_scanline_to_end()
   // In the STE if you make hscroll non-zero in the normal way then the shifter
   // buffers 2 rasters ahead. We don't do this so to make sdp correct at the
   // end of the line we must add a raster.  
-  shifter_skip_raster_for_hscroll=(shifter_hscroll!=0 && shifter_hscroll_extra_fetch);
+  shifter_skip_raster_for_hscroll = shifter_hscroll!=0;
 }
 
 #undef LOGSECTION

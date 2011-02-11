@@ -30,6 +30,7 @@ EXT void PasteVBL(),StemWinResize(int DEFVAL(0),int DEFVAL(0));
 EXT void GUIDiskErrorEject(int);
 EXT bool GUICanGetKeys();
 EXT void GUIColdResetChangeSettings();
+EXT void GUISaveResetBackup();
 EXT void CheckResetIcon(),CheckResetDisplay(bool=0);
 EXT void UpdateSTKeys();
 EXT void GUIEmudetectCreateDisk(Str,int,int,int);
@@ -176,6 +177,15 @@ int GetComLineArgType(char *,EasyStr &);
 #define ARG_STFMBORDER 23
 #define ARG_SCREENSHOTUSEFULLNAME 24
 #define ARG_ALLOWLPTINPUT 25
+#define ARG_NONOTIFYINIT 26
+#define ARG_SCREENSHOTALWAYSADDNUM 27
+#define ARG_PSGCAPTURE 28
+#define ARG_CROSSMOUSE 29
+#define ARG_RUN 30
+#define ARG_GDIFSBORDER 31
+#define ARG_PASTI 32
+#define ARG_NOAUTOSNAPSHOT 33
+#define ARG_NOPASTI 34
 
 // Settings
 #define ARG_SETSOF 100
@@ -187,6 +197,8 @@ int GetComLineArgType(char *,EasyStr &);
 #define ARG_SETDIVSTIME 106
 #define ARG_TAKESHOT 107
 #define ARG_SETPABUFSIZE 108
+#define ARG_RTBUFSIZE 109
+#define ARG_RTBUFNUM 110
 
 // Files
 #define ARG_DISKIMAGEFILE 201
@@ -196,6 +208,7 @@ int GetComLineArgType(char *,EasyStr &);
 #define ARG_STPROGRAMTPFILE 205
 #define ARG_LINKFILE 206
 #define ARG_TOSIMAGEFILE 207
+#define ARG_PASTIDISKIMAGEFILE 208
 
 #define ARG_NONEWINSTANCE 250
 #define ARG_ALWAYSNEWINSTANCE 251
@@ -276,6 +289,7 @@ int HandleXError(Display*,XErrorEvent*);
 
 int StemWinProc(void*,Window,XEvent*);
 int timerproc(void*,Window,int);
+int hyperlink_np(hxc_button*,int,int*);
 
 void steem_hxc_modal_notify(bool);
 
@@ -391,6 +405,7 @@ void SnapShotProcess(int);
 #define ICO16_UNTICKED 61
 #define ICO16_FULLSCREEN 62
 #define ICO16_TAKESCREENSHOTBUT 63
+#define ICO16_UNRADIOMARKED 64
 
 #define ICO32_JOYDIR 0
 #define ICO32_RECORD 1
@@ -399,10 +414,14 @@ void SnapShotProcess(int);
 #define ICO32_LINKCUR 4
 #define ICO32_PLAY 5
 #define ICO32_DRIVE_B_OFF 6
+#define ICO32_EXCLAM 7
+#define ICO32_QUESTION 8
+#define ICO32_STOP 9
+#define ICO32_INFO 10
 
 #define ICO64_STEEM 0
 #define ICO64_HARDDRIVES 1
-#define ICO64_HARDDRIVES_FR 6
+#define ICO64_HARDDRIVES_FR 2
 
 extern "C" LPBYTE Get_icon16_bmp(),Get_icon32_bmp(),Get_icon64_bmp(),Get_tos_flags_bmp();
 IconGroup Ico16,Ico32,Ico64,IcoTOSFlags;
@@ -478,6 +497,24 @@ int cartfile_parse_routine(char *fn,struct stat*s)
 
 hxc_fileselect fileselect;
 
+#define COMLINE_HTTP 0
+#define COMLINE_FTP 1
+#define COMLINE_MAILTO 2
+#define COMLINE_FM 3
+#define COMLINE_FIND 4
+
+#define NUM_COMLINES 5
+
+char* Comlines_Default[NUM_COMLINES][8]={
+        {"netscape \"[URL]\"","konqueror \"[URL]\"","galeon \"[URL]\"","opera \"[URL]\"","firefox \"[URL]\"","mozilla \"[URL]\"",NULL},
+        {"netscape \"[URL]\"","konqueror \"[URL]\"","galeon \"[URL]\"","opera \"[URL]\"","firefox \"[URL]\"","mozilla \"[URL]\"",NULL},
+        {"netscape \"mailto:[ADDRESS]\"","mozilla \"mailto:[ADDRESS]\"","kmail \"[ADDRESS]\"","galeon \"mailto:[ADDRESS]\"",NULL},
+        {"konqueror \"[PATH]\"","nautilus \"[PATH]\"","xfm \"[PATH]\"",NULL},
+        {"kfind \"[PATH]\"","gnome-search-tool \"[PATH]\"",NULL}
+        };
+
+Str Comlines[NUM_COMLINES]={Comlines_Default[0][0],Comlines_Default[1][0],Comlines_Default[2][0],Comlines_Default[3][0],Comlines_Default[4][0]};
+
 #endif
 
 bool load_cart(char*);
@@ -485,7 +522,14 @@ void CleanUpSteem();
 bool StepByStepInit=0;
 EasyStr RunDir,WriteDir,INIFile,ScreenShotFol;
 EasyStr LastSnapShot,BootStateFile,StateHist[10],AutoSnapShotName="auto";
-bool BootDisk[2]={0,0},PauseWhenInactive=0,BootTOSImage=0;
+Str BootDisk[2];
+
+#define BOOT_PASTI_DEFAULT 0
+#define BOOT_PASTI_ON 1
+#define BOOT_PASTI_OFF 2
+
+int BootPasti=BOOT_PASTI_DEFAULT;
+bool PauseWhenInactive=0,BootTOSImage=0;
 bool bAOT=0,bAppMaximized=0;
 #ifndef ONEGAME
 bool AutoLoadSnapShot=true,ShowTips=true;
@@ -498,6 +542,8 @@ bool HighPriority=0;
 #define BOOT_MODE_DEFAULT 0
 #define BOOT_MODE_FULLSCREEN 1
 #define BOOT_MODE_WINDOW 2
+#define BOOT_MODE_FLAGS_MASK 0xff
+#define BOOT_MODE_RUN 0x100
 int BootInMode=BOOT_MODE_DEFAULT;
 
 char *FSTypes(int,...);

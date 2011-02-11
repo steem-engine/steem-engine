@@ -45,6 +45,7 @@ DEBUG_ONLY(EXT int mode);
 EXT int mixed_output INIT(0);
 
 EXT int cpu_time_of_last_vbl,shifter_cycle_base;
+EXT int cpu_timer_at_start_of_hbl;
 
 #ifdef IN_EMU
 
@@ -52,13 +53,16 @@ EXT int cpu_time_of_last_vbl,shifter_cycle_base;
 
 #define INTERRUPT_START_TIME_WOBBLE  \
           INSTRUCTION_TIME_ROUND(0); \
-          INSTRUCTION_TIME(8-((ABSOLUTE_CPU_TIME-shifter_cycle_base) % 12)); \
+          INSTRUCTION_TIME((8000000-(ABSOLUTE_CPU_TIME-shifter_cycle_base)) % 10);
+
+//          INSTRUCTION_TIME(8-((ABSOLUTE_CPU_TIME-shifter_cycle_base) % 12));
+
+
 
 #define HBL_INTERRUPT  \
   {                  \
     hbl_pending=false;                 \
-    log_to_section(LOGSECTION_INTERRUPTS,Str("INTERRUPT: HBL at PC=")+HEXSl(pc,6)+ \
-              " scanline "+scan_y+" cycles "+(ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl)); \
+    log_to_section(LOGSECTION_INTERRUPTS,Str("INTERRUPT: HBL at PC=")+HEXSl(pc,6)+" "+scanline_cycle_log()); \
     M68K_UNSTOP;                                \
     INTERRUPT_START_TIME_WOBBLE;                 \
     time_of_last_hbl_interrupt=ABSOLUTE_CPU_TIME; \
@@ -116,12 +120,12 @@ EXT int cpu_time_of_last_vbl,shifter_cycle_base;
       }                                                     \
     }
 
-#define PREPARE_EVENT_CHECK_FOR_DMA_SOUND_END  \
+/*#define PREPARE_EVENT_CHECK_FOR_DMA_SOUND_END  \
     if ((time_of_next_event-dma_sound_end_cpu_time) >= 0){                 \
       time_of_next_event=dma_sound_end_cpu_time;     \
       screen_event_vector=event_dma_sound_hit_end;                    \
     }                                    \
-
+*/
 #define PREPARE_EVENT_CHECK_FOR_TIMER_B       \
   if (mfp_reg[MFPR_TBCR]==8){  \
     if ((time_of_next_event-time_of_next_timer_b) >= 0){                 \
@@ -141,7 +145,19 @@ EXT int cpu_time_of_last_vbl,shifter_cycle_base;
   }
 
 #else
-#define PREPARE_EVENT_CHECK_FOR_DEBUG      
+#define PREPARE_EVENT_CHECK_FOR_DEBUG
+#endif
+
+#if USE_PASTI
+
+#define PREPARE_EVENT_CHECK_FOR_PASTI       \
+  if ((time_of_next_event-pasti_update_time) >= 0){                 \
+    time_of_next_event=pasti_update_time;  \
+    screen_event_vector=event_pasti_update;                    \
+  }
+
+#else
+#define PREPARE_EVENT_CHECK_FOR_PASTI
 #endif
 
 typedef void(*EVENTPROC)();
@@ -175,7 +191,6 @@ int time_of_next_event;
 EVENTPROC screen_event_vector;
 int cpu_time_of_start_of_event_plan;
 
-int cpu_timer_at_start_of_hbl;
 //int cpu_time_of_next_hbl_interrupt=0;
 int time_of_next_timer_b=0;
 int time_of_last_hbl_interrupt;
@@ -188,18 +203,7 @@ int cpu_timer_at_res_change;
 
 #ifdef _DEBUG_BUILD
 #define CHECK_BREAKPOINT                     \
-        if (do_monitor_check){         \
-          monitor_altered=monitor_check();  \
-          if (monitor_altered){                  \
-            if (monitor_mode==1){         \
-              runstate=RUNSTATE_STOPPING;              \
-              SET_WHY_STOP(HEXSl(old_pc,6)+": Write to "+HEXSl(monitor_altered,6)); \
-            }else{          \
-              log_write(HEXSl(old_pc,6)+": Wrote to "+HEXSl(monitor_altered,6)+" new value is "+HEXSl(LPEEK(monitor_altered),8)); \
-            }                \
-          }                                          \
-        }                                       \
-        if (do_breakpoint_check){ \
+        if (debug_num_bk){ \
           if (debug_first_instruction==0) breakpoint_check();     \
         }   \
         if (pc==trace_over_breakpoint){ \
@@ -210,6 +214,11 @@ int cpu_timer_at_res_change;
 #endif
 
 #endif
+
+#if USE_PASTI
+void event_pasti_update();
+#endif
+
 
 #undef EXT
 #undef INIT

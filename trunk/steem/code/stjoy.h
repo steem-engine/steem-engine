@@ -52,7 +52,7 @@ DWORD GetAxisPosition(int,JOYINFOEX *);
 
 JOYINFOEX JoyPos[MAX_PC_JOYS];
 
-#define POV_CONV(POV) (((POV)<0xffff) ? (((POV)+2250)/4500):0xffff)
+#define POV_CONV(POV) (((POV)<0xffff) ? ((((POV)+2250)/4500) % 8):0xffff)
 //----------------------- Info about joysticks ---------------------------------
 bool DisablePCJoysticks=0;
 

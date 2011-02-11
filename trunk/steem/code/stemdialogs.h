@@ -14,6 +14,7 @@ public:
   void LoadPosition(GoodConfigStoreFile*),SavePosition(bool,ConfigStoreFile*),SaveVisible(ConfigStoreFile*);
 
 #ifdef WIN32
+  void CheckFSPosition(HWND);
   void RegisterMainClass(WNDPROC,char*,int);
   static LRESULT DefStemDialogProc(HWND,UINT,WPARAM,LPARAM);
   void MakeParent(HWND),UpdateMainWindowIcon();

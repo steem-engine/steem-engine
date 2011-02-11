@@ -246,6 +246,8 @@ bool draw_buffer_complex_scanlines;
 
 bool draw_med_low_double_height;
 
+bool draw_line_off=0;
+
 #define ADD_SHIFTER_FREQ_CHANGE(f) \
   {shifter_freq_change_idx++;shifter_freq_change_idx&=31; \
   shifter_freq_change_time[shifter_freq_change_idx]=ABSOLUTE_CPU_TIME; \

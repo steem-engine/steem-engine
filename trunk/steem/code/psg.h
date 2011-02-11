@@ -63,6 +63,7 @@ EXT int sound_variable_d INIT(208);
 #define SOUND_MODE_CHIP         1
 #define SOUND_MODE_EMULATED     2
 #define SOUND_MODE_SHARPSAMPLES 3
+#define SOUND_MODE_SHARPCHIP    4
 
 EXT bool sound_internal_speaker INIT(false);
 EXT int sound_freq INIT(50066),sound_comline_freq INIT(0),sound_chosen_freq INIT(50066);
@@ -115,8 +116,6 @@ EXT DWORD psg_time_of_start_of_buffer;
 EXT DWORD psg_time_of_last_vbl_for_writing,psg_time_of_next_vbl_for_writing;
 EXT int psg_n_samples_this_vbl;
 
-EXT WORD dma_sound_last_sample_l,dma_sound_last_sample_r;
-
 #ifdef SHOW_WAVEFORM
 
 EXT int temp_waveform_display_counter;
@@ -127,6 +126,14 @@ EXT DWORD temp_waveform_play_counter;
 //#define TEMP_WAVEFORM_INTERVAL 31
 
 #endif
+
+EXT void dma_sound_get_last_sample(WORD*,WORD*);
+
+EXT void psg_capture(bool,Str),psg_capture_check_boundary();
+EXT FILE *psg_capture_file INIT(NULL);
+EXT int psg_capture_cycle_base INIT(0);
+
+EXT bool psg_always_capture_on_start INIT(0);
 
 
 #ifdef IN_EMU
@@ -144,67 +151,31 @@ void sound_record_to_wav(int,DWORD,bool,int*);
 //---------------------------------------------------------------------------
 HRESULT Sound_VBL();
 //--------------------------------------------------------------------------- DMA Sound
-void event_dma_sound_hit_end();
-void dma_sound_prepare_for_end(MEM_ADDRESS,int,bool);
+void dma_sound_fetch();
+void dma_sound_set_control(BYTE);
+void dma_sound_set_mode(BYTE);
 
 BYTE dma_sound_control,dma_sound_mode;
 MEM_ADDRESS dma_sound_start=0,next_dma_sound_start=0,
             dma_sound_end=0,next_dma_sound_end=0;
-
-int dma_sound_start_time;
 
 WORD MicroWire_Mask=0x07ff;
 WORD MicroWire_Data=0;
 int MicroWire_StartTime=0;
 #define CPU_CYCLES_PER_MW_SHIFT 8
 
-void dma_sound_write_to_buffer(int);
+int dma_sound_mode_to_freq[4]={6258,12517,25033,50066};
+int dma_sound_freq,dma_sound_output_countdown,dma_sound_samples_countdown;
 
-const double dma_sound_mode_to_cycles_per_byte_stereo_8mhz[4]={8000000.0 / (6540.0*2.0),
-                                                               8000000.0 / (12800.0*2.0),
-                                                               8000000.0 / (25180.0*2.0),
-                                                               8000000.0 / (50066.0*2.0)};
-
-const double dma_sound_mode_to_cycles_per_byte_mono_8mhz[4]={8000000.0 / 6900.0,
-                                                             8000000.0 / 13140.0,
-                                                             8000000.0 / 25600.0,
-                                                             8000000.0 / 50360.0};
-/*
-const double dma_sound_mode_to_cycles_per_byte_stereo_8mhz[4]={8000000.0 / (6258.0*2.0),
-                                                               8000000.0 / (12517.0*2.0),
-                                                               8000000.0 / (25033.0*2.0),
-                                                               8000000.0 / (50066.0*2.0)};
-
-const double dma_sound_mode_to_cycles_per_byte_mono_8mhz[4]={8000000.0 / 6258.0,
-                                                             8000000.0 / 12517.0,
-                                                             8000000.0 / 25033.0,
-                                                             8000000.0 / 50066.0};
-*/
-
-double dma_sound_mode_to_cycles_per_byte_stereo[4]={dma_sound_mode_to_cycles_per_byte_stereo_8mhz[0],
-                                                    dma_sound_mode_to_cycles_per_byte_stereo_8mhz[1],
-                                                    dma_sound_mode_to_cycles_per_byte_stereo_8mhz[2],
-                                                    dma_sound_mode_to_cycles_per_byte_stereo_8mhz[3]};
-
-double dma_sound_mode_to_cycles_per_byte_mono[4]={dma_sound_mode_to_cycles_per_byte_mono_8mhz[0],
-                                                    dma_sound_mode_to_cycles_per_byte_mono_8mhz[1],
-                                                    dma_sound_mode_to_cycles_per_byte_mono_8mhz[2],
-                                                    dma_sound_mode_to_cycles_per_byte_mono_8mhz[3]};
-
-
-int dma_sound_mode_to_freq[2][4]={/*stereo*/{6540,12800,25180,50066},
-                                    /*mono*/{6900,13140,25600,50360}};
-
-//int dma_sound_mode_to_freq[2][4]={/*stereo*/{6258,12517,25033,50066},
-//                                    /*mono*/{6258,12517,25033,50066}};
-int dma_sound_freq,dma_sound_countdown;
+WORD dma_sound_internal_buf[4],dma_sound_last_word;
+int dma_sound_internal_buf_len=0;
+MEM_ADDRESS dma_sound_fetch_address;
 
 // Max frequency/lowest refresh *2 for stereo
 #define DMA_SOUND_BUFFER_LENGTH (((int(double(100000/50)*1.3) & ~3)*SCREENS_PER_SOUND_VBL)*2)
 WORD dma_sound_channel_buf[DMA_SOUND_BUFFER_LENGTH+16];
-int dma_sound_end_cpu_time;
 DWORD dma_sound_channel_buf_last_write_t;
-MEM_ADDRESS dma_sound_addr_to_read_next;
+int dma_sound_on_this_screen=0;
 
 #define DMA_SOUND_CHECK_TIMER_A \
     if (mfp_reg[MFPR_TACR]==8){ \
@@ -297,7 +268,31 @@ const BYTE psg_envelopes[8][32]={
 #define VFP VOLTAGE_FIXED_POINT
 #define VZL VOLTAGE_ZERO_LEVEL
 #define VA VFP*PSG_CHANNEL_AMPLITUDE
-const int psg_flat_volume_level[16]={0*VA/1000+VZL*VFP,0*VA/1000+VZL*VFP,2*VA/1000+VZL*VFP,5*VA/1000+VZL*VFP,20*VA/1000+VZL*VFP,50*VA/1000+VZL*VFP,65*VA/1000+VZL*VFP,80*VA/1000+VZL*VFP,100*VA/1000+VZL*VFP,125*VA/1000+VZL*VFP,178*VA/1000+VZL*VFP,250*VA/1000+VZL*VFP,354*VA/1000+VZL*VFP,510*VA/1000+VZL*VFP,707*VA/1000+VZL*VFP,1000*VA/1000+VZL*VFP};
+//const int psg_flat_volume_level[16]={0*VA/1000+VZL*VFP,0*VA/1000+VZL*VFP,2*VA/1000+VZL*VFP,5*VA/1000+VZL*VFP,20*VA/1000+VZL*VFP,50*VA/1000+VZL*VFP,65*VA/1000+VZL*VFP,80*VA/1000+VZL*VFP,100*VA/1000+VZL*VFP,125*VA/1000+VZL*VFP,178*VA/1000+VZL*VFP,250*VA/1000+VZL*VFP,354*VA/1000+VZL*VFP,510*VA/1000+VZL*VFP,707*VA/1000+VZL*VFP,1000*VA/1000+VZL*VFP};
+const int psg_flat_volume_level[16]={0*VA/1000+VZL*VFP,4*VA/1000+VZL*VFP,8*VA/1000+VZL*VFP,12*VA/1000+VZL*VFP,
+                                      17*VA/1000+VZL*VFP,24*VA/1000+VZL*VFP,35*VA/1000+VZL*VFP,48*VA/1000+VZL*VFP,
+                                      69*VA/1000+VZL*VFP,95*VA/1000+VZL*VFP,139*VA/1000+VZL*VFP,191*VA/1000+VZL*VFP,
+                                      287*VA/1000+VZL*VFP,407*VA/1000+VZL*VFP,648*VA/1000+VZL*VFP,1000*VA/1000+VZL*VFP};
+
+/*
+0 0     0      0
+1 0.001 0.0045 0.0041
+2 0.002 0.0081 0.0053
+3 0.005 0.0117 0.008
+4 0.02  0.0175 0.0124
+5 0.05  0.0241 0.0158
+6 0.065 0.0355 0.0211
+7 0.08  0.048  0.0317
+8 0.1   0.069  0.0596
+9 0.125 0.095  0.0938
+A 0.175 0.139  0.131
+B 0.25  0.191  0.207
+C 0.36  0.287  0.312
+D 0.51  0.407  0.46
+E 0.71  0.648  0.67
+F 1     1      1
+*/
+
 
 const int psg_envelope_level[8][64]={
     {1000*VA/1000+VZL*VFP,841*VA/1000+VZL*VFP,707*VA/1000+VZL*VFP,590*VA/1000+VZL*VFP,510*VA/1000+VZL*VFP,420*VA/1000+VZL*VFP,354*VA/1000+VZL*VFP,290*VA/1000+VZL*VFP,250*VA/1000+VZL*VFP,210*VA/1000+VZL*VFP,178*VA/1000+VZL*VFP,149*VA/1000+VZL*VFP,125*VA/1000+VZL*VFP,110*VA/1000+VZL*VFP,100*VA/1000+VZL*VFP,88*VA/1000+VZL*VFP,80*VA/1000+VZL*VFP,70*VA/1000+VZL*VFP,65*VA/1000+VZL*VFP,55*VA/1000+VZL*VFP,50*VA/1000+VZL*VFP,30*VA/1000+VZL*VFP,20*VA/1000+VZL*VFP,10*VA/1000+VZL*VFP,5*VA/1000+VZL*VFP,3*VA/1000+VZL*VFP,2*VA/1000+VZL*VFP,1*VA/1000+VZL*VFP,0*VA/1000+VZL*VFP,0*VA/1000+VZL*VFP,0*VA/1000+VZL*VFP,0*VA/1000+VZL*VFP,

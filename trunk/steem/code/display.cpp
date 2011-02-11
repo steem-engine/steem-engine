@@ -1,3 +1,10 @@
+/*---------------------------------------------------------------------------
+FILE: display.cpp
+MODULE: Steem
+DESCRIPTION: A class to encapsulate the process of outputting to the display.
+This contains the DirectDraw code used by Windows Steem for output.
+---------------------------------------------------------------------------*/
+
 //---------------------------------------------------------------------------
 SteemDisplay::SteemDisplay()
 {
@@ -18,6 +25,7 @@ SteemDisplay::SteemDisplay()
 
   DrawToVidMem=true;
   BlitHideMouse=true;
+  DrawLetterboxWithGDI=0;
 
 #elif defined(UNIX)
   X_Img=NULL;
@@ -39,7 +47,7 @@ SteemDisplay::SteemDisplay()
 #endif
 
   ScreenShotFormat=0;
-  ScreenShotUseFullName=0;
+  ScreenShotUseFullName=0;ScreenShotAlwaysAddNum=0;
   ScreenShotMinSize=0;
   RunOnChangeToWindow=0;
   DoAsyncBlit=0;
@@ -632,7 +640,7 @@ void SteemDisplay::RunStart(bool Temp)
   SetStemMouseMode(STEM_MOUSEMODE_WINDOW);
 
 #ifdef WIN32
-  LockWindowUpdate(StemWin);
+  if (DrawLetterboxWithGDI==0) LockWindowUpdate(StemWin);
   while (ShowCursor(0)>=0);
   SetCursor(NULL);
 #endif
@@ -705,13 +713,20 @@ void SteemDisplay::DrawFullScreenLetterbox()
       bfx.dwSize=sizeof(DDBLTFX);
       bfx.dwFillColor=RGB(0,0,0);
 
+      HDC dc=NULL;
+      if (DrawLetterboxWithGDI) dc=GetDC(StemWin);
+
       RECT Dest={0,0,640,draw_fs_topgap};
       if (border & 1){
         Dest.right=800;
         Dest.bottom=(600-400-2*(BORDER_TOP+BORDER_BOTTOM))/2;
       }
       DDBackSur->Blt(&Dest,NULL,NULL,DDBLT_COLORFILL | DDBLT_WAIT,&bfx);
-      DDPrimarySur->Blt(&Dest,NULL,NULL,DDBLT_COLORFILL | DDBLT_WAIT,&bfx);
+      if (dc){
+        FillRect(dc,&Dest,(HBRUSH)GetStockObject(BLACK_BRUSH));
+      }else{
+        DDPrimarySur->Blt(&Dest,NULL,NULL,DDBLT_COLORFILL | DDBLT_WAIT,&bfx);
+      }
 
       if (border & 1){
         Dest.top=600-Dest.bottom;
@@ -721,7 +736,11 @@ void SteemDisplay::DrawFullScreenLetterbox()
         Dest.bottom=480;
       }
       DDBackSur->Blt(&Dest,NULL,NULL,DDBLT_COLORFILL | DDBLT_WAIT,&bfx);
-      DDPrimarySur->Blt(&Dest,NULL,NULL,DDBLT_COLORFILL | DDBLT_WAIT,&bfx);
+      if (dc){
+        FillRect(dc,&Dest,(HBRUSH)GetStockObject(BLACK_BRUSH));
+      }else{
+        DDPrimarySur->Blt(&Dest,NULL,NULL,DDBLT_COLORFILL | DDBLT_WAIT,&bfx);
+      }
 
       if (border & 1){
         int SideGap=(800 - (BORDER_SIDE+320+BORDER_SIDE)*2) / 2;
@@ -729,12 +748,21 @@ void SteemDisplay::DrawFullScreenLetterbox()
         Dest.top=0;Dest.bottom=600;
         Dest.left=0;Dest.right=SideGap;
         DDBackSur->Blt(&Dest,NULL,NULL,DDBLT_COLORFILL | DDBLT_WAIT,&bfx);
-        DDPrimarySur->Blt(&Dest,NULL,NULL,DDBLT_COLORFILL | DDBLT_WAIT,&bfx);
+        if (dc){
+          FillRect(dc,&Dest,(HBRUSH)GetStockObject(BLACK_BRUSH));
+        }else{
+          DDPrimarySur->Blt(&Dest,NULL,NULL,DDBLT_COLORFILL | DDBLT_WAIT,&bfx);
+        }
 
         Dest.left=800-SideGap;Dest.right=800;
         DDBackSur->Blt(&Dest,NULL,NULL,DDBLT_COLORFILL | DDBLT_WAIT,&bfx);
-        DDPrimarySur->Blt(&Dest,NULL,NULL,DDBLT_COLORFILL | DDBLT_WAIT,&bfx);
+        if (dc){
+          FillRect(dc,&Dest,(HBRUSH)GetStockObject(BLACK_BRUSH));
+        }else{
+          DDPrimarySur->Blt(&Dest,NULL,NULL,DDBLT_COLORFILL | DDBLT_WAIT,&bfx);
+        }
       }
+      if (dc) ReleaseDC(StemWin,dc);
     }
   }
 }
@@ -861,6 +889,8 @@ void SteemDisplay::ChangeToFullScreen()
 void SteemDisplay::ChangeToWindowedMode(bool Emergency)
 {
   if (DDExclusive==0 && FullScreen==0) return;
+
+  WIN_ONLY( if (FullScreen) TScreenSaver::killTimer(); )
 
   bool CanChangeNow=true;
   if (runstate==RUNSTATE_RUNNING){
@@ -1097,7 +1127,7 @@ HRESULT SteemDisplay::SaveScreenShot()
     bool AddNumExt=true;
     if (ScreenShotUseFullName){
       ShotFile=ScreenShotFol+SLASH+FirstWord+"."+Exts;
-      if (Exists(ShotFile)==0) AddNumExt=0;
+      if (Exists(ShotFile)==0) AddNumExt=ScreenShotAlwaysAddNum;
     }
     if (AddNumExt){
       int Num=0;

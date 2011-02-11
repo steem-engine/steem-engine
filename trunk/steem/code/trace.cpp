@@ -1,3 +1,11 @@
+/*---------------------------------------------------------------------------
+FILE: trace.cpp
+MODULE: Steem
+CONDITION: _DEBUG_BUILD
+DESCRIPTION: Functions to handle tracing instructions in the debug version
+of Steem and displaying information on what happened.
+---------------------------------------------------------------------------*/
+
 //---------------------------------------------------------------------------
 void trace()
 {
@@ -38,8 +46,6 @@ void trace()
     mode=STEM_MODE_INSPECT;
 
     update_display_after_trace();
-
-    debug_check_monitors();
 //  }catch (m68k_exception &e){
   CATCH_M68K_EXCEPTION
     m68k_exception &e=ExceptionObject;
@@ -329,6 +335,13 @@ LRESULT __stdcall trace_window_WndProc(HWND Win,UINT Mess,UINT wPar,long lPar)
       MoveWindow(trace_repeat_trace_button,10,HIWORD(lPar)-35,LOWORD(lPar) - 20,30,true);
       SetWindowPos(trace_scroller,0,0,0,LOWORD(lPar)-20,HIWORD(lPar)-145,SWP_NOZORDER | SWP_NOMOVE);
       break;
+    case WM_DRAWITEM:
+    {
+      DRAWITEMSTRUCT *pDIS=(DRAWITEMSTRUCT*)lPar;
+      mem_browser *mb=(mem_browser*)GetWindowLong(pDIS->hwndItem,GWL_USERDATA);
+      if (mb) mb->draw(pDIS);
+      break;
+    }
     case WM_CLOSE:
       ShowWindow(Win,SW_HIDE);
   //    m_b_trace.active=false;
@@ -365,8 +378,8 @@ void trace_window_init()
       110,310,370,400,NULL,NULL,Inst,0);
 
   m_b_trace.owner=trace_window_handle;
-  m_b_trace.handle=CreateWindowEx(512,WC_LISTVIEW,"Freak!",
-      LVS_REPORT | LVS_SHAREIMAGELISTS | LVS_NOSORTHEADER | WS_VISIBLE | WS_CHILDWINDOW | WS_CLIPSIBLINGS,
+  m_b_trace.handle=CreateWindowEx(512,WC_LISTVIEW,"",
+      LVS_REPORT | LVS_SHAREIMAGELISTS | LVS_NOSORTHEADER | LVS_OWNERDRAWFIXED | WS_VISIBLE | WS_CHILD | WS_CLIPSIBLINGS,
       10,1,400,55,m_b_trace.owner,(HMENU)1,Inst,NULL);
 
   SetWindowLong(m_b_trace.handle,GWL_WNDPROC,(long)mem_browser_WndProc);

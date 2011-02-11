@@ -1,3 +1,10 @@
+/*---------------------------------------------------------------------------
+FILE: loadsave_emu.cpp
+MODULE: emu
+DESCRIPTION: Functions to load and save emulation variables. This is mainly
+for Steem's memory snapshots system.
+---------------------------------------------------------------------------*/
+
 //---------------------------------------------------------------------------
 void ReadWriteVar(void *lpVar,DWORD szVar,NOT_ONEGAME( FILE *f ) ONEGAME_ONLY( BYTE* &pMem ),
                         int LoadOrSave,int Type,int Version)
@@ -103,6 +110,7 @@ int LoadSaveAllStuff(NOT_ONEGAME( FILE *f ) ONEGAME_ONLY( BYTE* &f ),
   ReadWrite(sr);             //2
   ReadWrite(other_sp);       //4
 
+
   ReadWrite(xbios2);         //4
 
   ReadWriteArray(STpal);
@@ -196,13 +204,13 @@ int LoadSaveAllStuff(NOT_ONEGAME( FILE *f ) ONEGAME_ONLY( BYTE* &f ),
 
   WORD NewROMVer=tos_version;
   if (Version>=7){
-    ReadWrite(NewROMVer);
+    ReadWrite(NewROMVer); // 2
   }else{
     NewROMVer=0x701;
   }
 
-  ReadWrite(bank_length[0]);
-  ReadWrite(bank_length[1]);
+  ReadWrite(bank_length[0]);       // 4
+  ReadWrite(bank_length[1]);       // 4 
   if (LoadOrSave==LS_LOAD){
     BYTE MemConf[2]={MEMCONF_512,MEMCONF_512};
     GetCurrentMemConf(MemConf);
@@ -242,21 +250,17 @@ int LoadSaveAllStuff(NOT_ONEGAME( FILE *f ) ONEGAME_ONLY( BYTE* &f ),
   }
 
   if (Version>=10){
-    if ((dma_sound_control & BIT_0) && LoadOrSave==LS_SAVE){ // DMA sound playing
-      // Fix dma_sound_addr_to_read_next, can't do any harm
-      dma_sound_write_to_buffer(ABSOLUTE_CPU_TIME);
-    }
-    ReadWrite(dma_sound_addr_to_read_next);    //4
+    ReadWrite(dma_sound_fetch_address);    //4
     ReadWrite(next_dma_sound_end);   //4
     ReadWrite(next_dma_sound_start); //4
   }else if (LoadOrSave==LS_LOAD){
     next_dma_sound_end=dma_sound_end;
     next_dma_sound_start=dma_sound_start;
-    dma_sound_addr_to_read_next=dma_sound_start;
+    dma_sound_fetch_address=dma_sound_start;
   }
 //  dma_sound_subdivide_minus_one=dma_mode_to_subdivide[sound_low_quality][dma_sound_mode & 3];
-  dma_sound_freq=dma_sound_mode_to_freq[(dma_sound_mode & BIT_7)!=0][dma_sound_mode & 3];
-  dma_sound_countdown=dma_sound_freq;
+  dma_sound_freq=dma_sound_mode_to_freq[dma_sound_mode & 3];
+  dma_sound_output_countdown=0;
 
   DWORD StartOfData=0;
   NOT_ONEGAME( DWORD StartOfDataPos=ftell(f); )
@@ -380,11 +384,8 @@ int LoadSaveAllStuff(NOT_ONEGAME( FILE *f ) ONEGAME_ONLY( BYTE* &f ),
     for (int timer=0;timer<4;timer++) mfp_timer_period_change[timer]=0;
   }
   if (Version>=28){
-    int rel_time=ABSOLUTE_CPU_TIME-dma_sound_start_time;
+    int rel_time=0;
     ReadWrite(rel_time);
-    if (LoadOrSave==LS_LOAD) dma_sound_start_time=rel_time;
-  }else if (LoadOrSave==LS_LOAD){
-    dma_sound_start_time=0;
   }
 
   if (Version>=29){
@@ -483,9 +484,85 @@ int LoadSaveAllStuff(NOT_ONEGAME( FILE *f ) ONEGAME_ONLY( BYTE* &f ),
     if (emudetect_called==0) l=0;
     ReadWrite(l);
     for (DWORD n=0;n<l;n++){
+
       ReadWrite(emudetect_falcon_stpal[n]);
     }
   }
+
+  if (Version>=39){
+    ReadWriteArray(dma_sound_internal_buf);
+    ReadWrite(dma_sound_internal_buf_len);
+  }
+
+  BYTE *pasti_block=NULL;
+  DWORD pasti_block_len=0;
+  int pasti_old_active;
+#if USE_PASTI
+  pasti_old_active=pasti_active;
+#else
+  pasti_old_active=0;
+#endif
+  if (Version>=40){
+#if USE_PASTI==0
+    int pasti_active=0;
+#endif
+    ReadWrite(pasti_active);
+#if USE_PASTI
+    if (hPasti==0) pasti_active=0;
+#endif
+    if (LoadOrSave==LS_SAVE){
+      //ask Pasti for variable block, save length as a long, followed by block
+#if USE_PASTI
+      if (hPasti && pasti_active){
+        DWORD l=0;
+        pastiSTATEINFO psi;
+        psi.bufSize=0;
+        psi.buffer=NULL;
+        psi.cycles=ABSOLUTE_CPU_TIME;
+        pasti->SaveState(&psi);
+        l=psi.bufSize;
+        BYTE*buf=new BYTE[l];
+        psi.buffer=(void*)buf;
+        if (pasti->SaveState(&psi)){
+          ReadWriteVar(buf,l,f,LS_SAVE,1,Version);
+        }else{
+          l=0;
+          ReadWrite(l);
+        }
+        delete []buf;
+      }else
+#endif
+      {
+        DWORD l=0;
+        ReadWrite(l);
+      }
+
+    }else{ //load
+      //read in length, read in block, pass it to pasti.
+      ReadWrite(pasti_block_len);
+      if (pasti_block_len){ //something to load in
+        pasti_block=new BYTE[pasti_block_len];
+        fread(pasti_block,1,pasti_block_len,f);
+#if USE_PASTI
+        if (hPasti==NULL)
+#endif
+        {
+          delete[] pasti_block;
+          pasti_block=NULL;
+        }
+      }
+    }
+  }else{
+#if USE_PASTI
+    pasti_active=0;
+#endif
+  }
+
+  //
+
+  // SAVE THIS -> emudetect_overscans_fixed
+
+  //
 
   // End of data, seek to compressed memory
   if (Version>=11){
@@ -535,6 +612,17 @@ int LoadSaveAllStuff(NOT_ONEGAME( FILE *f ) ONEGAME_ONLY( BYTE* &f ),
   LoadSaveChangeNumFloppies(NumFloppyDrives);
 #endif
 
+#if USE_PASTI
+  if (hPasti && pasti_block){
+    pastiSTATEINFO psi;
+    psi.bufSize=pasti_block_len;
+    psi.buffer=pasti_block;
+    psi.cycles=ABSOLUTE_CPU_TIME;
+    pasti->LoadState(&psi);
+  }
+  if (pasti_active!=pasti_old_active) LoadSavePastiActiveChange();
+#endif
+
   return 0;
 }
 #undef ReadWrite
@@ -565,10 +653,27 @@ void LoadSnapShotUpdateVars(int Version)
     if (ACIA_IKBD.tx_flag) agenda_add(agenda_acia_tx_delay_IKBD,2,0);
   }
 
-  // Change dma_sound_start_time from relative to absolute
-  dma_sound_start_time=ABSOLUTE_CPU_TIME-dma_sound_start_time;
-  dma_sound_prepare_for_end(dma_sound_start,dma_sound_start_time,dma_sound_control & BIT_0);
+#if USE_PASTI
+  if (hPasti){
+    pastiPEEKINFO ppi;
+    pasti->Peek(&ppi);
+    if (ppi.intrqState){
+      mfp_reg[MFPR_GPIP]&=~(1 << MFP_GPIP_FDC_BIT);
+    }else{
+      mfp_reg[MFPR_GPIP]|=(1 << MFP_GPIP_FDC_BIT);
+    }
+    pasti_motor_proc(ppi.motorOn);
+  }
+#endif
+
+  dma_sound_on_this_screen=1;
+  dma_sound_output_countdown=0;
+  dma_sound_samples_countdown=0;
+  dma_sound_channel_buf_last_write_t=0;
+
   prepare_event_again();
+
+  disable_input_vbl_count=0;
 
   snapshot_loaded=true;
 

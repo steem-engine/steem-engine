@@ -1,7 +1,12 @@
+/*---------------------------------------------------------------------------
+FILE: cpuinit.cpp
+MODULE: emu
+DESCRIPTION: Initialisation for CPU jump tables.
+---------------------------------------------------------------------------*/
+
 /* places to change when altering jump table method:
 m68k_trace()
 m68k_PROCESS
-asm68k
 definitions at top of cpu.cpp
 */
 

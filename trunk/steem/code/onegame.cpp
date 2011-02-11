@@ -123,7 +123,7 @@ bool OGInit()
   }
 
   if (urarlib_get(&data_ptr,&data_size,ONEGAME_NAME ".sts",(char*)&mf,"")==0) return 0;
-  if (LoadSnapShot(data_ptr,true,0)==0) return 0;
+  if (LoadSnapShot(data_ptr,0,0,0)==0) return 0;
 
   if (urarlib_get(&data_ptr,&data_size,ONEGAME_NAME ".stsprites",(char*)&mf,"")){
     pOGSprites=new WORD[data_size];
