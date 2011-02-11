@@ -172,7 +172,7 @@ int dma_sound_internal_buf_len=0;
 MEM_ADDRESS dma_sound_fetch_address;
 
 // Max frequency/lowest refresh *2 for stereo
-#define DMA_SOUND_BUFFER_LENGTH (((int(double(100000/50)*1.3) & ~3)*SCREENS_PER_SOUND_VBL)*2)
+#define DMA_SOUND_BUFFER_LENGTH 2600 * SCREENS_PER_SOUND_VBL * 2
 WORD dma_sound_channel_buf[DMA_SOUND_BUFFER_LENGTH+16];
 DWORD dma_sound_channel_buf_last_write_t;
 int dma_sound_on_this_screen=0;
