@@ -147,10 +147,10 @@ void hxc::load_res(Display*XD)
     gc=XCreateGC(XD,XDefaultRootWindow(XD),0,NULL);
 
     font=NULL;
-		for (int f=0;f<font_sl.NumStrings;f++){
-	    font=XLoadQueryFont(XD,font_sl[f].String);
-	    if (font) break;
-	  }
+	for (int f=0;f<font_sl.NumStrings;f++){
+	  font=XLoadQueryFont(XD,font_sl[f].String);
+	  if (font) break;
+	}
     if (font==NULL) font=XLoadQueryFont(XD,"8x13");
     if (font) XSetFont(XD,gc,font->fid);
     cModal=XUniqueContext();
@@ -394,8 +394,8 @@ hxc::hxc()
 
   if (font_sl.NumStrings==0){
     font_sl.Sort=eslNoSort;
+	font_sl.Add("-adobe-helvetica-bold-r-normal-*-12-*-*-*-*-*-iso8859-1");
     font_sl.Add("-b&h-lucida-medium-r-normal-*-*-120-*-*-p-*-iso8859-1");
-    font_sl.Add("-adobe-helvetica-medium-r-normal-*-*-140-*-*-p-*-iso8859-1");
     font_sl.Add("-urw-palatino-medium-r-normal-*-*-140-*-*-p-*-iso8859-1");
     font_sl.Add("-mdk-helvetica-medium-r-normal-*-*-130-*-*-p-*-tcvn-5712"); // not iso8859-1, accents mangled!
   }
