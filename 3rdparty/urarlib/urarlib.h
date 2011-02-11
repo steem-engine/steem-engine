@@ -1,33 +1,5 @@
-/* ***************************************************************************
- **
- **  This file is part of the UniquE RAR File Library.
- **
- **  Copyright (C) 2000-2002 by Christian Scheurer (www.ChristianScheurer.ch)
- **  UNIX port copyright (c) 2000-2002 by Johannes Winkelmann (jw@tks6.net)
- **
- **  The contents of this file are subject to the UniquE RAR File Library
- **  License (the "unrarlib-license.txt"). You may not use this file except
- **  in compliance with the License. You may obtain a copy of the License
- **  at http://www.unrarlib.org/license.html.
- **  Software distributed under the License is distributed on an "AS IS"
- **  basis, WITHOUT WARRANTY OF ANY KIND, either express or implied warranty.
- **
- **  Alternatively, the contents of this file may be used under the terms
- **  of the GNU General Public License Version 2 or later (the "GPL"), in
- **  which case the provisions of the GPL are applicable instead of those
- **  above. If you wish to allow use of your version of this file only
- **  under the terms of the GPL and not to allow others to use your version
- **  of this file under the terms of the UniquE RAR File Library License,
- **  indicate your decision by deleting the provisions above and replace
- **  them with the notice and other provisions required by the GPL. If you
- **  do not delete the provisions above, a recipient may use your version
- **  of this file under the terms of the GPL or the UniquE RAR File Library
- **  License.
- **
- ************************************************************************** */
-
-/* include file for the "UniquE RAR File Library"  */
-/* (C) 2000-2002 by Christian Scheurer aka. UniquE */
+/* include file for the "UniquE RAR File Lib"      */
+/* (C) 2000-2001 by Christian Scheurer aka. UniquE */
 /* multi-OS version (Win32, Linux and SUN)         */
 
 #ifndef __URARLIB_H
@@ -54,17 +26,18 @@ extern "C"
 #define _DO_CRC32_CHECK                     /* perform cyclical redundancy  */
                                             /* check (CRC32) - disable this */
                                             /* for a little speed-up        */
-/*#define _USE_ASM*/                            /*
+//#define _USE_ASM
+                                             /*
                                              * enable assembly extensions
                                              * x86 cpus.
                                              */
 
-/*#define _USE_MEMORY_TO_MEMORY_DECOMPRESSION*/ /* read file from memory or a   */
-                                            /* resource instead of reading  */
-                                            /* from a file. NOTE: you wont't*/
-                                            /*  be able to decompress from  */
-                                            /*  file if you enable this     */
-                                            /*  option!                     */
+//#define _USE_MEMORY_TO_MEMORY_DECOMPRESSION /* read file from memory or a   */
+                                              /* resource instead of reading  */
+                                              /* from a file. NOTE: you wont't*/
+                                              /*  be able to decompress from  */
+                                              /*  file if you enable this     */
+                                              /*  option!                     */
 
 
 #ifdef WIN32                                /* autodetect Win32 and Linux   */
@@ -74,7 +47,6 @@ extern "C"
 #define _UNIX                               /* Linux or Unix with GCC       */
 #define _DEBUG_LOG_FILE "/tmp/debug_unrar.txt" /* log file path             */
 /*#define NON_INTEL_BYTE_ORDER*/               /* GCC on motorola systems    */
-
 #endif
 
 /* ------------------------------------------------------------------------ */
@@ -177,16 +149,6 @@ extern int urarlib_get(void  *output,
 extern int urarlib_list(void *rarfile, ArchiveList_struct *list);
 
 
-/* urarlib_freelist:
- * (after the suggestion and code of Duy Nguyen, Sean O'Blarney
- * and Johannes Winkelmann who independently wrote a patch)
- * free the memory of a ArchiveList_struct created by urarlib_list.
- *
- *    input: *list          pointer to an ArchiveList_struct
- *    output: -
- */
-
-extern void urarlib_freelist(ArchiveList_struct *list);
 
 /* ------------------------------------------------------------------------ */
 

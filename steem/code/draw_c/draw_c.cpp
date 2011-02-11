@@ -13,12 +13,12 @@ Steem's faster x86 assembler versions.
 #include "easystr.h"
 typedef EasyStr Str;
 
-#include "code/conditions.h"
-#include "code/steemh.h"
-#include "code/draw.h"
-#include "code/display.h"
-#include "code/emulator.h"
-#include "code/osd.h"
+#include "conditions.h"
+#include "steemh.h"
+#include "draw.h"
+#include "display.h"
+#include "emulator.h"
+#include "osd.h"
 
 long PCpal_array[16];
 

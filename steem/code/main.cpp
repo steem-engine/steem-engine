@@ -6,7 +6,7 @@ startup/shutdown code for all the versions of Steem. It also includes the
 other files that make up the Steem module.
 ---------------------------------------------------------------------------*/
 
-#include "../pch.h"
+#include "pch.h"
 #pragma hdrstop
 
 /*

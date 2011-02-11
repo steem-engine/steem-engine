@@ -34,7 +34,7 @@ void SetWindowHints(Display *XD,Window Win,bool Input,int State,
   XWMHints *hints=XAllocWMHints();
   if (hints){
     hints->flags=InputHint | StateHint | IconMaskHint |
-                    (Group ? WindowGroupHint:0) | int(Urgent ? XUrgencyHint:0);
+                    WindowGroupHint | int(Urgent ? XUrgencyHint:0);
     if(IconPixmap){
       hints->flags|=IconPixmapHint;
     }
