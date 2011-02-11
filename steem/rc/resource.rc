@@ -3,7 +3,7 @@
 //Update "FileVersion" and "ProductVersion" too!
 #define STEEM_VER_MAJOR 3
 #define STEEM_VER_MINOR_1 2
-#define STEEM_VER_MINOR_2 1
+#define STEEM_VER_MINOR_2 0
 
 VS_VERSION_INFO VERSIONINFO
  FILEVERSION STEEM_VER_MAJOR,STEEM_VER_MINOR_1,STEEM_VER_MINOR_2,0
@@ -39,6 +39,7 @@ END
 //Bitmaps
 TOSFLAGS BITMAP "Flags.bmp"
 ST_CHARS BITMAP "ST_Chars_Mono.bmp"
+DEBUGICONS BITMAP "debug_icons.bmp"
 
 // Cursors
 HYPER CURSOR "point.cur"
@@ -73,6 +74,7 @@ RC_ICO_FORWARD ICON "dm_forward.ico"
 RC_ICO_HARDDRIVES ICON "dm_hard_drives.ico"
 RC_ICO_HARDDRIVES_FR ICON "dm_hard_drives_francais.ico"
 RC_ICO_DRIVEDROPDOWN ICON "dm_menu.ico"
+RC_ICO_DISKMANTOOLS ICON "dm_tools_menu.ico"
 RC_ICO_SMALLDOWNARROW ICON "dm_disk_history_menu.ico"
 RC_ICO_ACCURATEFDC ICON "dm_accurate_fdc.ico"
 

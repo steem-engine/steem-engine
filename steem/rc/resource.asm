@@ -1,16 +1,16 @@
 segment .data
 
-charset_blk:    INCBIN "./rc/charset.blk"
+charset_blk:    INCBIN "./code/rc/charset.blk"
 
-icon16_bmp:     INCBIN "./rc/icon16.bmp"
+icon16_bmp:     INCBIN "./code/rc/icon16.bmp"
 
-icon32_bmp:     INCBIN "./rc/icon32.bmp"
+icon32_bmp:     INCBIN "./code/rc/icon32.bmp"
 
-icon64_bmp:     INCBIN "./rc/icon64.bmp"
+icon64_bmp:     INCBIN "./code/rc/icon64.bmp"
 
-st_charset_bmp: INCBIN "./rc/ST_Chars_Mono.bmp"
+st_charset_bmp: INCBIN "./code/rc/st_chars_mono.bmp"
 
-flags_bmp:      INCBIN "./rc/flags_256.bmp"
+flags_bmp:      INCBIN "./code/rc/flags_256.bmp"
 
 segment .text
 
