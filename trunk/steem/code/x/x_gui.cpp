@@ -66,7 +66,7 @@ void InitColoursAndIcons()
     BkCol=GetColourValue(XD,192 << 8,192 << 8,192 << 8,WhiteCol);
     BorderLightCol=GetColourValue(XD,224 << 8,224 << 8,224 << 8,WhiteCol);;
     BorderDarkCol=GetColourValue(XD,128 << 8,128 << 8,128 << 8,BlackCol);
-	}
+  }
 
   cWinProc=XUniqueContext();
   cWinThis=XUniqueContext();
@@ -79,14 +79,8 @@ void InitColoursAndIcons()
   hxc_button::check_on_icon=ICO16_TICKED;
   hxc_button::check_off_icon=ICO16_UNTICKED;
 
-  hxc::font_sl.Sort=eslNoSort;
-  hxc::font_sl.Add("-b&h-lucida-medium-r-normal-*-*-120-*-*-p-*-iso8859-1");
-  hxc::font_sl.Add("-mdk-helvetica-medium-r-normal-*-*-130-*-*-p-*-tcvn-5712");
-  hxc::font_sl.Add("-adobe-helvetica-medium-r-normal-*-*-140-*-*-p-*-iso8859-1");
-  hxc::font_sl.Add("-urw-palatino-medium-r-normal-*-*-140-*-*-p-*-iso8859-1");
-	
   fileselect.set_alert_box_icons(&Ico32,&Ico16);
-	fileselect.lpig=&Ico16;
+  fileselect.lpig=&Ico16;
 
   hints.XD=XD;
 }
