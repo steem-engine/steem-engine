@@ -1,3 +1,9 @@
+/*---------------------------------------------------------------------------
+FILE: draw_c_medres_scanline.cpp
+MODULE: draw_c
+DESCRIPTION: Med res C++ drawing routine
+---------------------------------------------------------------------------*/
+
 //void draw_scanline_medres_pixelwise_8(int border1,int picture,int border2,int hscroll){
   int n;
   WORD w0,w1,mask;

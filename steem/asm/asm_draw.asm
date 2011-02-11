@@ -73,7 +73,7 @@ pal15:                           resd 1
 
 cextern draw_mem,draw_line_length,draw_dest_ad,STpal,rgb555
 cextern Mem_End,Mem_End_minus_1,Mem_End_minus_2,Mem_End_minus_4,mem_len
-cextern shifter_draw_pointer,shifter_hscroll
+cextern shifter_draw_pointer ;,shifter_hscroll
 ;---------------------------------------------------------------------------
 %ifndef MINGW
 

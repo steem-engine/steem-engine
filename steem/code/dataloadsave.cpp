@@ -1,3 +1,10 @@
+/*---------------------------------------------------------------------------
+FILE: dataloadsave.cpp
+MODULE: Steem
+DESCRIPTION: The code to load and save all Steem's options (and there are
+a lot of them) to and from the ini file.
+---------------------------------------------------------------------------*/
+
 //---------------------------------------------------------------------------
 void LoadAllDialogData(bool FirstLoad,Str INIFile,bool *SecDisabled,GoodConfigStoreFile *pCSF)
 {
@@ -59,6 +66,12 @@ void LoadAllDialogData(bool FirstLoad,Str INIFile,bool *SecDisabled,GoodConfigSt
     FullScreenBut.set_check(Disp.GoToFullscreenOnRun);
 #endif
   }
+
+  int i=pCSF->GetInt("Display","ScreenShotUseFullName",99);
+  if (i==0 || i==1) Disp.ScreenShotUseFullName=bool(i);
+  i=pCSF->GetInt("Display","ScreenShotAlwaysAddNum",99);
+  if (i==0 || i==1) Disp.ScreenShotAlwaysAddNum=bool(i);
+
 #else
   OGLoadData(pCSF);
 #endif
@@ -106,6 +119,11 @@ void SaveAllDialogData(bool FinalSave,Str INIFile,ConfigStoreFile *pCSF)
   }
   pCSF->SetInt("Main","PasteSpeed",PasteSpeed);
 
+  int i=pCSF->GetInt("Display","ScreenShotUseFullName",999);
+  if (i==999) pCSF->SetInt("Display","ScreenShotUseFullName",99);
+  i=pCSF->GetInt("Display","ScreenShotAlwaysAddNum",999);
+  if (i==999) pCSF->SetInt("Display","ScreenShotAlwaysAddNum",99);
+
   DiskMan.SaveData(FinalSave,pCSF);
   JoyConfig.SaveData(FinalSave,pCSF);
   OptionBox.SaveData(FinalSave,pCSF);
@@ -126,15 +144,43 @@ void SaveAllDialogData(bool,Str,ConfigStoreFile*)
 //---------------------------------------------------------------------------
 bool TDiskManager::LoadData(bool FirstLoad,GoodConfigStoreFile *pCSF,bool *SecDisabled)
 {
+#if USE_PASTI
+  if (hPasti){
+    EasyStringList sl(eslNoSort);
+    pCSF->GetWholeSect(&sl,"Pasti",0);
+    char Buf[8192],*p=Buf;
+    ZeroMemory(Buf,sizeof(Buf));
+    for (int i=0;i<sl.NumStrings;i++){
+      strcpy(p,sl[i].String); // Key Name
+      p+=strlen(p)+1;
+      strcpy(p,pCSF->GetStr("Pasti",sl[i].String,"LOAD ERROR")); // Value 
+      p+=strlen(p)+1;
+    }
+
+    pastiLOADINI pli;
+    pli.mode=PASTI_LCSTRINGS;
+    pli.name=NULL;
+    pli.buffer=Buf;
+    pli.bufSize=8192;
+    pasti->LoadConfig(&pli,NULL);
+  }
+#endif
+
   SEC(PSEC_DISKEMU){
-    num_connected_floppies=pCSF->GetInt("Disks","NumFloppyDrives",num_connected_floppies);
+#if USE_PASTI
+//    pasti_use_all_possible_disks=pCSF->GetInt("Disks","PastiUseAllDisks",pasti_use_all_possible_disks);
+    pasti_active=pCSF->GetInt("Disks","PastiActive",pasti_active);
+    if (hPasti==NULL) pasti_active=false;
+#endif
+
+    SetNumFloppies(pCSF->GetInt("Disks","NumFloppyDrives",num_connected_floppies));
     floppy_instant_sector_access=pCSF->GetInt("Disks","QuickDiskAccess",floppy_instant_sector_access);
     FloppyArchiveIsReadWrite=bool(pCSF->GetInt("Disks","FloppyArchiveIsReadWrite",FloppyArchiveIsReadWrite));
-    if (BootDisk[0]==0 || FirstLoad==0){
+    if (BootDisk[0].Empty() || FirstLoad==0){
       InsertDisk(0,pCSF->GetStr("Disks","Disk_A_Name",""),pCSF->GetStr("Disks","Disk_A_Path",""),
                     0,0,pCSF->GetStr("Disks","Disk_A_DiskInZip",""),true);
     }
-    if (BootDisk[1]==0 || FirstLoad==0){
+    if (BootDisk[1].Empty() || FirstLoad==0){
       InsertDisk(1,pCSF->GetStr("Disks","Disk_B_Name",""),pCSF->GetStr("Disks","Disk_B_Path",""),
                     0,0,pCSF->GetStr("Disks","Disk_B_DiskInZip",""),true);
     }
@@ -174,7 +220,7 @@ bool TDiskManager::LoadData(bool FirstLoad,GoodConfigStoreFile *pCSF,bool *SecDi
         InsertHist[d][n].Path=pCSF->GetStr("Disks",EasyStr("InsertHistoryPath")+d+n,InsertHist[d][n].Path);
         InsertHist[d][n].DiskInZip=pCSF->GetStr("Disks",EasyStr("InsertHistoryDiskInZip")+d+n,InsertHist[d][n].DiskInZip);
       }
-      if (BootDisk[d] && FirstLoad) InsertHistoryAdd(d,FloppyDrive[d].DiskName,FloppyDrive[d].GetDisk(),"");
+      if (BootDisk[d].NotEmpty() && FirstLoad) InsertHistoryAdd(d,FloppyDrive[d].DiskName,FloppyDrive[d].GetDisk(),"");
     }
 
     BytesPerSectorIdx=(WORD)pCSF->GetInt("Disks","BytesPerSectorIdx",BytesPerSectorIdx);
@@ -197,6 +243,7 @@ bool TDiskManager::LoadData(bool FirstLoad,GoodConfigStoreFile *pCSF,bool *SecDi
 
     SmallIcons=pCSF->GetInt("Disks","SmallIcons",SmallIcons);
     IconSpacing=pCSF->GetInt("Disks","IconSpacing",IconSpacing);
+
 #endif
     EjectDisksWhenQuit=pCSF->GetInt("Disks","EjectDisksWhenQuit",EjectDisksWhenQuit);
 
@@ -215,6 +262,25 @@ bool TDiskManager::LoadData(bool FirstLoad,GoodConfigStoreFile *pCSF,bool *SecDi
 //---------------------------------------------------------------------------
 bool TDiskManager::SaveData(bool FinalSave,ConfigStoreFile *pCSF)
 {
+#if USE_PASTI
+  if (hPasti){
+    pCSF->DeleteSection("Pasti");
+    char Buf[8192],*p=Buf;
+    ZeroMemory(Buf,sizeof(Buf));
+    pastiLOADINI pli;
+    pli.mode=PASTI_LCSTRINGS;
+    pli.name=NULL;
+    pli.buffer=Buf;
+    pli.bufSize=8192;
+    pasti->SaveConfig(&pli,NULL);
+    while (p[0]){
+      char *val=p+strlen(p)+1;
+      pCSF->SetStr("Pasti",p,val);
+      p=val+strlen(val)+1;
+    }
+  }
+#endif
+
   SavePosition(FinalSave,pCSF);
   pCSF->SetStr("Disks","Width",EasyStr(Width));
   pCSF->SetStr("Disks","Height",EasyStr(Height));
@@ -273,7 +339,14 @@ bool TDiskManager::SaveData(bool FinalSave,ConfigStoreFile *pCSF)
 
   pCSF->SetStr("Disks","SmallIcons",LPSTR(SmallIcons ? "1":"0"));
   pCSF->SetInt("Disks","IconSpacing",IconSpacing);
+
 #endif
+
+#if USE_PASTI
+//  pCSF->SetInt("Disks","PastiUseAllDisks",pasti_use_all_possible_disks);
+  pCSF->SetInt("Disks","PastiActive",pasti_active);
+#endif
+
   pCSF->SetStr("Disks","HideBroken",LPSTR(HideBroken ? "1":"0"));
   pCSF->SetStr("Disks","EjectDisksWhenQuit",LPSTR(EjectDisksWhenQuit ? "1":"0"));
 
@@ -310,6 +383,8 @@ bool THardDiskManager::LoadData(bool FirstLoad,GoodConfigStoreFile *pCSF,bool *S
 #ifndef DISABLE_STEMDOS
     stemdos_boot_drive=pCSF->GetInt("HardDrives","BootDrive",stemdos_boot_drive);
 #endif
+    DisableHardDrives=pCSF->GetInt("HardDrives","DisableHardDrives",DisableHardDrives);
+
     update_mount();
     UPDATE;
   }
@@ -333,6 +408,7 @@ bool THardDiskManager::SaveData(bool FinalSave,ConfigStoreFile *pCSF)
 #ifndef DISABLE_STEMDOS
   pCSF->SetStr("HardDrives","BootDrive",EasyStr(stemdos_boot_drive));
 #endif
+  pCSF->SetInt("HardDrives","DisableHardDrives",DisableHardDrives);
 
   return true;
 }
@@ -661,7 +737,7 @@ bool TOptionBox::LoadData(bool FirstLoad,GoodConfigStoreFile *pCSF,bool *SecDisa
     if (slq==0 || slq==1){
       sound_chosen_freq=int(slq ? 25033:50066);
       pCSF->SetStr("Options","SoundLowQuality","999");
-    }else{
+    }else if (sound_comline_freq==0){
       sound_chosen_freq=pCSF->GetInt("Sound","Freq",sound_chosen_freq);
     }
     UpdateSoundFreq();
@@ -677,7 +753,18 @@ bool TOptionBox::LoadData(bool FirstLoad,GoodConfigStoreFile *pCSF,bool *SecDisa
     WAVOutputDir=pCSF->GetStr("Sound","WAVOutputDir",WAVOutputDir);
     if (WAVOutputDir.Empty()) WAVOutputDir=WriteDir;
 
-    UNIX_ONLY( sound_device_name=pCSF->GetStr("Sound","PADevice",Str(sound_device_name)); )
+    #ifdef UNIX
+      x_sound_lib=pCSF->GetInt("Sound","Library",x_sound_lib);
+      #ifndef NO_RTAUDIO
+        rt_unsigned_8bit=pCSF->GetInt("Sound","RtAudioUnsigned8Bit",rt_unsigned_8bit);
+      #endif
+      sound_device_name=pCSF->GetStr("Sound","PADevice",Str(sound_device_name));
+      if (FirstLoad==0){
+        Sound_Stop(true);
+        InitSound();
+        Sound_Start();
+      }
+    #endif
 
     sound_internal_speaker=pCSF->GetInt("Sound","InternalSpeaker",sound_internal_speaker);
     // Trying to write to ports on WINNT causes the program to be killed!
@@ -814,6 +901,12 @@ bool TOptionBox::LoadData(bool FirstLoad,GoodConfigStoreFile *pCSF,bool *SecDisa
   if (LastIconSchemePath.Empty()) LastIconSchemePath=RunDir+SLASH;
   LastIconSchemePath=pCSF->GetStr("Options","LastIconSchemePath",LastIconSchemePath);
 
+#ifdef UNIX
+  for (int i=0;i<NUM_COMLINES;i++){
+    Comlines[i]=pCSF->GetStr("Paths",Str("Path")+i,Comlines[i]);
+  }
+#endif
+
 #ifdef WIN32
 	CheckMenuRadioItem(StemWin_SysMenu,110,112,110+min(border,2),MF_BYCOMMAND);
   CheckMenuItem(StemWin_SysMenu,113,MF_BYCOMMAND | int(osd_disable ? MF_CHECKED:MF_UNCHECKED));
@@ -891,7 +984,7 @@ bool TOptionBox::SaveData(bool FinalSave,ConfigStoreFile *pCSF)
   pCSF->SetStr("Options","SoundMode",EasyStr(sound_mode));
   pCSF->SetStr("Options","LastSoundMode",EasyStr(sound_last_mode));
   pCSF->SetStr("Options","SoundLowQuality","999");
-  pCSF->SetStr("Sound","Freq",Str(sound_chosen_freq));
+  if (sound_chosen_freq!=sound_comline_freq) pCSF->SetStr("Sound","Freq",Str(sound_chosen_freq));
   pCSF->SetStr("Sound","Bits",Str(sound_num_bits));
   pCSF->SetStr("Sound","Channels",Str(sound_num_channels));
   pCSF->SetStr("Sound","WritePrimary",Str(sound_write_primary));
@@ -900,7 +993,13 @@ bool TOptionBox::SaveData(bool FinalSave,ConfigStoreFile *pCSF)
   pCSF->SetStr("Sound","WAVOutputFile",WAVOutputFile);
   pCSF->SetStr("Sound","RecordWarnOverwrite",Str(RecordWarnOverwrite));
   pCSF->SetStr("Sound","WAVOutputDir",WAVOutputDir);
-  UNIX_ONLY( pCSF->SetStr("Sound","PADevice",Str(sound_device_name)); )
+  #ifdef UNIX
+    pCSF->SetInt("Sound","Library",x_sound_lib);
+    #ifndef NO_RTAUDIO
+      pCSF->SetInt("Sound","RtAudioUnsigned8Bit",rt_unsigned_8bit);
+    #endif
+    pCSF->SetStr("Sound","PADevice",Str(sound_device_name));
+  #endif
   pCSF->SetStr("Sound","InternalSpeaker",Str(sound_internal_speaker));
 
   for (int p=0;p<3;p++){
@@ -1007,6 +1106,12 @@ bool TOptionBox::SaveData(bool FinalSave,ConfigStoreFile *pCSF)
   pCSF->SetInt("Options","OSDScroller",osd_show_scrollers);
   pCSF->SetInt("Options","OSDDisable",osd_disable);
   pCSF->SetInt("Options","OSDOldPos",osd_old_pos);
+
+#ifdef UNIX
+  for (int i=0;i<NUM_COMLINES;i++){
+    pCSF->SetStr("Paths",Str("Path")+i,Comlines[i]);
+  }
+#endif
 
   return true;
 }
@@ -1170,7 +1275,7 @@ bool TShortcutBox::LoadData(bool NOT_ONEGAME( FirstLoad ),GoodConfigStoreFile *p
           pCSF->SetInt("Shortcuts","Updated24Shortcuts",1);
         }
       }
-      
+
       // Default shortcuts if first run from this dir
       if (NoCutDir){
         DynamicArray<SHORTCUTINFO> TempCuts;

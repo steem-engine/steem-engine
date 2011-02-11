@@ -23,6 +23,7 @@ EXT bool io_word_access INIT(0);
 
 
 #define BUS_JAM_TIME(t) INSTRUCTION_TIME_ROUND(t)
+//#define BUS_JAM_TIME(t) INSTRUCTION_TIME(t)
 
 
 #undef EXT

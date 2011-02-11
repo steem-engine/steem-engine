@@ -19,15 +19,30 @@ WIN_ONLY( HINSTANCE Inst; )
 #include <dynamicarray.h>
 #include <dirsearch.h>
 
+#if USE_PASTI
+#include <pasti/pasti.h>
+#endif
+
 #include <configstorefile.h>
 #define GoodConfigStoreFile ConfigStoreFile
 
+#ifndef NO_PORTAUDIO
 #ifdef WIN32
 #if defined(USE_PORTAUDIO_ON_WIN32) && defined(IN_MAIN)
 #include <portaudio/portaudio_dll.cpp>
 #endif
 #else
-#include <portaudio.h>
+#include <portaudio/pa_common/portaudio.h>
+#endif
+#endif
+
+//#define NO_RTAUDIO
+
+#ifndef NO_RTAUDIO
+#ifdef UNIX
+#include <rtaudio/RtAudio.h>
+using namespace std;
+#endif
 #endif
 
 typedef EasyStr Str;
@@ -39,6 +54,7 @@ typedef EasyStr Str;
 #include <choosefolder.h>
 #include <scrollingcontrolswin.h>
 #include <directory_tree.h>
+#include <input_prompt.h>
 
 #elif defined(UNIX)
 
@@ -119,6 +135,8 @@ typedef EasyStr Str;
 #include "macros.h"
 #include "dataloadsave.h"
 #include "emulator.h"
+#include <wordwrapper.h>
+#include "screen_saver.h"
 
 #ifdef WIN32
 #include "dderr_meaning.h"

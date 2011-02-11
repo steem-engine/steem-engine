@@ -20,16 +20,16 @@ class TFloppyImage
 private:
   EasyStr ImageFile,MSATempFile,ZipTempFile,FormatTempFile;
 public:
-  TFloppyImage()             { f=NULL;Format_f=NULL;RemoveDisk(); }
+  TFloppyImage()             { f=NULL;Format_f=NULL;PastiDisk=0;PastiBuf=NULL;RemoveDisk();}
   ~TFloppyImage()            { RemoveDisk(); }
 
   int SetDisk(EasyStr,EasyStr="",BPBINFO* = NULL,BPBINFO* = NULL);
   EasyStr GetDisk()  { return ImageFile; }
   bool ReinsertDisk();
   void RemoveDisk(bool=0);
-  bool DiskInDrive() { return f!=NULL; }
-  bool NotEmpty() { return f!=NULL; }
-  bool Empty()       { return f==NULL; }
+  bool DiskInDrive() { return f!=NULL || PastiDisk; }
+  bool NotEmpty() { return DiskInDrive(); }
+  bool Empty()       { return DiskInDrive()==0; }
   bool IsMSA()       { return MSATempFile.NotEmpty(); }
   bool IsZip()       { return ZipTempFile.NotEmpty(); }
   bool BeenFormatted() { return Format_f!=NULL; }
@@ -46,7 +46,10 @@ public:
   short BytesPerSector,Sides,SectorsPerTrack,TracksPerSide;
   EasyStr DiskName,DiskInZip;
   DWORD DiskFileLen;
-  bool STT_File;
+
+  BYTE *PastiBuf;
+  int PastiBufLen;
+  bool STT_File,PastiDisk;
   DWORD STT_TrackStart[2][FLOPPY_MAX_TRACK_NUM+1];
   WORD STT_TrackLen[2][FLOPPY_MAX_TRACK_NUM+1];
 

@@ -28,7 +28,7 @@ EXT int em_width INIT(480);
 EXT int em_height INIT(480);
 EXT int em_planes INIT(4);
 EXT int extended_monitor INIT(0);
-EXT DWORD n_cpu_cycles_per_second INIT(8000000),new_n_cpu_cycles_per_second INIT(0);
+EXT DWORD n_cpu_cycles_per_second INIT(8000000),new_n_cpu_cycles_per_second INIT(0),n_millions_cycles_per_sec INIT(8);
 EXT int on_rte;
 EXT int on_rte_interrupt_depth;
 
@@ -120,7 +120,7 @@ void intercept_gemdos(),intercept_bios(),intercept_xbios();
 
 void emudetect_reset();
 
-bool emudetect_called=0,emudetect_write_logs_to_printer=0;
+bool emudetect_called=0,emudetect_write_logs_to_printer=0,emudetect_overscans_fixed=false;
 
 #define EMUD_FALC_MODE_OFF 0
 #define EMUD_FALC_MODE_8BIT 1
@@ -219,6 +219,7 @@ struct _ACIA_STRUCT{
   bool irq;
 
   int last_tx_write_time;
+  int last_rx_read_time;
 }acia[2];
 
 #define NUM_ACIA_IKBD 0

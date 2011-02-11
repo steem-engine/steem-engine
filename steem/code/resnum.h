@@ -73,7 +73,8 @@
 #define RC_ICO_OPS_STARTUP 70
 #define RC_ICO_OPS_OSD 71
 #define RC_ICO_TAKESCREENSHOTBUT 72
-#define RC_NUM_ICONS 73
+#define RC_ICO_DISKMANTOOLS 73
+#define RC_NUM_ICONS 74
 
 #define CART_ICON_NUM (RC_ICO_CHIP-1)
 #define DISK_ICON_NUM (RC_ICO_DRIVE-1)
@@ -112,4 +113,8 @@ int RCGetSizeOfIcon(int n)
   return 16;
 }
 #endif
+
+#define DEBUG_ICONS_W 9
+#define DEBUG_ICONS_H 9
+#define DEBUG_NUM_ICONS 9
 

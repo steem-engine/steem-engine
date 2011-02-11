@@ -1,3 +1,7 @@
+; FILE: asm_lowres.asm
+; MODULE: asm_draw
+; DESCRIPTION: Various routines to draw the lowres ST screen to PC video memory.
+
 %macro DRAWPIXEL_LOWRES_DW 1 ;bpp
   %if %1==1
     mov [edi],ax      ; write colour to screen address

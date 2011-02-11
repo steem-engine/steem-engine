@@ -1,3 +1,11 @@
+/*---------------------------------------------------------------------------
+FILE: fdc.cpp
+MODULE: emu
+DESCRIPTION: Steem's Floppy Disk Controller (WD1772) core. floppy_fdc_command
+is called when a command is written to the FDC's command register via the
+DMA I/O addresses (see iow.cpp).
+---------------------------------------------------------------------------*/
+
 #define DMA_ADDRESS_IS_VALID_R (dma_address<himem)
 #define DMA_ADDRESS_IS_VALID_W (dma_address<himem && dma_address>=MEM_FIRST_WRITEABLE)
 
@@ -37,7 +45,10 @@ BYTE floppy_current_side()
 //---------------------------------------------------------------------------
 BYTE read_from_dma()
 {
-  if (DMA_ADDRESS_IS_VALID_R) return PEEK(dma_address);
+  if (DMA_ADDRESS_IS_VALID_R){
+    DEBUG_CHECK_READ_B(dma_address);
+    return PEEK(dma_address);
+  }
   return 0xff;
 }
 //---------------------------------------------------------------------------
@@ -48,7 +59,10 @@ void write_to_dma(int Val,int Num=1)
   for (int i=0;i<n;i++){
     if (dma_sector_count==0) break;
 
-    if (DMA_ADDRESS_IS_VALID_W) PEEK(dma_address)=BYTE(Val);
+    if (DMA_ADDRESS_IS_VALID_W){
+      DEBUG_CHECK_WRITE_B(dma_address);
+      PEEK(dma_address)=BYTE(Val);
+    }
     if (Num<=0) break;
     DMA_INC_ADDRESS;
   }
@@ -92,8 +106,8 @@ bool floppy_handle_file_error(int floppyno,bool Write,int sector,int PosInSector
 //---------------------------------------------------------------------------
 bool floppy_track_index_pulse_active()
 {
-  if (floppy_type1_command_active==1){
-    return (hbl_count % FDC_HBLS_PER_ROTATION)>=(FDC_HBLS_PER_ROTATION-FDC_HBLS_OF_INDEX_PULSE);
+  if (floppy_type1_command_active){
+    return (((DWORD)hbl_count) % FDC_HBLS_PER_ROTATION)>=(FDC_HBLS_PER_ROTATION-FDC_HBLS_OF_INDEX_PULSE);
   }
   return 0;
 }
@@ -473,6 +487,11 @@ void agenda_floppy_readwrite_sector(int Data)
   if ((Command & 0x20) && floppy->ReadOnly){ // Write
     WriteProtect=FDC_STR_WRITE_PROTECT;
   }
+  if (floppy->Empty()){
+    fdc_str=BYTE(WriteProtect | FDC_STR_MOTOR_ON | /*FDC_STR_SEEK_ERROR | */FDC_STR_BUSY);
+    agenda_add(agenda_fdc_finished,FDC_HBLS_PER_ROTATION*int((shifter_freq==MONO_HZ) ? 11:5),0);
+    return; // Don't loop
+  }
 
   disk_light_off_time=timer+DisableDiskLightAfter;
   fdc_str=BYTE(FDC_STR_BUSY | FDC_STR_MOTOR_ON | WriteProtect);
@@ -618,9 +637,12 @@ void agenda_floppy_read_track(int part)
   TFloppyImage *floppy=&FloppyDrive[floppyno];
   bool Error=0;
   bool FromFormat=0;
+
   if (floppy_head_track[floppyno]<=FLOPPY_MAX_TRACK_NUM){
     FromFormat=floppy->TrackIsFormatted[floppy_current_side()][floppy_head_track[floppyno]];
   }
+  if (floppy->Empty()) return; // Stop, timeout
+
   if (part==0) BytesRead=0;
   disk_light_off_time=timer+DisableDiskLightAfter;
   fdc_str|=FDC_STR_BUSY;
@@ -828,6 +850,10 @@ void agenda_floppy_write_track(int part)
     agenda_fdc_finished(0);
     return;
   }
+  if (floppy->Empty()){
+    fdc_str=FDC_STR_MOTOR_ON | FDC_STR_SEEK_ERROR | FDC_STR_BUSY;
+    return;
+  }
 
   floppy->WrittenTo=true;
 
@@ -951,10 +977,66 @@ void fdc_add_to_crc(WORD &crc,BYTE data)
   }
 }
 //---------------------------------------------------------------------------
+#if USE_PASTI
+void pasti_handle_return(struct pastiIOINFO *pPIOI)
+{
+//  log_to(LOGSECTION_PASTI,Str("PASTI: Handling return, update cycles=")+pPIOI->updateCycles+" irq="+pPIOI->intrqState+" Xfer="+pPIOI->haveXfer);
+  pasti_update_time=ABSOLUTE_CPU_TIME+pPIOI->updateCycles;
+
+  bool old_irq=(mfp_reg[MFPR_GPIP] & BIT_5)==0; // 0=irq on
+  if (old_irq!=pPIOI->intrqState){
+    mfp_gpip_set_bit(MFP_GPIP_FDC_BIT,!pPIOI->intrqState);
+    if (pPIOI->intrqState){
+      // FDC is busy, activate light
+      disk_light_off_time=timer+DisableDiskLightAfter;
+    }
+  }
+  
+  if (pPIOI->haveXfer){
+    dma_address=pPIOI->xferInfo.xferSTaddr;
+    if (pPIOI->xferInfo.memToDisk){
+//      log_to(LOGSECTION_PASTI,Str("PASTI: DMA transfer ")+pPIOI->xferInfo.xferLen+" bytes from address=$"+HEXSl(dma_address,6)+" to pasti buffer");
+      for (DWORD i=0;i<pPIOI->xferInfo.xferLen;i++){
+        if (DMA_ADDRESS_IS_VALID_R) LPBYTE(pPIOI->xferInfo.xferBuf)[i]=PEEK(dma_address);
+        dma_address++;
+      }
+    }else{
+//      log_to(LOGSECTION_PASTI,Str("PASTI: DMA transfer ")+pPIOI->xferInfo.xferLen+" bytes from pasti buffer to address=$"+HEXSl(dma_address,6));
+      for (DWORD i=0;i<pPIOI->xferInfo.xferLen;i++){
+        if (DMA_ADDRESS_IS_VALID_W){
+          DEBUG_CHECK_WRITE_B(dma_address);
+          PEEK(dma_address)=LPBYTE(pPIOI->xferInfo.xferBuf)[i];
+        }
+        dma_address++;
+      }
+    }
+  }
+  if (pPIOI->brkHit){
+    if (runstate==RUNSTATE_RUNNING){
+      runstate=RUNSTATE_STOPPING;
+      SET_WHY_STOP("Pasti breakpoint");
+    }
+    DEBUG_ONLY( if (debug_in_trace) SET_WHY_STOP("Pasti breakpoint"); )
+  }
+  ioaccess|=IOACCESS_FLAG_FOR_CHECK_INTRS;
+}
+
+void pasti_motor_proc(BOOL on)
+{
+  disk_light_off_time=timer;
+  if (on) disk_light_off_time+=50*1000;
+}
+
+void pasti_log_proc(const char * LOG_ONLY(text))
+{
+  log_to(LOGSECTION_PASTI,Str("PASTI: ")+text);
+}
+
+void pasti_warn_proc(const char *text)
+{
+  Alert((char*)text,"Pasti Warning",0);
+}
+#endif
+//---------------------------------------------------------------------------
 #undef LOGSECTION
-
-
-
-
-
 

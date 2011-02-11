@@ -1,3 +1,10 @@
+/*---------------------------------------------------------------------------
+FILE: stemdialogs.cpp
+MODULE: Steem
+DESCRIPTION: The base class for Steem's dialogs that are used to configure
+the emulator and perform additional functions.
+---------------------------------------------------------------------------*/
+
 #ifdef WIN32
 //---------------------------------------------------------------------------
 TStemDialog::TStemDialog()
@@ -74,7 +81,6 @@ void TStemDialog::ChangeParent(HWND NewParent)
   }
 }
 //---------------------------------------------------------------------------
-
 HTREEITEM TStemDialog::AddPageLabel(char *t,int i)
 {
   TV_INSERTSTRUCT tvis;
@@ -129,8 +135,11 @@ LRESULT TStemDialog::DefStemDialogProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lPa
   switch (Mess){
     case WM_SYSCOMMAND:
       switch (wPar){
-        case SC_SCREENSAVE:case SC_MONITORPOWER:
-          if (runstate==RUNSTATE_RUNNING || FullScreen) return 0;
+        case SC_MONITORPOWER:
+          if (runstate == RUNSTATE_RUNNING) return 0;
+          break;
+        case SC_SCREENSAVE:
+          if (runstate == RUNSTATE_RUNNING || FullScreen) return 0;
           break;
       }
       break;
@@ -222,6 +231,14 @@ void TStemDialog::SaveVisible(ConfigStoreFile *pCSF)
 }
 //---------------------------------------------------------------------------
 #ifdef WIN32
+void TStemDialog::CheckFSPosition(HWND Par)
+{
+  RECT rc;
+  GetClientRect(Par,&rc);
+  FSLeft=max(min(FSLeft,(int)rc.right-100),-100);
+  FSTop=max(min(FSTop,(int)rc.bottom-70),-70);
+}
+//---------------------------------------------------------------------------
 void TStemDialog::UpdateDirectoryTreeIcons(DirectoryTree *pTree)
 {
   for (int n=0;n<pTree->FileMasksESL.NumStrings;n++){

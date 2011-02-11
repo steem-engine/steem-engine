@@ -1,3 +1,9 @@
+/*---------------------------------------------------------------------------
+FILE: conditions.h
+MODULES: All
+DESCRIPTION: Sets up all conditions that affect the Steem binary. 
+---------------------------------------------------------------------------*/
+
 //---------------------------------------------------------------------------
 //                         Conditional Defines for Steem
 //---------------------------------------------------------------------------
@@ -17,16 +23,16 @@
 #ifdef UNIX
 //#define ENABLE_LOGFILE
 #endif
+//#define SHOW_WAVEFORM 8
 //#define DISABLE_STEMDOS
 //#define DISABLE_PSG
 //#define DISABLE_BLITTER
 //#define SHOW_DRAW_SPEED
-//#define SHOW_WAVEFORM 1
 //#define WRITE_ONLY_SINE_WAVE
 //#define DRAW_ALL_ICONS_TO_SCREEN
 //#define DRAW_TIMER_TO_SCREEN
 //#define TRANSLATION_TEST
-//#define NO_486_ASM
+#define NO_ASM_PORTIO
 //#define NO_CRAZY_MONITOR
 //#define NO_CSF
 //#define USE_PORTAUDIO_ON_WIN32
@@ -37,15 +43,14 @@
 #define PEEK_RANGE_TEST
 #endif
 
-// This should be left in for release (work in progress)
-#define NO_GETCONTENTS
-
-#if defined(UNIX) && !defined(NO_GETCONTENTS)
-#define NO_GETCONTENTS
+// These should be left in for release (work in progress)
+#if defined(WIN32) && !defined(NO_PASTI)
+#define USE_PASTI 1
+#else
+#define USE_PASTI 0
 #endif
 
 // These should always be left like this
-
 #define SCREENS_PER_SOUND_VBL 1
 #ifdef CYGWIN
 #define NO_XVIDMODE
@@ -232,8 +237,10 @@ typedef Window WINDOWTYPE;
 
 #ifdef _DEBUG_BUILD
 #define DEBUG_ONLY(s) s
+#define NOT_DEBUG(s)
 #else
 #define DEBUG_ONLY(s)
+#define NOT_DEBUG(s) s
 #endif
 
 #ifdef ENABLE_LOGFILE

@@ -1,5 +1,5 @@
 //---------------------------------------------------------------------------
-bool IsDirIDPressed(int,int,bool);
+bool IsDirIDPressed(int,int,bool,bool=0);
 void init_DirID_to_text();
 EasyStr DirID_to_text(int,bool);
 #ifdef WIN32

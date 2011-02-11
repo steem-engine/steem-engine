@@ -1,4 +1,10 @@
-
+/*---------------------------------------------------------------------------
+FILE: mr_static.cpp
+MODULE: Steem
+CONDITION: _DEBUG_BUILD
+DESCRIPTION: A class to encapsulate the labels that contain various data
+in the debugger.
+---------------------------------------------------------------------------*/
 
 mr_static::~mr_static()
 {
@@ -118,7 +124,7 @@ void mr_static::setup_contextmenu()
   insp_menu_subject_type=0; //0=mr_static
   insp_menu_subject=(void*)this;
 
-  RemoveAllMenuItems(insp_menu);
+  DeleteAllMenuItems(insp_menu);
 
   strcpy(insp_menu_long_name[0],name);
   strcat(insp_menu_long_name[0]," = ");GetWindowText(handle,tb,80);
@@ -143,7 +149,7 @@ void mr_static::setup_contextmenu()
   }
   insp_menu_setup();
   if(type!=MST_IOLIST && type!=MST_HISTORIC_IOLIST){
-    AppendMenu(insp_menu,MF_ENABLED | MF_STRING,3015,"Edit");
+    AppendMenu(insp_menu,MF_ENABLED | MF_STRING,3016,"Edit");
   }
 
 }

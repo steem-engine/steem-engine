@@ -1,3 +1,13 @@
+/*---------------------------------------------------------------------------
+FILE: cpu.cpp
+MODULE: emu
+DESCRIPTION: A full cycle-accurate Motorola 68000 emulation core. Trying to
+follow the functions in this file is extremely difficult, we recommend
+treating it as a black box. The only parts of this file really required by
+the rest of the program are the macro m68k_PROCESS that executes the next
+instruction and cpu_routines_init in cpuinit.cpp.
+---------------------------------------------------------------------------*/
+
 void (*m68k_high_nibble_jump_table[16])();
 void (*m68k_jump_line_0[64])();
 void (*m68k_jump_line_4[64])();
@@ -58,8 +68,10 @@ bool (*m68k_jump_condition_test[16])();
       m68k_src_b=0xff;                                          \
     }                                                             \
   }else if(abus>=MEM_START_OF_USER_AREA){                                              \
+    DEBUG_CHECK_READ_B(abus);  \
     m68k_src_b=(BYTE)(PEEK(abus));                  \
   }else if(SUPERFLAG){     \
+    DEBUG_CHECK_READ_B(abus);  \
     m68k_src_b=(BYTE)(PEEK(abus));                  \
   }else exception(BOMBS_BUS_ERROR,EA_READ,abus);
 
@@ -95,8 +107,10 @@ bool (*m68k_jump_condition_test[16])();
       m68k_src_w=0xffff;                                          \
     }                                                             \
   }else if(abus>=MEM_START_OF_USER_AREA){                                              \
+    DEBUG_CHECK_READ_W(abus);  \
     m68k_src_w=DPEEK(abus);                  \
   }else if(SUPERFLAG){     \
+    DEBUG_CHECK_READ_W(abus);  \
     m68k_src_w=DPEEK(abus);                  \
   }else exception(BOMBS_BUS_ERROR,EA_READ,abus);
 
@@ -131,8 +145,10 @@ bool (*m68k_jump_condition_test[16])();
       m68k_src_l=0xffffffff;                                          \
     }                                                             \
   }else if(abus>=MEM_START_OF_USER_AREA){                                              \
+    DEBUG_CHECK_READ_L(abus);  \
     m68k_src_l=LPEEK(abus);                  \
   }else if(SUPERFLAG){     \
+    DEBUG_CHECK_READ_L(abus);  \
     m68k_src_l=LPEEK(abus);                  \
   }else exception(BOMBS_BUS_ERROR,EA_READ,abus);
 
@@ -178,7 +194,7 @@ void m68k_exception::init(int a,exception_action ea,MEM_ADDRESS _abus)
 //---------------------------------------------------------------------------
 void ASMCALL perform_crash_and_burn()
 {
-  reset_st(0,0);
+  reset_st(RESET_COLD | RESET_NOSTOP | RESET_CHANGESETTINGS | RESET_NOBACKUP);
   osd_start_scroller(T("CRASH AND BURN - ST RESET"));
 }
 //---------------------------------------------------------------------------
@@ -221,7 +237,7 @@ void log_history(int bombs,MEM_ADDRESS crash_address)
 }
 #endif
 //---------------------------------------------------------------------------
-inline void m68k_interrupt(MEM_ADDRESS ad) //not address, bus, illegal instruction or privilege violation interrupt
+NOT_DEBUG(inline) void m68k_interrupt(MEM_ADDRESS ad) //not address, bus, illegal instruction or privilege violation interrupt
 {
   WORD _sr=sr;
   if (!SUPERFLAG) change_to_supervisor_mode();
@@ -233,19 +249,19 @@ inline void m68k_interrupt(MEM_ADDRESS ad) //not address, bus, illegal instructi
   interrupt_depth++;
 }
 //---------------------------------------------------------------------------
+// TODO: Allow exception frames to be written to IO?
 void m68k_exception::crash()
 {
   DWORD bytes_to_stack=int((bombs==BOMBS_BUS_ERROR || bombs==BOMBS_ADDRESS_ERROR) ? (4+2+2+4+2):(4+2));
   MEM_ADDRESS sp=(MEM_ADDRESS)(SUPERFLAG ? (areg[7] & 0xffffff):(other_sp & 0xffffff));
-  if (sp<bytes_to_stack || sp>himem){
+  if (sp<bytes_to_stack || sp>FOUR_MEGS){
     // Double bus error, CPU halt (we crash and burn)
     // This only has to be done here, m68k_PUSH_ will cause bus error if invalid
     DEBUG_ONLY( log_history(bombs,crash_address) );
     perform_crash_and_burn();
   }else{
-    cpu_cycles&=-4;
+    INSTRUCTION_TIME_ROUND(0); //Round first for interrupts
     if (bombs==BOMBS_ILLEGAL_INSTRUCTION || bombs==BOMBS_PRIVILEGE_VIOLATION){
-      INSTRUCTION_TIME_ROUND(0); //Round first for interrupts
       if (!SUPERFLAG) change_to_supervisor_mode();
       m68k_PUSH_L((crash_address & 0x00ffffff) | pc_high_byte);
       INSTRUCTION_TIME_ROUND(8);
@@ -268,11 +284,12 @@ void m68k_exception::crash()
       // Big page in stack
 //      try{
       TRY_M68K_EXCEPTION
+        if ((_ir & 0xf000)==(b00100000 << 8)) _pc+=2; // move.l stacks pc+2 (for War Heli) 
         m68k_PUSH_L(_pc);
         m68k_PUSH_W(_sr);
         m68k_PUSH_W(_ir);
         m68k_PUSH_L(address);
-        WORD x=0;
+        WORD x=WORD(_ir & 0xffe0);
         if (action!=EA_WRITE) x|=B6_010000;
         if (action==EA_FETCH){
           x|=WORD((_sr & SR_SUPER) ? FC_SUPERVISOR_PROGRAM:FC_USER_PROGRAM);
@@ -288,7 +305,6 @@ void m68k_exception::crash()
       SET_PC(LPEEK(bombs*4));
       SR_CLEAR(SR_TRACE);
 
-      INSTRUCTION_TIME_ROUND(0); //Round first for interrupts
       INSTRUCTION_TIME_ROUND(50); //Round for fetch
     }
     DEBUG_ONLY(log_history(bombs,crash_address));
@@ -298,7 +314,7 @@ void m68k_exception::crash()
 
 #undef LOGSECTION
 
-inline void m68k_poke_abus(BYTE x){
+NOT_DEBUG(inline) void m68k_poke_abus(BYTE x){
   abus&=0xffffff;
   if(abus>=MEM_IO_BASE){
     if(SUPERFLAG)
@@ -313,6 +329,7 @@ inline void m68k_poke_abus(BYTE x){
       exception(BOMBS_BUS_ERROR,EA_WRITE,abus);
     } //otherwise throw away
   }else{
+    DEBUG_CHECK_WRITE_B(abus);
     if (SUPERFLAG && abus>=MEM_FIRST_WRITEABLE)
       PEEK(abus)=x;
     else if (abus>=MEM_START_OF_USER_AREA)
@@ -321,7 +338,7 @@ inline void m68k_poke_abus(BYTE x){
   }
 }
 
-inline void m68k_dpoke_abus(WORD x){
+NOT_DEBUG(inline) void m68k_dpoke_abus(WORD x){
   abus&=0xffffff;
   if(abus&1)exception(BOMBS_ADDRESS_ERROR,EA_WRITE,abus);
   else if(abus>=MEM_IO_BASE){
@@ -337,6 +354,7 @@ inline void m68k_dpoke_abus(WORD x){
       exception(BOMBS_BUS_ERROR,EA_WRITE,abus);
     } //otherwise throw away
   }else{
+    DEBUG_CHECK_WRITE_W(abus);
     if(SUPERFLAG && abus>=MEM_FIRST_WRITEABLE)
       DPEEK(abus)=x;
     else if(abus>=MEM_START_OF_USER_AREA)
@@ -345,7 +363,7 @@ inline void m68k_dpoke_abus(WORD x){
   }
 }
 
-inline void m68k_lpoke_abus(LONG x){
+NOT_DEBUG(inline) void m68k_lpoke_abus(LONG x){
   abus&=0xffffff;
   if(abus&1)exception(BOMBS_ADDRESS_ERROR,EA_WRITE,abus);
   else if(abus>=MEM_IO_BASE){
@@ -361,6 +379,7 @@ inline void m68k_lpoke_abus(LONG x){
       exception(BOMBS_BUS_ERROR,EA_WRITE,abus);
     } //otherwise throw away
   }else{
+    DEBUG_CHECK_WRITE_L(abus);
     if(SUPERFLAG && abus>=MEM_FIRST_WRITEABLE)
       LPEEK(abus)=x;
     else if(abus>=MEM_START_OF_USER_AREA)
@@ -411,8 +430,10 @@ BYTE m68k_peek(MEM_ADDRESS ad){
       return 0xff;
     }
   }else if(ad>=MEM_START_OF_USER_AREA){
+    DEBUG_CHECK_READ_B(ad);
     return (BYTE)(PEEK(ad));
   }else if(SUPERFLAG){
+    DEBUG_CHECK_READ_B(ad);
     return (BYTE)(PEEK(ad));
   }else exception(BOMBS_BUS_ERROR,EA_READ,ad);
   return 0;
@@ -445,8 +466,10 @@ WORD m68k_dpeek(MEM_ADDRESS ad){
       return 0xffff;
     }
   }else if(ad>=MEM_START_OF_USER_AREA){
+    DEBUG_CHECK_READ_W(ad);
     return DPEEK(ad);
   }else if(SUPERFLAG){
+    DEBUG_CHECK_READ_W(ad);
     return DPEEK(ad);
   }else exception(BOMBS_BUS_ERROR,EA_READ,ad);
   return 0;
@@ -479,8 +502,10 @@ LONG m68k_lpeek(MEM_ADDRESS ad){
       return 0xffffffff;
     }
   }else if (ad>=MEM_START_OF_USER_AREA){
+    DEBUG_CHECK_READ_L(ad);
     return LPEEK(ad);
   }else if (SUPERFLAG){
+    DEBUG_CHECK_READ_L(ad);
     return LPEEK(ad);
   }else exception(BOMBS_BUS_ERROR,EA_READ,ad);
   return 0;
@@ -671,6 +696,16 @@ LONG m68k_read_dest_l(){
   }
   return 0;
 }
+#ifdef _DEBUG_BUILD
+#define DEBUG_CHECK_IOACCESS \
+  if (ioaccess & IOACCESS_DEBUG_MEM_WRITE_LOG){ \
+    int val=int((debug_mem_write_log_bytes==1) ? int(m68k_peek(debug_mem_write_log_address)):int(m68k_dpeek(debug_mem_write_log_address))); \
+    log_write(HEXSl(old_pc,6)+": Write to address $"+HEXSl(debug_mem_write_log_address,6)+ \
+                  ", new value is "+val+" ($"+HEXSl(val,debug_mem_write_log_bytes*2)+")"); \
+  }
+#else
+#define DEBUG_CHECK_IOACCESS
+#endif
 
 #define HANDLE_IOACCESS(tracefunc) \
   if (ioaccess){                             \
@@ -696,6 +731,7 @@ LONG m68k_read_dest_l(){
       check_for_interrupts_pending();          \
       CHECK_STOP_USER_MODE_NO_INTR \
     }                                             \
+    DEBUG_CHECK_IOACCESS; \
     if (ioaccess & IOACCESS_FLAG_DO_BLIT) Blitter_Start_Now(); \
     /* These flags stay until the next instruction to stop interrupts */  \
     ioaccess=ioaccess & (IOACCESS_FLAG_DELAY_MFP | IOACCESS_INTERCEPT_OS2);                                   \
@@ -724,7 +760,7 @@ extern "C" ASMCALL void m68k_trace() //execute instruction with trace bit set
 
   old_pc=pc;
 
-  DEBUG_ONLY( if (do_breakpoint_check) breakpoint_check(); )
+  DEBUG_ONLY( if (debug_num_bk) breakpoint_check(); )
 
 
 
@@ -1922,6 +1958,7 @@ void                              m68k_negx_b(){
   if((m68k_old_dest|m68k_DEST_L)&MSB_L)SR_SET(SR_C+SR_X);
   if(m68k_DEST_L & MSB_L)SR_SET(SR_N);
 }
+// TODO: These read the dest if it is memory
 void                              m68k_clr_b(){
   FETCH_TIMING;
   if (DEST_IS_REGISTER==0){INSTRUCTION_TIME(4);}
@@ -2028,6 +2065,7 @@ void                              m68k_tas(){
     m68k_DEST_B|=MSB_B;
   }
 }
+// TODO: This should read the memory first
 void                              m68k_move_from_sr(){
   FETCH_TIMING;
   if (DEST_IS_REGISTER){
@@ -2096,8 +2134,8 @@ void                              m68k_nbcd(){
   if(m68k_DEST_B){SR_CLEAR(SR_Z);}
 }
 void                              m68k_pea_or_swap(){
-  FETCH_TIMING;
   if((ir&BITS_543)==BITS_543_000){
+    FETCH_TIMING;
     r[PARAM_M]=MAKELONG(HIWORD(r[PARAM_M]),LOWORD(r[PARAM_M]));
     SR_CLEAR(SR_N+SR_Z+SR_V+SR_C);
     if(!r[PARAM_M])SR_SET(SR_Z);
@@ -2117,7 +2155,6 @@ void                              m68k_pea_or_swap(){
 
     INSTRUCTION_TIME_ROUND(8); // Round before writing to memory
     m68k_PUSH_L(effective_address);
-
     FETCH_TIMING;
   }
 }
@@ -2593,8 +2630,8 @@ void                              m68k_unlk(){
   INSTRUCTION_TIME(8);
   r[15]=areg[PARAM_M];
   abus=r[15];m68k_READ_L_FROM_ADDR;
-  areg[PARAM_M]=m68k_src_l;
-  r[15]+=4;
+  r[15]+=4;                                     //This is contrary to the Programmer's reference manual which says
+  areg[PARAM_M]=m68k_src_l;                     //it does move (a7),An then adds 4 to a7, but it fixed Wrath of Demon
 }
 void                              m68k_move_to_usp(){
   FETCH_TIMING;
@@ -2615,7 +2652,7 @@ void                              m68k_move_from_usp(){
 void                              m68k_reset(){
   FETCH_TIMING;
   if (SUPERFLAG){
-    reset_peripherals();
+    reset_peripherals(0);
     INSTRUCTION_TIME(128);
   }else{
     exception(BOMBS_PRIVILEGE_VIOLATION,EA_INST,0);
@@ -2924,7 +2961,9 @@ void                              m68k_or_b_to_dN(){
   SR_CHECK_Z_AND_N_L;
 }
 void                              m68k_divu(){
-  log_to(LOGSECTION_DIV,Str("DIV: ")+HEXSl(old_pc,6)+" - "+disa_d2(old_pc));
+  DEBUG_ONLY(
+    log_to(LOGSECTION_DIV,Str("DIV: ")+HEXSl(old_pc,6)+" - "+disa_d2(old_pc));
+  )
   FETCH_TIMING;
   m68k_GET_SOURCE_W_NOT_A;
   if (m68k_src_w==0){
@@ -3014,7 +3053,9 @@ void                              m68k_or_b_from_dN_or_sbcd(){
   }
 }
 void                              m68k_divs(){
-  log_to(LOGSECTION_DIV,Str("DIV: ")+HEXSl(old_pc,6)+" - "+disa_d2(old_pc));
+  DEBUG_ONLY(
+    log_to(LOGSECTION_DIV,Str("DIV: ")+HEXSl(old_pc,6)+" - "+disa_d2(old_pc));
+  )
   FETCH_TIMING;
   m68k_GET_SOURCE_W_NOT_A;
   if (m68k_src_w==0){
@@ -3051,22 +3092,25 @@ void                              m68k_divs(){
 ////////////////////////////////////////////////////////////////////////////////
 
 void                              m68k_sub_b_to_dN(){
-  FETCH_TIMING;
+  INSTRUCTION_TIME(4);
   m68k_GET_SOURCE_B_NOT_A;
   m68k_dest=&r[PARAM_N];
   m68k_old_dest=m68k_DEST_B;
   m68k_DEST_B-=m68k_src_b;
   SR_SUB_B(SR_X);
-}void                             m68k_sub_w_to_dN(){
-  FETCH_TIMING;
+  INSTRUCTION_TIME_ROUND(0);
+}
+void                             m68k_sub_w_to_dN(){
+  INSTRUCTION_TIME(4);
   m68k_GET_SOURCE_W;   //A is allowed
   m68k_dest=&r[PARAM_N];
   m68k_old_dest=m68k_DEST_W;
   m68k_DEST_W-=m68k_src_w;
   SR_SUB_W(SR_X);
-}void                             m68k_sub_l_to_dN(){
-
-  FETCH_TIMING;
+  INSTRUCTION_TIME_ROUND(0);
+}
+void                             m68k_sub_l_to_dN(){
+  INSTRUCTION_TIME(4);
   m68k_GET_SOURCE_L;   //A is allowed
   if(SOURCE_IS_REGISTER_OR_IMMEDIATE){INSTRUCTION_TIME(4);}
   else {INSTRUCTION_TIME(2);}
@@ -3074,16 +3118,18 @@ void                              m68k_sub_b_to_dN(){
   m68k_old_dest=m68k_DEST_L;
   m68k_DEST_L-=m68k_src_l;
   SR_SUB_L(SR_X);
+  INSTRUCTION_TIME_ROUND(0);
 }void                             m68k_suba_w(){
-  FETCH_TIMING;
+  INSTRUCTION_TIME(4);
   m68k_GET_SOURCE_W;
   INSTRUCTION_TIME(4);
 
   m68k_src_l=(signed long)((signed short)m68k_src_w);
   areg[PARAM_N]-=m68k_src_l;
+  INSTRUCTION_TIME_ROUND(0);
 }
 void                              m68k_sub_b_from_dN(){
-  FETCH_TIMING;
+  INSTRUCTION_TIME(4);
   switch(ir&BITS_543){
   case BITS_543_000:
   case BITS_543_001:
@@ -3111,8 +3157,10 @@ void                              m68k_sub_b_from_dN(){
     m68k_DEST_B-=m68k_src_b;
     SR_SUB_B(SR_X);
   }
-}void                              m68k_sub_w_from_dN(){
-  FETCH_TIMING;
+  INSTRUCTION_TIME_ROUND(0);
+}
+void                              m68k_sub_w_from_dN(){
+  INSTRUCTION_TIME(4);
   switch(ir&BITS_543){
   case BITS_543_000:
   case BITS_543_001:
@@ -3138,8 +3186,10 @@ void                              m68k_sub_b_from_dN(){
     m68k_DEST_W-=m68k_src_w;
     SR_SUB_W(SR_X);
   }
-}void                              m68k_sub_l_from_dN(){
-  FETCH_TIMING;
+  INSTRUCTION_TIME_ROUND(0);
+}
+void                              m68k_sub_l_from_dN(){
+  INSTRUCTION_TIME(4);
   switch(ir&BITS_543){
   case BITS_543_000:
   case BITS_543_001:
@@ -3166,12 +3216,14 @@ void                              m68k_sub_b_from_dN(){
     m68k_DEST_L-=m68k_src_l;
     SR_SUB_L(SR_X);
   }
+  INSTRUCTION_TIME_ROUND(0);
 }void                             m68k_suba_l(){
-  FETCH_TIMING;
+  INSTRUCTION_TIME(4);
   m68k_GET_SOURCE_L;
   if (SOURCE_IS_REGISTER_OR_IMMEDIATE){INSTRUCTION_TIME(4);}
   else {INSTRUCTION_TIME(2);}
   areg[PARAM_N]-=m68k_src_l;
+  INSTRUCTION_TIME_ROUND(0);
 }
 
 
@@ -3456,7 +3508,7 @@ void                              m68k_muls(){
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
-///////////////////////  line D - add            ///////////////////////////////
+///////////////////////  line D - add.b/add.w/add.l ////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -3466,21 +3518,23 @@ void                              m68k_muls(){
 ////////////////////////////////////////////////////////////////////////////////
 
 void                              m68k_add_b_to_dN(){
-  FETCH_TIMING;
+  INSTRUCTION_TIME(4);
   m68k_GET_SOURCE_B_NOT_A;
   m68k_dest=&r[PARAM_N];
   m68k_old_dest=m68k_DEST_B;
   m68k_DEST_B+=m68k_src_b;
   SR_ADD_B;
-}void                             m68k_add_w_to_dN(){
-  FETCH_TIMING;
+  INSTRUCTION_TIME_ROUND(0);
+}void                             m68k_add_w_to_dN(){ // add.w ea,dn or adda.w ea,an
+  INSTRUCTION_TIME(4);
   m68k_GET_SOURCE_W;   //A is allowed
   m68k_dest=&r[PARAM_N];
   m68k_old_dest=m68k_DEST_W;
   m68k_DEST_W+=m68k_src_w;
   SR_ADD_W;
-}void                             m68k_add_l_to_dN(){
-  FETCH_TIMING;
+  INSTRUCTION_TIME_ROUND(0);
+}void                             m68k_add_l_to_dN(){ // add.l ea,dn or adda.l ea,an
+  INSTRUCTION_TIME(4);
   m68k_GET_SOURCE_L;   //A is allowed
   if(SOURCE_IS_REGISTER_OR_IMMEDIATE){INSTRUCTION_TIME(4);}
   else {INSTRUCTION_TIME(2);}
@@ -3488,15 +3542,17 @@ void                              m68k_add_b_to_dN(){
   m68k_old_dest=m68k_DEST_L;
   m68k_DEST_L+=m68k_src_l;
   SR_ADD_L;
+  INSTRUCTION_TIME_ROUND(0);
 }void                             m68k_adda_w(){
-  FETCH_TIMING;
+  INSTRUCTION_TIME(4);
   m68k_GET_SOURCE_W;
   INSTRUCTION_TIME(4);
   m68k_src_l=(signed long)((signed short)m68k_src_w);
   areg[PARAM_N]+=m68k_src_l;
+  INSTRUCTION_TIME_ROUND(0);
 }
 void                              m68k_add_b_from_dN(){
-  FETCH_TIMING;
+  INSTRUCTION_TIME(4);
   switch(ir&BITS_543){
   case BITS_543_000:
   case BITS_543_001:
@@ -3526,8 +3582,10 @@ void                              m68k_add_b_from_dN(){
     m68k_DEST_B+=m68k_src_b;
     SR_ADD_B;
   }
-}void                              m68k_add_w_from_dN(){
-  FETCH_TIMING;
+  INSTRUCTION_TIME_ROUND(0);
+}
+void                              m68k_add_w_from_dN(){
+  INSTRUCTION_TIME(4);
   switch(ir&BITS_543){
   case BITS_543_000:
   case BITS_543_001:
@@ -3553,8 +3611,10 @@ void                              m68k_add_b_from_dN(){
     m68k_DEST_W+=m68k_src_w;
     SR_ADD_W;
   }
-}void                              m68k_add_l_from_dN(){
-  FETCH_TIMING;
+  INSTRUCTION_TIME_ROUND(0);
+}
+void                              m68k_add_l_from_dN(){
+  INSTRUCTION_TIME(4);
   switch (ir&BITS_543){
   case BITS_543_000:
   case BITS_543_001:
@@ -3581,8 +3641,10 @@ void                              m68k_add_b_from_dN(){
     m68k_DEST_L+=m68k_src_l;
     SR_ADD_L;
   }
-}void                             m68k_adda_l(){
-  FETCH_TIMING;
+  INSTRUCTION_TIME_ROUND(0);
+}
+void                             m68k_adda_l(){
+  INSTRUCTION_TIME(4);
   m68k_GET_SOURCE_L;
   if (SOURCE_IS_REGISTER_OR_IMMEDIATE){
     INSTRUCTION_TIME(4);
@@ -3590,6 +3652,7 @@ void                              m68k_add_b_from_dN(){
     INSTRUCTION_TIME(2);
   }
   areg[PARAM_N]+=m68k_src_l;
+  INSTRUCTION_TIME_ROUND(0);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -3941,7 +4004,8 @@ void                              m68k_asl_w_to_dM(){       //okay!
   *((unsigned short*)m68k_dest)<<=m68k_src_w;
 
   SR_CHECK_Z_AND_N_W;
-}void                             m68k_roxl_w_to_dM(){
+}
+void                             m68k_roxl_w_to_dM(){
   FETCH_TIMING;
   m68k_BIT_SHIFT_TO_dM_GET_SOURCE;
   INSTRUCTION_TIME(2+2*m68k_src_w);

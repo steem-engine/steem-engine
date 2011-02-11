@@ -1,3 +1,11 @@
+/*---------------------------------------------------------------------------
+FILE: boiler.cpp
+MODULE: Steem
+CONDITION: _DEBUG_BUILD must be defined
+DESCRIPTION: This file contains a lot of utility functions for Steem's debug
+build and the basis of the debug GUI.
+---------------------------------------------------------------------------*/
+
 //---------------------------------------------------------------------------
 void debug_trace_crash(m68k_exception &e)
 {
@@ -19,9 +27,6 @@ void debug_run_start()
 {
   ShowWindow(trace_window_handle,SW_HIDE);
   SetWindowText(DWin_run_button,"Stop");
-  for (int n=0;n<num_monitors;n++){
-    if (monitor_ad[n]<mem_len) monitor_contents[n]=DPEEK(monitor_ad[n]) & monitor_mask[n];
-  }
 }
 //---------------------------------------------------------------------------
 void debug_run_end()
@@ -38,94 +43,150 @@ void debug_run_end()
 //---------------------------------------------------------------------------
 void debug_reset()
 {
-  for (int n=0;n<num_monitors;n++){
-    if (monitor_ad[n]<mem_len) monitor_contents[n]=DPEEK(monitor_ad[n]) & monitor_mask[n];
-  }
   update_register_display(true);
 }
 //---------------------------------------------------------------------------
-int get_breakpoint_or_monitor(bool mon,MEM_ADDRESS ad)
+DEBUG_ADDRESS* debug_find_address(MEM_ADDRESS ad)
 {
-  if (mon){
-    for (int n=0;n<num_monitors;n++) if (monitor_ad[n]==ad) return n;
-    for (int n=0;n<num_io_monitors;n++) if (monitor_io_ad[n]==ad) return n;
-  }else{
-    for (int n=0;n<num_breakpoints;n++) if (breakpoint[n]==ad) return n;
+  for (int i=0;i<debug_ads.NumItems;i++){
+    if (debug_ads[i].ad==ad) return &debug_ads[i];
   }
-  return -1;
+  return NULL;
 }
 //---------------------------------------------------------------------------
-void remove_breakpoint_or_monitor(bool is_mon,MEM_ADDRESS ad)
+DEBUG_ADDRESS* debug_find_or_add_address(MEM_ADDRESS ad)
 {
-  int *num=&num_breakpoints;
-  MEM_ADDRESS *ads=breakpoint,*mon_cont=NULL;
-  WORD *mon_mask=NULL;
-  bool *mon_readflag=NULL;
-  if (is_mon){
-    num=(int*)((ad>=MEM_IO_BASE) ? &num_io_monitors:&num_monitors);
-    ads=(MEM_ADDRESS*)((ad>=MEM_IO_BASE) ? monitor_io_ad:monitor_ad);
-    mon_cont=(MEM_ADDRESS*)((ad>=MEM_IO_BASE) ? NULL:monitor_contents);
-    mon_mask=(WORD*)((ad>=MEM_IO_BASE) ? monitor_io_mask:monitor_mask);
-    mon_readflag=(bool*)((ad>=MEM_IO_BASE) ? monitor_io_readflag:NULL);
+  DEBUG_ADDRESS *pda=debug_find_address(ad);
+  if (pda==NULL){
+    DEBUG_ADDRESS da={ad,1,0,{0,0},{0}};
+    debug_ads.Add(da);
   }
-  int n=0;
-  while (n<*num){
-    if (ads[n]==ad){
-      for (int m=n;m<(*num)-1;m++){
-        ads[m]=ads[m+1];
-        if (mon_cont) mon_cont[m]=mon_cont[m+1];
-        if (mon_mask) mon_mask[m]=mon_mask[m+1];
-        if (mon_readflag) mon_readflag[m]=mon_readflag[m+1];
-      }
-      (*num)--;
-    }else{
-      n++;
+  return debug_find_address(ad);
+}
+//---------------------------------------------------------------------------
+void debug_remove_address(MEM_ADDRESS ad)
+{
+  bool Changed=0;
+  for (int i=0;i<debug_ads.NumItems;i++){
+    if (debug_ads[i].ad==ad){
+      debug_ads.Delete(i--);
+      Changed=true;
     }
   }
-  UPDATE_DO_MON_CHECK;
-  UPDATE_DO_BREAK_CHECK;
-  breakpoint_menu_setup();
-  mem_browser_update_all();
+  if (Changed){
+    debug_update_bkmon();
+    breakpoint_menu_setup();
+    mem_browser_update_all();
+  }
 }
 //---------------------------------------------------------------------------
-void set_breakpoint_or_monitor(bool is_mon,MEM_ADDRESS ad,WORD mask,bool readflag)
+void debug_set_bk(MEM_ADDRESS ad,bool set)
 {
-  int *num=&num_breakpoints;
-  MEM_ADDRESS *ads=breakpoint,*mon_cont=NULL;
-  WORD *mon_mask=NULL;
-  bool *mon_readflag=NULL;
-  if (is_mon){
-    num=(int*)((ad>=MEM_IO_BASE) ? &num_io_monitors:&num_monitors);
-    ads=(MEM_ADDRESS*)((ad>=MEM_IO_BASE) ? monitor_io_ad:monitor_ad);
-    mon_cont=(MEM_ADDRESS*)((ad>=MEM_IO_BASE) ? NULL:monitor_contents);
-    mon_mask=(WORD*)((ad>=MEM_IO_BASE) ? monitor_io_mask:monitor_mask);
-    mon_readflag=(bool*)((ad>=MEM_IO_BASE) ? monitor_io_readflag:NULL);
-  }
-  int n;
-  for (n=0;ads[n]<ad && n<*num;n++);
-  if (n>=*num || ads[n]>ad){
-    if (*num>=MAX_BREAKPOINTS){
-      MessageBox(NULL,"Too many breakpoints/monitors","That's Enough!",
-                  MB_ICONEXCLAMATION | MB_SETFOREGROUND | MB_TASKMODAL | MB_TOPMOST);
+  DEBUG_ADDRESS *pda=debug_find_or_add_address(ad);
+  int new_val=int(set ? BIT_0:0);
+  if ((pda->bwr & BIT_0)==new_val) return;
 
-    }else{
-      for (int m=*num;m>n;m--){
-        ads[m]=ads[m-1];
-        if (mon_cont) mon_cont[m]=mon_cont[m-1];
-        if (mon_mask) mon_mask[m]=mon_mask[m-1];
-        if (mon_readflag) mon_readflag[m]=mon_readflag[m-1];
+  pda->bwr&=~BIT_0;
+  pda->bwr|=new_val;
+  if (pda->bwr==0 && pda->name[0]==0){
+    debug_remove_address(ad);
+  }else{
+    breakpoint_menu_setup();
+    mem_browser_update_all();
+  }
+  debug_update_bkmon();
+}
+//---------------------------------------------------------------------------
+void debug_set_mon(MEM_ADDRESS ad,bool read,WORD mask)
+{
+  if (ad>=0xe00000 && ad<MEM_IO_BASE) return; // Monitors only on RAM and IO  
+
+  DEBUG_ADDRESS *pda=debug_find_or_add_address(ad);
+  int bit=int(read ? 2:1);
+  if (mask==0){
+    pda->bwr&=~(1 << bit);
+    pda->mask[bit-1]=0;
+  }else{
+    pda->bwr|=1 << bit;
+    pda->mask[bit-1]=mask;
+  }
+  if (pda->bwr==0 && pda->name[0]==0){
+    debug_remove_address(ad);
+  }else{
+    breakpoint_menu_setup();
+    mem_browser_update_all();
+  }
+  debug_update_bkmon();
+}
+//---------------------------------------------------------------------------
+void debug_set_name(MEM_ADDRESS ad,EasyStr name)
+{
+  DEBUG_ADDRESS *pda=debug_find_or_add_address(ad);
+  strcpy(pda->name,name.Lefts(63));
+  if (pda->bwr==0 && pda->name[0]==0){
+    debug_remove_address(ad);
+  }else{
+    breakpoint_menu_setup();
+    mem_browser_update_all();
+  }
+  debug_update_bkmon();
+}
+//---------------------------------------------------------------------------
+void debug_update_bkmon()
+{
+  int *num[]={&debug_num_bk,&debug_num_mon_reads,&debug_num_mon_writes,&debug_num_mon_reads_io,&debug_num_mon_writes_io};
+  MEM_ADDRESS *ad[]={debug_bk_ad,debug_mon_read_ad,debug_mon_write_ad,debug_mon_read_ad_io,debug_mon_write_ad_io};
+  WORD *mask[]={NULL,debug_mon_read_mask,debug_mon_write_mask,debug_mon_read_mask_io,debug_mon_write_mask_io};
+
+  for (int i=0;i<5;i++) *(num[i])=0;
+  for (int i=0;i<debug_ads.NumItems;i++){
+    int mode=debug_ads[i].mode;
+    if (mode==1) mode=int((debug_ads[i].bwr & 1) ? breakpoint_mode:monitor_mode);
+    if (mode){
+      if ((debug_ads[i].bwr & BIT_0) && *(num[0])<MAX_BREAKPOINTS){
+        ad[0][*(num[0])]=debug_ads[i].ad;
+        (*(num[0]))++;
       }
-      ads[n]=ad;
-      if (mon_mask) mon_mask[n]=mask;
-      if (mon_cont) mon_cont[n]=d2_dpeek(ad) & mask;
-      if (mon_readflag) mon_readflag[n]=readflag;
-      (*num)++;
+
+      int wrbase=1;
+      if (debug_ads[i].ad>=MEM_IO_BASE){
+        wrbase=3;
+      }else if (debug_ads[i].ad>=0xe00000){
+        wrbase=0;
+      }
+      if (wrbase){
+        // reads
+        if ((debug_ads[i].bwr & BIT_2) && *(num[wrbase])<MAX_BREAKPOINTS){
+          ad[wrbase][*(num[wrbase])]=debug_ads[i].ad;
+          mask[wrbase][*(num[wrbase])]=debug_ads[i].mask[1];
+          (*(num[wrbase]))++;
+        }
+        // writes
+        if ((debug_ads[i].bwr & BIT_1) && *(num[wrbase+1])<MAX_BREAKPOINTS){
+          ad[wrbase+1][*(num[wrbase+1])]=debug_ads[i].ad;
+          mask[wrbase+1][*(num[wrbase+1])]=debug_ads[i].mask[0];
+          (*(num[wrbase+1]))++;
+        }
+      }
     }
   }
-  UPDATE_DO_MON_CHECK;
-  UPDATE_DO_BREAK_CHECK;
-  breakpoint_menu_setup();
-  mem_browser_update_all();
+}
+//---------------------------------------------------------------------------
+int debug_get_ad_mode(MEM_ADDRESS ad)
+{
+  DEBUG_ADDRESS *pda=debug_find_address(ad);
+  if (pda==NULL) return 0;
+
+  int mode=pda->mode;
+  if (mode==1) mode=int((pda->bwr & 1) ? breakpoint_mode:monitor_mode);
+  return mode;
+}
+//---------------------------------------------------------------------------
+WORD debug_get_ad_mask(MEM_ADDRESS ad,bool read)
+{
+  DEBUG_ADDRESS *pda=debug_find_address(ad);
+  if (pda==NULL) return 0;
+  return pda->mask[int(read ? 1:0)];
 }
 //---------------------------------------------------------------------------
 void debug_check_break_on_irq(int irq)
@@ -143,7 +204,6 @@ void debug_check_break_on_irq(int irq)
 //---------------------------------------------------------------------------
 void breakpoint_menu_setup()
 {
-  char tb[100];
   MEM_ADDRESS save_dpc=dpc;
 
   RemoveAllMenuItems(breakpoint_menu);
@@ -168,60 +228,70 @@ void breakpoint_menu_setup()
   AppendMenu(breakpoint_irq_menu,MF_STRING,9030,"Check All");
   AppendMenu(breakpoint_irq_menu,MF_STRING,9031,"Uncheck All");
 
-  AppendMenu(breakpoint_menu,MF_STRING|int((breakpoint_mode==1) ? MF_CHECKED:0),1107,"Stop On Breakpoints");
-  AppendMenu(breakpoint_menu,MF_STRING|int((breakpoint_mode==2) ? MF_CHECKED:0),1108,"Log On Breakpoints");
+  AppendMenu(breakpoint_menu,MF_STRING|int((breakpoint_mode==2) ? MF_CHECKED:0),1107,"Stop On Breakpoints");
+  AppendMenu(breakpoint_menu,MF_STRING|int((breakpoint_mode==3) ? MF_CHECKED:0),1108,"Log On Breakpoints");
   AppendMenu(breakpoint_menu,MF_STRING,1100,"Clear All Breakpoints");
   AppendMenu(breakpoint_menu,MF_STRING,1101,"Set Breakpoint At PC");
   AppendMenu(breakpoint_menu,MF_SEPARATOR,0,NULL);
   AppendMenu(breakpoint_menu,MF_POPUP,(int)breakpoint_irq_menu,"Break On Interrupt");
+  
+#if USE_PASTI
+  if (hPasti){
+    AppendMenu(breakpoint_menu,MF_SEPARATOR,0,NULL);
+    AppendMenu(breakpoint_menu,MF_STRING,1109,"Pasti Breakpoints");
+  }
+#endif
 
-
-
-  AppendMenu(monitor_menu,MF_STRING|int((monitor_mode==1) ? MF_CHECKED:0),1103,"Stop On Changes");
-  AppendMenu(monitor_menu,MF_STRING|int((monitor_mode==2) ? MF_CHECKED:0),1104,"Log On Changes");
+  AppendMenu(monitor_menu,MF_STRING|int((monitor_mode==2) ? MF_CHECKED:0),1103,"Stop On Activation");
+  AppendMenu(monitor_menu,MF_STRING|int((monitor_mode==3) ? MF_CHECKED:0),1104,"Log On Activation");
   AppendMenu(monitor_menu,MF_STRING,1106,"Clear All Monitored Addresses");
   AppendMenu(monitor_menu,MF_STRING,1105,"Set Monitor On Screen");
 
-
+  Str t;
   AppendMenu(breakpoint_menu,MF_SEPARATOR,0,NULL);
-  if (num_breakpoints){
-    for (int n=0;n<num_breakpoints;n++){
-      strcpy(tb,HEXSl(breakpoint[n],6));strcat(tb,"  ");
-      strcat(tb,disa_d2(breakpoint[n]));
-      AppendMenu(breakpoint_menu,MF_STRING,1110+n,tb);
-    }
-  }
   AppendMenu(monitor_menu,MF_SEPARATOR,0,NULL);
-  if (num_monitors){
-    for (int n=0;n<num_monitors;n++){
-      MEM_ADDRESS ad=monitor_ad[n];
-      if (monitor_mask[n]==0x00ff) ad++;
-      char *suff=".b";
-      if (monitor_mask[n]==0xffff) suff=".w";
+  for (int i=0;i<debug_ads.NumItems;i++){
+    if (debug_ads[i].bwr & BIT_0){
+      Str mode_text="Off";
+      int mode=debug_ads[i].mode;
+      if (mode==1) mode=breakpoint_mode;
+      if (mode==2) mode_text="Stop";
+      if (mode==3) mode_text="Log";
 
-      strcpy(tb,HEXSl(ad,6));strcat(tb,suff);strcat(tb,"  ");
-      strcat(tb,disa_d2(monitor_ad[n]));
-      AppendMenu(monitor_menu,MF_STRING,1110+MAX_BREAKPOINTS+n,tb);
+      t=HEXSl(debug_ads[i].ad,6)+" - "+mode_text+" - "+disa_d2(debug_ads[i].ad);
+      if (debug_ads[i].name[0]) t+=Str("  (")+debug_ads[i].name+")";
+      AppendMenu(breakpoint_menu,MF_STRING,1110+i,t);
     }
-  }
-  if (num_io_monitors){
-    for (int n=0;n<num_io_monitors;n++){
-      MEM_ADDRESS ad=monitor_io_ad[n];
-      if (monitor_io_mask[n]==0x00ff) ad++;
-      char *suff=".b";
-      if (monitor_io_mask[n]==0xffff) suff=".w";
+    char *wr_text[]={"WRITE","READ"};
+    for (int wr=0;wr<2;wr++){
+      if (debug_ads[i].bwr & (BIT_1 << wr)){
+        Str mode_text="Off";
+        int mode=debug_ads[i].mode;
+        if (mode==1) mode=monitor_mode;
+        if (mode==2) mode_text="Stop";
+        if (mode==3) mode_text="Log";
 
-      strcpy(tb,HEXSl(ad,6));strcat(tb,suff);strcat(tb,"  ");
-      iolist_entry *io=search_iolist(ad);
-      if (io) strcat(tb,io->name);
-      if (monitor_io_mask[n]==0xffff){
-        iolist_entry *io2=search_iolist(ad+1);
-        if (io2){
-          if (io) strcat(tb," | ");
-          strcat(tb,io2->name);
+        MEM_ADDRESS ad=debug_ads[i].ad;
+        if (debug_ads[i].mask[wr]==0x00ff) ad++;
+        char *suff=".b";
+        if (debug_ads[i].mask[wr]==0xffff) suff=".w";
+        t=HEXSl(ad,6)+suff+" - "+wr_text[wr]+" - "+mode_text;
+        if (debug_ads[i].name[0]) t+=Str("  (")+debug_ads[i].name+")";
+        iolist_entry *io=search_iolist(ad);
+        if (io) t+=Str(" - ")+io->name;
+        if (debug_ads[i].mask[wr]==0xffff){
+          iolist_entry *io2=search_iolist(ad+1);
+          if (io2){
+            if (io){
+              t+=" | ";
+            }else{
+              t+=" - ";
+            }
+            t+=io2->name;
+          }
         }
+        AppendMenu(monitor_menu,MF_STRING,1110+i,t);
       }
-      AppendMenu(monitor_menu,MF_STRING,1110+MAX_BREAKPOINTS+MAX_BREAKPOINTS+n,tb);
     }
   }
   dpc=save_dpc;
@@ -230,18 +300,22 @@ void breakpoint_menu_setup()
 void insp_menu_setup()
 {
   char ttt[150];
-  for(int n=0;n<3;n++){
+  for (int n=0;n<3;n++){
     if (insp_menu_long_bytes[n]){
-      if(insp_menu_long_bytes[n]>2){
+      if (insp_menu_long_bytes[n]>2){
         strcpy(ttt,"New instruction browser at ");strcat(ttt,insp_menu_long_name[n]);
         AppendMenu(insp_menu,MF_ENABLED | MF_STRING,3010+n,ttt);
         strcpy(ttt,"New memory browser at ");strcat(ttt,insp_menu_long_name[n]);
-        AppendMenu(insp_menu,MF_ENABLED | MF_STRING,3012+n,ttt);
+        AppendMenu(insp_menu,MF_ENABLED | MF_STRING,3013+n,ttt);
+      }
+      HMENU pop=CreatePopupMenu();
+      for (int m=0;m<NUM_REGISTERS_IN_REGISTER_BROWSER;m++){
+        AppendMenu(pop,MF_ENABLED | MF_STRING,4000+n*32+m,
+                    reg_browser_entry_name[m]);
       }
       strcpy(ttt,"Set register to ");strcat(ttt,insp_menu_long_name[n]);
-      AppendMenu(insp_menu,MF_ENABLED | MF_STRING | MF_POPUP,
-        (UINT)insp_menu_reg_submenu[n],ttt);
-
+      AppendMenu(insp_menu,MF_ENABLED | MF_STRING | MF_POPUP,(UINT)pop,ttt);
+      AppendMenu(insp_menu,MF_SEPARATOR,0,NULL);
     }
   }
 }
@@ -376,14 +450,11 @@ LRESULT __stdcall DWndProc(HWND Win,UINT Mess,UINT wPar,long lPar)
       insp_menu_subject_type=78; //78=vague click
       insp_menu_subject=(void*)NULL;
 
-      RemoveAllMenuItems(insp_menu);
+      DeleteAllMenuItems(insp_menu);
 
-      AppendMenu(insp_menu,MF_ENABLED | MF_STRING,3001,
-        "New instruction browser at pc");
-      AppendMenu(insp_menu,MF_ENABLED | MF_STRING,3002,
-        "New memory browser at pc");
-      AppendMenu(insp_menu,MF_ENABLED | MF_STRING,3003,
-        "Register browser");
+      AppendMenu(insp_menu,MF_ENABLED | MF_STRING,3001,"New instruction browser at pc");
+      AppendMenu(insp_menu,MF_ENABLED | MF_STRING,3002,"New memory browser at pc");
+      AppendMenu(insp_menu,MF_ENABLED | MF_STRING,3003,"Register browser");
       TrackPopupMenu(insp_menu,TPM_LEFTALIGN | TPM_LEFTBUTTON,
         LOWORD(lPar),HIWORD(lPar),0,DWin,NULL);
 
@@ -405,12 +476,11 @@ LRESULT __stdcall DWndProc(HWND Win,UINT Mess,UINT wPar,long lPar)
             *(reg_browser_entry_pointer[rn])=insp_menu_long[n];
           }
           update_register_display(true);
-        }else if (id>=1110 && id<1110+MAX_BREAKPOINTS){
-          new mem_browser(breakpoint[id-1110],DT_INSTRUCTION);
-        }else if (id>=1110+MAX_BREAKPOINTS && id<1110+MAX_BREAKPOINTS+MAX_BREAKPOINTS){
-          new mem_browser(monitor_ad[id-(1110+MAX_BREAKPOINTS)],DT_MEMORY);
-        }else if (id>=1110+MAX_BREAKPOINTS+MAX_BREAKPOINTS && id<1110+MAX_BREAKPOINTS+MAX_BREAKPOINTS+MAX_BREAKPOINTS){
-          new mem_browser(monitor_io_ad[id-(1110+MAX_BREAKPOINTS+MAX_BREAKPOINTS)],DT_MEMORY);
+        }else if (id>=1110 && id<1200){
+          id-=1110;
+          type_disp_type type=DT_MEMORY;
+          if (debug_ads[id].bwr & BIT_0) type=DT_INSTRUCTION;
+          new mem_browser(debug_ads[id].ad,type);
         }else if (id>=301 && id<400){
           id-=300;
           logsection_enabled[id]=!logsection_enabled[id];
@@ -418,10 +488,15 @@ LRESULT __stdcall DWndProc(HWND Win,UINT Mess,UINT wPar,long lPar)
           if (id==LOGSECTION_CPU){
             if (logsection_enabled[id]) log_cpu_count=CPU_INSTRUCTIONS_TO_LOG;
           }
-        }else if (id>=910 && id<1000){
-          SetForegroundWindow(m_b[id-910]->owner);
+        }else if (id>=950 && id<1000){
+          SetForegroundWindow(m_b[id-950]->owner);
         }else if (id>=17000 && id<20000){
           new mem_browser(pc_history[id-17000],DT_INSTRUCTION);
+        }else if (id>=20000 && id<30000){
+          id-=20000;
+          if (id/100<debug_plugins.NumItems){
+            debug_plugins[id/100].Activate(id % 100);
+          }
         }else if (id>=9000 && id<9040){
           id-=9000;
           bool set=0;
@@ -438,7 +513,57 @@ LRESULT __stdcall DWndProc(HWND Win,UINT Mess,UINT wPar,long lPar)
               break_on_irq[id]=!break_on_irq[id];
               CheckMenuItem(breakpoint_irq_menu,9000+id,int(break_on_irq[id] ? MF_CHECKED:MF_UNCHECKED));
           }
+        }else if (id>=3050 && id<3500){
+          mem_browser *mb=(mem_browser*)insp_menu_subject;
+          int offset=((id-3050)/20) * 2;
+          MEM_ADDRESS ad=mb->get_address_from_row(insp_menu_row)+offset;
+          int action=(id-3050) % 20;
+          int mask=-1;
+          bool read=0;
+          DEBUG_ADDRESS *pda=debug_find_or_add_address(ad);
+
+          switch (action){
+            case 0:
+            {
+              bool bk=0;
+              if (pda) bk=pda->bwr & BIT_0;
+              debug_set_bk(ad,!bk);
+              break;
+            }
+            case 1: // name address
+            {
+              EnableAllWindows(0,mb->owner);
+              Str NewName=pda->name;
+              if (InputPrompt_Choose(mb->owner,"Enter Address Name",NewName)){
+                debug_set_name(pda->ad,NewName);
+              }
+              EnableAllWindows(true,mb->owner);
+              break;
+            }
+            case 2: mask=0; break;
+            case 3: mask=0xffff; break;
+            case 4: mask=0xff00; break;
+            case 5: mask=0x00ff; break;
+            case 6: mask=0;     read=true; break;
+            case 7: mask=0xffff;read=true; break;
+            case 8: mask=0xff00;read=true; break;
+            case 9: mask=0x00ff;read=true; break;
+
+            case 16:case 17:case 18:case 19:
+              pda->mode=action-16;
+              breakpoint_menu_setup();
+              mem_browser_update_all();
+              debug_update_bkmon();
+              break;
+          }
+          if (mask!=-1){
+            debug_set_mon(ad,read,WORD(mask));
+          }
+          if (pda->bwr==0 && pda->name[0]==0){
+            debug_remove_address(ad);
+          }
         }else{
+
           switch (id){
             case 3001:
               new mem_browser(pc,DT_INSTRUCTION);
@@ -449,17 +574,13 @@ LRESULT __stdcall DWndProc(HWND Win,UINT Mess,UINT wPar,long lPar)
             case 3003:
               new mem_browser(0,DT_REGISTERS);
               break;
-            case 3010:case 3011:{
-              new mem_browser((MEM_ADDRESS)(insp_menu_long[wPar & 1]&0xfffffe),
-                  DT_INSTRUCTION);
+            case 3010:case 3011:case 3012:
+              new mem_browser((MEM_ADDRESS)(insp_menu_long[(wPar-3010)]),DT_INSTRUCTION);
               break;
-            }
-            case 3012:case 3013:{
-              new mem_browser((MEM_ADDRESS)(insp_menu_long[wPar & 1]&0xfffffe),
-                  DT_MEMORY);
+            case 3013:case 3014:case 3015:
+              new mem_browser((MEM_ADDRESS)(insp_menu_long[(wPar-3013)]),DT_MEMORY);
               break;
-            }
-            case 3015:{
+            case 3016:{
               mr_static*ms=(mr_static*)insp_menu_subject;
               if(ms->editflag){
                 set_DWin_edit(0,ms,0,0);
@@ -468,9 +589,33 @@ LRESULT __stdcall DWndProc(HWND Win,UINT Mess,UINT wPar,long lPar)
             case 3025:
             {
               mem_browser*mb=(mem_browser*)insp_menu_subject;
-              if(mb->editflag){
+              if (mb->editflag){
                 set_DWin_edit(1,(void*)mb,insp_menu_row,insp_menu_col);
               }
+              break;
+            }
+            case 3026:
+            {
+              mem_browser *mb=(mem_browser*)insp_menu_subject;
+              EnableAllWindows(0,mb->owner);
+              Str NewName=GetWindowTextStr(mb->owner);
+              if (InputPrompt_Choose(mb->owner,"Enter Browser Name",NewName)){
+                SetWindowText(mb->owner,NewName);
+              }
+              EnableAllWindows(true,mb->owner);
+              break;
+            }
+            case 3027:
+            {
+              mem_browser*mb=(mem_browser*)insp_menu_subject;
+              debug_load_file_to_address(mb->owner,insp_menu_long[0]);
+              break;
+            }
+            case 3028:
+            {
+              trace_over_breakpoint=insp_menu_long[0];
+              log_to(LOGSECTION_GUI,Str("GUI: Running until hit $")+HEXSl(trace_over_breakpoint,6));
+              PostRunMessage();
               break;
             }
             case 104:
@@ -481,7 +626,7 @@ LRESULT __stdcall DWndProc(HWND Win,UINT Mess,UINT wPar,long lPar)
                                       true,"PRG");
               if (sfn.NotEmpty()){
                 EasyStr dfn=FileSelect(DWin,"Save disassembly as",WriteDir,
-                                        "text\0*.TXT\0All Files\0*.*\0\0",1,false,"TXT");
+                                        "Source (.s)\0*.s\0text\0*.TXT\0All Files\0*.*\0\0",1,false,"s");
                 if (dfn.NotEmpty()){
                   FILE *sf=fopen(sfn.Text,"rb");
                   if (sf){
@@ -575,8 +720,25 @@ LRESULT __stdcall DWndProc(HWND Win,UINT Mess,UINT wPar,long lPar)
             case 1002:  //Trace into
               trace();
               break;
+            case 1783: // Debugger reset
+              SendMessage(Win,WM_COMMAND,905,0); // close all browsers
+              SendMessage(Win,WM_COMMAND,1100,0); // clear all breakpoints
+              if (breakpoint_mode!=2) SendMessage(Win,WM_COMMAND,1107,0);
+              SendMessage(Win,WM_COMMAND,1106,0); // clear all monitors
+              if (monitor_mode!=2) SendMessage(Win,WM_COMMAND,1103,0);
+              SendMessage(Win,WM_COMMAND,9031,0); // turn off all irq breaks
+              SendMessage(Win,WM_COMMAND,1009,0); // turn off all logsections
+              SendMessage(Win,WM_COMMAND,1502,0); // notify on crash with bombs
+              SendMessage(Win,WM_COMMAND,1600,0); // screen shift to 0;
+              if (logging_suspended) SendMessage(Win,WM_COMMAND,1012,0);
+              logfile_wipe();
+              if (stop_on_blitter_flag) SendMessage(Win,WM_COMMAND,1510,0);
+              if (stop_on_user_change) SendMessage(Win,WM_COMMAND,1512,0);
+              if (stop_on_next_program_run) SendMessage(Win,WM_COMMAND,1513,0);
+              if (debug_cycle_colours) SendMessage(Win,WM_COMMAND,1789,0);
+              break;
             case 1004:  //reset
-              reset_st();
+              reset_st(RESET_COLD | RESET_STOP | RESET_CHANGESETTINGS | RESET_BACKUP);
               break;
             case 1005:   //view logfile
               if (logfile) ShellExecute(NULL,NULL,LogViewProg,LogFileName,"",SW_SHOW);
@@ -621,7 +783,7 @@ LRESULT __stdcall DWndProc(HWND Win,UINT Mess,UINT wPar,long lPar)
                 simultrace=NULL;
                 CheckMenuItem(menu1,1008,MF_BYCOMMAND | MF_UNCHECKED);
               }else{
-                MessageBox(NULL,"Move the mouse over the window that you want to control and press S","Simultrace",
+                MessageBox(NULL,"Move the mouse over the window that you want to control and press S, don't change the focus!","Simultrace",
                             MB_TASKMODAL | MB_TOPMOST | MB_SETFOREGROUND);
                 simultrace=SIMULTRACE_CHOOSE;
               }
@@ -641,11 +803,11 @@ LRESULT __stdcall DWndProc(HWND Win,UINT Mess,UINT wPar,long lPar)
               break;
             case 1025: //redraw on stop
               redraw_on_stop=!redraw_on_stop;
-              CheckMenuItem(menu1,1025,MF_BYCOMMAND | int(redraw_on_stop ? MF_CHECKED:MF_UNCHECKED));
+              CheckMenuItem(boiler_op_menu,1025,MF_BYCOMMAND | int(redraw_on_stop ? MF_CHECKED:MF_UNCHECKED));
               break;
             case 1026: //redraw after trace
               redraw_after_trace=!redraw_after_trace;
-              CheckMenuItem(menu1,1026,MF_BYCOMMAND | int(redraw_after_trace ? MF_CHECKED:MF_UNCHECKED));
+              CheckMenuItem(boiler_op_menu,1026,MF_BYCOMMAND | int(redraw_after_trace ? MF_CHECKED:MF_UNCHECKED));
               break;
             case 1027: //Gun position colour
             {
@@ -682,6 +844,16 @@ LRESULT __stdcall DWndProc(HWND Win,UINT Mess,UINT wPar,long lPar)
             case 1514:
               trace_show_window=!trace_show_window;
               CheckMenuItem(boiler_op_menu,1514,MF_BYCOMMAND | int(trace_show_window ? MF_CHECKED:MF_UNCHECKED));
+              break;
+            case 1515:
+              debug_monospace_disa=!debug_monospace_disa;
+              CheckMenuItem(boiler_op_menu,1515,MF_BYCOMMAND | int(debug_monospace_disa ? MF_CHECKED:MF_UNCHECKED));
+              mem_browser_update_all();
+              break;
+            case 1516:
+              debug_uppercase_disa=!debug_uppercase_disa;
+              CheckMenuItem(boiler_op_menu,1516,MF_BYCOMMAND | int(debug_uppercase_disa ? MF_CHECKED:MF_UNCHECKED));
+              mem_browser_update_all();
               break;
 
             case 1780: //turn screen red
@@ -724,12 +896,13 @@ LRESULT __stdcall DWndProc(HWND Win,UINT Mess,UINT wPar,long lPar)
               }else{
                 debug_cycle_colours=1;
               }
-              CheckMenuItem(menu1,1789,MF_BYCOMMAND | int(debug_cycle_colours ? MF_CHECKED:MF_UNCHECKED));
+              CheckMenuItem(boiler_op_menu,1789,MF_BYCOMMAND | int(debug_cycle_colours ? MF_CHECKED:MF_UNCHECKED));
               draw(false);
               break;
             case 1600:case 1601:case 1602:case 1603:
               debug_screen_shift=(LOWORD(wPar)-1600)*2;
               CheckMenuRadioItem(shift_screen_menu,1600,1603,1600+(debug_screen_shift/2),MF_BYCOMMAND);
+              draw(false);
               break;
             case 1010:  //run
             {
@@ -746,43 +919,76 @@ LRESULT __stdcall DWndProc(HWND Win,UINT Mess,UINT wPar,long lPar)
               break;
             }
             case 1100:  //clear all breakpoints
-              num_breakpoints=0;
-              UPDATE_DO_BREAK_CHECK;
+              for (int i=0;i<debug_ads.NumItems;i++){
+                if (debug_ads[i].bwr & BIT_0){
+                  debug_ads[i].bwr&=~BIT_0;
+                  if (debug_ads[i].bwr==0) debug_ads.Delete(i--);
+                }
+              }
+              debug_update_bkmon();
               breakpoint_menu_setup();
               mem_browser_update_all();
               break;
             case 1107:   //toggle breakpoint checking
             case 1108:   //toggle breakpoint checking to logfile
-              if (id==1107) breakpoint_mode=int((breakpoint_mode==1) ? 0:1);
-              if (id==1108) breakpoint_mode=int((breakpoint_mode==2) ? 0:2);
-              UPDATE_DO_BREAK_CHECK;
-              CheckMenuItem(breakpoint_menu,1107,MF_BYCOMMAND | int((breakpoint_mode==1) ? MF_CHECKED:MF_UNCHECKED));
-              CheckMenuItem(breakpoint_menu,1108,MF_BYCOMMAND | int((breakpoint_mode==2) ? MF_CHECKED:MF_UNCHECKED));
+              if (id==1107) breakpoint_mode=int((breakpoint_mode==2) ? 0:2);
+              if (id==1108) breakpoint_mode=int((breakpoint_mode==3) ? 0:3);
+              mem_browser_update_all();
+              breakpoint_menu_setup();
+              debug_update_bkmon();
+              CheckMenuItem(breakpoint_menu,1107,MF_BYCOMMAND | int((breakpoint_mode==2) ? MF_CHECKED:MF_UNCHECKED));
+              CheckMenuItem(breakpoint_menu,1108,MF_BYCOMMAND | int((breakpoint_mode==3) ? MF_CHECKED:MF_UNCHECKED));
               break;
             case 1101:   //set breakpoint at pc
-              set_breakpoint_or_monitor(0,pc);
+              debug_set_bk(pc,true);
               break;
 
             case 1106:  //clear all monitors
-              num_monitors=0;
-              num_io_monitors=0;
-              UPDATE_DO_MON_CHECK;
+              for (int i=0;i<debug_ads.NumItems;i++){
+                if (debug_ads[i].bwr & (BIT_1 | BIT_2)){
+                  debug_ads[i].bwr&=~(BIT_1 | BIT_2);
+                  if (debug_ads[i].bwr==0) debug_ads.Delete(i--);
+                }
+              }
+              debug_update_bkmon();
               breakpoint_menu_setup();
               mem_browser_update_all();
               break;
             case 1103:   //toggle monitoring
             case 1104:   //toggle monitoring to logfile
             case 1105:   //set monitor on screen
-              if (id==1103) monitor_mode=int((monitor_mode==1) ? 0:1);
-              if (id==1104) monitor_mode=int((monitor_mode==2) ? 0:2);
+              if (id==1103) monitor_mode=int((monitor_mode==2) ? 0:2);
+              if (id==1104) monitor_mode=int((monitor_mode==3) ? 0:3);
               if (id==1105){
-                monitor_mode=1;
+                monitor_mode=2;
                 stem_mousemode=STEM_MOUSEMODE_BREAKPOINT;
               }
-              UPDATE_DO_MON_CHECK;
-              CheckMenuItem(monitor_menu,1103,MF_BYCOMMAND | int((monitor_mode==1) ? MF_CHECKED:MF_UNCHECKED));
-              CheckMenuItem(monitor_menu,1104,MF_BYCOMMAND | int((monitor_mode==2) ? MF_CHECKED:MF_UNCHECKED));
+              mem_browser_update_all();
+              breakpoint_menu_setup();
+              debug_update_bkmon();
+              CheckMenuItem(monitor_menu,1103,MF_BYCOMMAND | int((monitor_mode==2) ? MF_CHECKED:MF_UNCHECKED));
+              CheckMenuItem(monitor_menu,1104,MF_BYCOMMAND | int((monitor_mode==3) ? MF_CHECKED:MF_UNCHECKED));
               break;
+
+#if USE_PASTI
+            case 1109:
+              if (hPasti){
+//                pastiDLGBREAKINFO pdbi;
+                pasti->DlgBreakpoint(Win);
+/*
+                if (pdbi.nBreakpoint>=(DWORD)pasti_bks.NumItems){
+                  pasti_bks.Add(*pdbi.pBrkInfo);
+                }else{
+                  if (pdbi.enable==0){
+                    pasti_bks.Delete(pdbi.nBreakpoint);
+                  }else{
+                    pasti_bks[pdbi.nBreakpoint]=*pdbi.pBrkInfo;
+                  }
+                }
+*/
+              }
+              break;
+#endif
 
             case 1999:  //quit
               QuitSteem();
@@ -835,6 +1041,12 @@ LRESULT __stdcall DWndProc(HWND Win,UINT Mess,UINT wPar,long lPar)
             case 909:
               new mem_browser(IOLIST_PSEUDO_AD_IKBD,DT_MEMORY);
               break;
+#if USE_PASTI
+            case 910:
+              if (hPasti==NULL) break;
+              pasti->DlgStatus(DWin);
+              break;
+#endif
             case 1022:
             {
               DWORD dat=CBGetSelectedItemData(GetDlgItem(Win,1020));
@@ -846,7 +1058,30 @@ LRESULT __stdcall DWndProc(HWND Win,UINT Mess,UINT wPar,long lPar)
               SendDlgItemMessage(Win,1021,WM_GETTEXT,len,LPARAM(valstr.Text));
               debug_run_until_val=atoi(valstr);
 
-              if (debug_run_until==DRU_CYCLE) debug_run_until_val+=ABSOLUTE_CPU_TIME;
+              if (debug_run_until==DRU_CYCLE){
+                debug_run_until_val+=ABSOLUTE_CPU_TIME;
+              }else if (debug_run_until==DRU_INSTCHANGE){
+                debug_run_until=DRU_OFF;
+                Str cur_inst=disa_d2(pc);
+                char *spc=strchr(cur_inst,' ');
+                if (spc) *spc=0;
+
+                if ((cur_inst[0]=='b' && cur_inst.Length()==3) || cur_inst.Lefts(2)=="db" || cur_inst[0]=='j') break;
+
+                MEM_ADDRESS new_pc=pc;
+                for (;;){
+                  new_pc=oi(new_pc,1);
+                  if (new_pc==0) break;
+                  Str new_inst=disa_d2(new_pc);
+                  spc=strchr(new_inst,' ');
+                  if (spc) *spc=0;
+                  if (NotSameStr_I(cur_inst,new_inst)){
+                    trace_over_breakpoint=new_pc;
+                    break;
+                  }
+                }
+                if (new_pc==0) break;
+              }
 
               if (runstate==RUNSTATE_STOPPED) PostRunMessage();
               break;
@@ -859,8 +1094,8 @@ LRESULT __stdcall DWndProc(HWND Win,UINT Mess,UINT wPar,long lPar)
     }
     case WM_CHAR:
     {
-      if(wPar=='S' || wPar=='s'){
-        if(simultrace==SIMULTRACE_CHOOSE){
+      if (wPar=='S' || wPar=='s'){
+        if (simultrace==SIMULTRACE_CHOOSE){
           POINT pt;
           GetCursorPos(&pt);
           HWND sw=WindowFromPoint(pt);
@@ -877,41 +1112,25 @@ LRESULT __stdcall DWndProc(HWND Win,UINT Mess,UINT wPar,long lPar)
     case WM_INITMENUPOPUP:
       if ((HMENU)wPar==mem_browser_menu){
         int n=GetMenuItemCount(mem_browser_menu);
-        for (int i=0;i<n-12;i++){
-          DeleteMenu(mem_browser_menu,12,MF_BYPOSITION);
+        int items=12;
+#if USE_PASTI
+        if (hPasti) items=14;
+#endif
+        for (int i=0;i<n-items;i++){
+          DeleteMenu(mem_browser_menu,items,MF_BYPOSITION);
         }
         bool NoBar=true;
         for (int i=0;i<MAX_MEMORY_BROWSERS;i++){
-          if (m_b[i]!=NULL){
+          if (m_b[i]){
             if (NoBar && m_b[i]->disp_type!=DT_REGISTERS){
               AppendMenu(mem_browser_menu,MF_STRING | MF_SEPARATOR,0,NULL);
               NoBar=0;
             }
-            switch (m_b[i]->disp_type){
-              case DT_MEMORY:
-                if (IS_IOLIST_PSEUDO_ADDRESS(m_b[i]->ad)){
-                  switch (m_b[i]->ad & 0xfffff000){
-                    case IOLIST_PSEUDO_AD_PSG:
-                      AppendMenu(mem_browser_menu,MF_STRING,910+i,"PSG Browser");
-                      break;
-                    case IOLIST_PSEUDO_AD_FDC:
-                      AppendMenu(mem_browser_menu,MF_STRING,910+i,"FDC Browser");
-                      break;
-                    case IOLIST_PSEUDO_AD_IKBD:
-                      AppendMenu(mem_browser_menu,MF_STRING,910+i,"IKBD Browser");
-                      break;
-                  }
-                }else{
-                  AppendMenu(mem_browser_menu,MF_STRING,910+i,EasyStr(HEXSl(m_b[i]->ad,6))+" - Memory");
-                }
-                break;
-              case DT_INSTRUCTION:
-                AppendMenu(mem_browser_menu,MF_STRING,910+i,EasyStr(HEXSl(m_b[i]->ad,6))+" - Instructions");
-                break;
-              case DT_REGISTERS:
-                AppendMenu(mem_browser_menu,MF_STRING,910+i,"Register Browser");
-                break;
+            Str Pre;
+            if (m_b[i]->disp_type==DT_INSTRUCTION || (m_b[i]->disp_type==DT_MEMORY && IS_IOLIST_PSEUDO_ADDRESS(m_b[i]->ad)==0)){
+              Pre=HEXSl(m_b[i]->ad,6)+" - ";
             }
+            AppendMenu(mem_browser_menu,MF_STRING,950+i,Pre+GetWindowTextStr(m_b[i]->owner));
           }
         }
         return 0;
@@ -934,6 +1153,14 @@ LRESULT __stdcall DWndProc(HWND Win,UINT Mess,UINT wPar,long lPar)
         return 0;
       }
       break;
+    case WM_DRAWITEM:
+    {
+      DRAWITEMSTRUCT *pDIS=(DRAWITEMSTRUCT*)lPar;
+      mem_browser *mb=(mem_browser*)GetWindowLong(pDIS->hwndItem,GWL_USERDATA);
+      if (mb) mb->draw(pDIS);
+      break;
+    }
+
   }
 	return DefWindowProc(Win,Mess,wPar,lPar);
 }
@@ -948,11 +1175,12 @@ void disa_to_file(FILE*f,MEM_ADDRESS dstart,int dlen,bool as_source)
   dpc=dstart;
   while (dpc<dend){
     odpc=dpc;
-    if(as_source){
+    if (as_source){
       dt=disa_d2(dpc);
       ot=EasyStr("\t")+dt;
       while (ot.Length()<50) ot+=" ";
       ot+="; ";
+      ot+=HEXSl(odpc,6)+": ";
       while (odpc<dpc){
         ot+=HEXSl(d2_dpeek(odpc),4);
         ot+=" ";
@@ -960,7 +1188,7 @@ void disa_to_file(FILE*f,MEM_ADDRESS dstart,int dlen,bool as_source)
       }
     }else{
       ot="000000 : 0000 0000 0000 0000 0000 : ";
-      itoa(dpc-dstart,t,16);
+      itoa(dpc,t,16);
       memcpy((ot.Text+6)-strlen(t),t,strlen(t));
       dt=disa_d2(dpc);
       tp=13;
@@ -1026,6 +1254,7 @@ void DWin_init()
   log("STARTUP: Creating Menu");
   menu=CreateMenu();
   menu1=CreatePopupMenu();
+  AppendMenu(menu1,MF_STRING,1783,"Debugger &Reset");
   AppendMenu(menu1,MF_STRING,104,"&Disassemble a File");
   AppendMenu(menu1,MF_STRING,1001,"Load a &Picture");
   AppendMenu(menu1,MF_STRING,1002,"&Trace");
@@ -1042,15 +1271,8 @@ void DWin_init()
   AppendMenu(menu1,MF_STRING,1782,"Send Key Codes With Alt");
 
   AppendMenu(menu1,MF_STRING|MF_SEPARATOR,0,"-");
-  AppendMenu(menu1,MF_STRING,1789,"Psy&chedelic Mode");
-  AppendMenu(menu1,MF_STRING|MF_POPUP,(int)shift_screen_menu,"Shift Display");
-  AppendMenu(menu1,MF_STRING,1025,"Redraw On Stop");
-  AppendMenu(menu1,MF_STRING,1026,"Redraw After Trace");
-  AppendMenu(menu1,MF_STRING,1027,"Choose Gun Position Display Colour");
-
-  AppendMenu(menu1,MF_STRING|MF_SEPARATOR,0,"-");
   AppendMenu(menu1,MF_STRING,1999,"&Quit");
-  AppendMenu(menu,MF_STRING|MF_POPUP,(UINT)menu1,"&Test");
+  AppendMenu(menu,MF_STRING|MF_POPUP,(UINT)menu1,"&Debug");
   log("STARTUP: Menu Done");
 
   log("STARTUP: Creating Breakpoint Menu");
@@ -1074,9 +1296,15 @@ void DWin_init()
   AppendMenu(mem_browser_menu,MF_STRING,906,"New &Text Browser");
   AppendMenu(mem_browser_menu,MF_STRING,908,"New &FDC Browser");
   AppendMenu(mem_browser_menu,MF_STRING,909,"New I&KBD Browser");
+#if USE_PASTI
+  if (hPasti){
+    AppendMenu(mem_browser_menu,MF_STRING|MF_SEPARATOR,0,NULL);
+    AppendMenu(mem_browser_menu,MF_STRING,910,"Pa&sti Status");
+  }
+#endif
   AppendMenu(mem_browser_menu,MF_STRING|MF_SEPARATOR,0,NULL);
   AppendMenu(mem_browser_menu,MF_STRING | int(mem_browser::ex_style ? 0:MF_CHECKED),
-                            907,"Put Them On Taskbar &Sucker");
+                            907,"Put Browsers On Taskbar");
   AppendMenu(mem_browser_menu,MF_STRING|MF_SEPARATOR,0,NULL);
   AppendMenu(mem_browser_menu,MF_STRING,905,"&Close All");
   log("STARTUP: mem_browser menu done");
@@ -1112,12 +1340,20 @@ void DWin_init()
   AppendMenu(boiler_op_menu,MF_STRING,1501,"Notify on &all m68k exceptions 2-8");
   AppendMenu(boiler_op_menu,MF_STRING,1502,"Notify only on crash with &bombs");
   AppendMenu(boiler_op_menu,MF_STRING,1503,"&Don't notify on exceptions");
-  AppendMenu(boiler_op_menu,MF_STRING|MF_SEPARATOR,0,"-");
+  AppendMenu(boiler_op_menu,MF_STRING|MF_SEPARATOR,0,NULL);
+  AppendMenu(boiler_op_menu,MF_STRING|MF_POPUP,(int)shift_screen_menu,"Shift display");
+  AppendMenu(boiler_op_menu,MF_STRING,1025,"Redraw on stop");
+  AppendMenu(boiler_op_menu,MF_STRING,1026,"Redraw after trace");
+  AppendMenu(boiler_op_menu,MF_STRING,1789,"Psy&chedelic mode");
+  AppendMenu(boiler_op_menu,MF_STRING,1027,"Choose gun position display colour");
+  AppendMenu(boiler_op_menu,MF_STRING|MF_SEPARATOR,0,NULL);
   AppendMenu(boiler_op_menu,MF_STRING,1510,"Stop on blitter");
   AppendMenu(boiler_op_menu,MF_STRING,1512,"Stop on switch to user mode");
   AppendMenu(boiler_op_menu,MF_STRING,1513,"Stop on next program run");
-  AppendMenu(boiler_op_menu,MF_STRING|MF_SEPARATOR,0,"-");
+  AppendMenu(boiler_op_menu,MF_STRING|MF_SEPARATOR,0,NULL);
   AppendMenu(boiler_op_menu,MF_STRING | MF_CHECKED,1514,"Show trace window");
+  AppendMenu(boiler_op_menu,MF_STRING,1515,"Monospaced disassembly");
+  AppendMenu(boiler_op_menu,MF_STRING,1516,"Uppercase disassembly");
 
 //  AppendMenu(boiler_op_menu,MF_STRING|MF_SEPARATOR,0,"-");
   AppendMenu(menu,MF_STRING|MF_POPUP,(UINT)boiler_op_menu,"&Options");
@@ -1153,11 +1389,12 @@ void DWin_init()
   {
     SIZE sz;
     HDC dc=GetDC(DWin);
+
     HFONT old_font=(HFONT)SelectObject(dc,fnt);
     GetTextExtentPoint32(dc,"CCCC ",5,&sz);
+    how_big_is_0000=sz.cx;
     SelectObject(dc,old_font);
     ReleaseDC(DWin,dc);
-    how_big_is_0000=sz.cx;
   }
 
   log("STARTUP: Registering Mem Browser and Trace Window Classes");
@@ -1173,6 +1410,9 @@ void DWin_init()
   wnd.lpszClassName="Steem Mem Browser Window";
   RegisterClass(&wnd);
 
+  mem_browser::icons_bmp=LoadBitmap(Inst,"DEBUGICONS");
+  mem_browser::icons_dc=CreateScreenCompatibleDC();
+  SelectObject(mem_browser::icons_dc,mem_browser::icons_bmp);
 
   wnd.style=CS_DBLCLKS;
   wnd.lpfnWndProc=trace_window_WndProc;
@@ -1226,6 +1466,7 @@ void DWin_init()
   CBAddString(Win,"Run to next VBL",MAKELONG(DRU_VBL,0));
   CBAddString(Win,"Run to scanline n",MAKELONG(DRU_SCANLINE,0));
   CBAddString(Win,"Run for n cycles",MAKELONG(DRU_CYCLE,0));
+  CBAddString(Win,"Run until instruction changes",MAKELONG(DRU_INSTCHANGE,0));
 
   CreateWindowEx(512,"Edit","",WS_VISIBLE | WS_CHILD | WS_CLIPSIBLINGS,
       490,26,140,25,DWin,(HMENU)1021,Inst,NULL);
@@ -1256,8 +1497,9 @@ void DWin_init()
         /*mem_browser to update*/NULL);
   }
 
-  m_b_mem_disa.handle=CreateWindowEx(512,WC_LISTVIEW,"Freak!",
-      LVS_REPORT | LVS_SHAREIMAGELISTS | LVS_NOSORTHEADER | WS_VISIBLE | WS_CHILDWINDOW | WS_CLIPSIBLINGS,
+  m_b_mem_disa.handle=CreateWindowEx(512,WC_LISTVIEW,"",
+      LVS_REPORT | LVS_SHAREIMAGELISTS | LVS_NOSORTHEADER | LVS_OWNERDRAWFIXED |
+      WS_VISIBLE | WS_CHILDWINDOW | WS_CLIPSIBLINGS,
       10,120,320,190,DWin,(HMENU)200,Inst,NULL);
   SetWindowLong(m_b_mem_disa.handle,GWL_USERDATA,(LONG)&m_b_mem_disa);
   Old_mem_browser_WndProc=(WNDPROC)SetWindowLong(m_b_mem_disa.handle,GWL_WNDPROC,
@@ -1284,7 +1526,8 @@ void DWin_init()
 
   // Stack
   m_b_stack.handle=CreateWindowEx(512,WC_LISTVIEW,"",
-      LVS_REPORT | LVS_SHAREIMAGELISTS | LVS_NOSORTHEADER | WS_CHILD | WS_CLIPSIBLINGS,
+      LVS_REPORT | LVS_SHAREIMAGELISTS | LVS_NOSORTHEADER | LVS_OWNERDRAWFIXED | 
+      WS_CHILD | WS_CLIPSIBLINGS,
       345,150,320,190,DWin,(HMENU)210,Inst,NULL);
   SetWindowLong(m_b_stack.handle,GWL_USERDATA,(LONG)&m_b_stack);
   SetWindowLong(m_b_stack.handle,GWL_WNDPROC,(long)mem_browser_WndProc);
@@ -1357,13 +1600,6 @@ void DWin_init()
 
   log("STARTUP: Creating insp_menu");
   insp_menu=CreatePopupMenu();
-  for(int m=0;m<3;m++){
-    insp_menu_reg_submenu[m]=CreatePopupMenu();
-    for(int n=0;n<NUM_REGISTERS_IN_REGISTER_BROWSER;n++){
-      AppendMenu(insp_menu_reg_submenu[m],MF_ENABLED | MF_STRING,4000+m*32+n,
-                  reg_browser_entry_name[n]);
-    }
-  }
   log("STARTUP: insp_menu Created");
 
   #ifdef ENABLE_VARIABLE_SOUND_DAMPING
@@ -1379,6 +1615,22 @@ void DWin_init()
       /*mem_browser to update*/NULL);
 
   #endif
+
+  debug_plugin_load();
+  if (debug_plugins.NumItems){
+    HMENU plugin_menu=CreatePopupMenu();
+    for (int i=0;i<debug_plugins.NumItems;i++){
+      int added=0;
+      char *p=(char*)debug_plugins[i].Menu;
+      while (p[0]){
+        AppendMenu(plugin_menu,MF_STRING,20000 + i*100 + added,p);
+        added++;
+        p+=strlen(p)+1;
+      }
+      if (added && i<debug_plugins.NumItems-1) AppendMenu(plugin_menu,MF_SEPARATOR,0,NULL);
+    }
+    AppendMenu(menu,MF_STRING | MF_POPUP,(UINT)plugin_menu,"&Plugins");
+  }
 }
 
 void logfile_wipe()
@@ -1442,7 +1694,83 @@ void debug_vbl()
     }
   }
 }
+//---------------------------------------------------------------------------
+void debug_plugin_load()
+{
+  debug_plugin_free();
+  
+  DirSearch ds;
+  EasyStr Fol=RunDir+SLASH "plugins" SLASH;
+  if (ds.Find(Fol+"*.dll")){
+    do{
+      DEBUGPLUGININFO dbi;
+      dbi.hDll=LoadLibrary(Fol+ds.Name);
+      if (dbi.hDll){
+        dbi.Init=(DEBUGPLUGIN_INITPROC*)GetProcAddress(dbi.hDll,"Init");
+        dbi.Activate=(DEBUGPLUGIN_ACTIVATEPROC*)GetProcAddress(dbi.hDll,"Activate");
+        dbi.Close=(DEBUGPLUGIN_CLOSEPROC*)GetProcAddress(dbi.hDll,"Close");
+        if (dbi.Init!=NULL && dbi.Activate!=NULL && dbi.Close!=NULL){
+          ZeroMemory(dbi.Menu,sizeof(dbi.Menu));
+          dbi.Init(debug_plugin_routines,dbi.Menu);
+          debug_plugins.Add(dbi);
+        }
+      } else {
+        DisplayLastError();
+      }
+    }while (ds.Next());
+    ds.Close();
+  }
+}
+//---------------------------------------------------------------------------
+void debug_plugin_free()
+{
+  for (int i=0;i<debug_plugins.NumItems;i++){
+    debug_plugins[i].Close();
+    FreeLibrary(debug_plugins[i].hDll);
+  }
+  debug_plugins.DeleteAll();
+}
+//---------------------------------------------------------------------------
+Str debug_parse_disa_for_display(Str s)
+{
+  if (debug_uppercase_disa) strupr(s);
+  if (debug_monospace_disa==0) return s;
+  Str part[2];
+  char *spc;
+  part[0]=s;
+  for (int i=0;i<2;i++){
+    spc=part[i].Text;
+    for (;;){
+      spc=strchr(spc,' ');
+      if (spc==NULL) break;
+      if (*(spc+1)!='.'){
+        *spc=NULL;
+        break;
+      }
+      spc++;
+    }
+    if (spc==NULL) break;
+    part[i+1]=spc+1;
+    break;
+  }
+  s=part[0].RPad(max(part[0].Length()+1,8),' ');
+//  if (part[1].NotEmpty()) s+=part[1].RPad(max(part[1].Length()+1,16),' ');
+  if (part[1].NotEmpty()) s+=part[1];
+  return s;
+}
+//---------------------------------------------------------------------------
+void debug_load_file_to_address(HWND par,MEM_ADDRESS ad)
+{
+  EasyStr fn;
+  fn=FileSelect(par,Str("Load File To $")+HEXSl(ad,6),RunDir,"All Files\0*.*\0\0",1,true);
+  if (fn.Empty()) return;
 
+  FILE *f=fopen(fn,"rb");
+  if (f==NULL) return;
+  STfile_read_to_ST_memory(f,ad,GetFileLength(f));
+  fclose(f);
+  update_register_display(true);
+}
+//---------------------------------------------------------------------------
 #undef LOGSECTION
-
 

@@ -1,5 +1,5 @@
 #ifdef UNIX
-#include <minizip/unzip.h>
+#include <zlib/contrib/minizip/unzip.h>
 #endif
 
 #ifdef WIN32

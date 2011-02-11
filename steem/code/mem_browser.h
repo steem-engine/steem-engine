@@ -10,7 +10,8 @@ class mem_browser
   static LRESULT __stdcall FindEditWndProc(HWND,UINT,UINT,long);
   static WNDPROC OldEditWndProc;
   void listbox_add_line(HWND,int,char**,int);
-  char* get_mem_mon_string(WORD,bool);
+  char* get_mem_mon_string(void*);
+  Str get_hex_map(MEM_ADDRESS);
 public:
 //  bool active;
   HWND owner;
@@ -18,9 +19,12 @@ public:
   type_disp_type disp_type;
   MEM_ADDRESS ad;
   type_mode mode;
-  int wpl,lb_height,columns,text_column;
+  int wpl,lb_height,columns,text_column,disa_column,mon_column,break_column,hex_column;
   bool editflag,init_text;
   mr_static *editbox;
+  static HBITMAP icons_bmp;
+  static HDC icons_dc;
+  EasyStringList hex_map;
 
   mem_browser(){
     owner=NULL;handle=NULL;disp_type=DT_MEMORY;ad=0;mode=MB_MODE_STANDARD;
@@ -46,6 +50,8 @@ public:
 };
 WNDPROC mem_browser::OldEditWndProc;
 DWORD mem_browser::ex_style=WS_EX_TOOLWINDOW;
+HBITMAP mem_browser::icons_bmp=NULL;
+HDC mem_browser::icons_dc=NULL;
 
 
 #define MAX_MEMORY_BROWSERS 20

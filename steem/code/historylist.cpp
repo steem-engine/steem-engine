@@ -1,3 +1,11 @@
+/*---------------------------------------------------------------------------
+FILE: historylist.cpp
+MODULE: Steem
+CONDITION: _DEBUG_BUILD
+DESCRIPTION: The history list window in the debug build that shows a list of
+recently executed commands.
+---------------------------------------------------------------------------*/
+
 //---------------------------------------------------------------------------
 THistoryList::THistoryList()
 {
@@ -82,14 +90,13 @@ void THistoryList::RefreshHistoryBox()
   SendMessage(Win,LB_RESETCONTENT,0,0);
 
   int n=pc_history_idx;
-  EasyStr Dissasembly,Bk;
+  EasyStr Dissasembly;
   do{
     n--;
     if (n<0) n=HISTORY_SIZE-1;
     if (pc_history[n]==0xffffff71) break;
-    Dissasembly=disa_d2(pc_history[n]);
-    Bk=(char*)((get_breakpoint_or_monitor(0,pc_history[n])>=0) ? "X\t":" \t");
-    SendMessage(Win,LB_INSERTSTRING,0,(long)((Bk+HEXSl(pc_history[n],6)+" - "+Dissasembly).Text));
+    Dissasembly=debug_parse_disa_for_display(disa_d2(pc_history[n]));
+    SendMessage(Win,LB_INSERTSTRING,0,(long)((HEXSl(pc_history[n],6)+" - "+Dissasembly).Text));
     SendMessage(Win,LB_SETITEMDATA,0,n);
   }while (n!=pc_history_idx);
 
@@ -98,6 +105,7 @@ void THistoryList::RefreshHistoryBox()
   int Selected=SendMessage(Win,LB_GETCOUNT,0,0)-1;
   SendMessage(Win,LB_SETCURSEL,Selected,0);
   SendMessage(Win,LB_SETTOPINDEX,max(Selected-(rc.bottom/SendMessage(Win,LB_GETITEMHEIGHT,0,0)),(long)0),0);
+  SendMessage(Win,WM_SETFONT,WPARAM(debug_monospace_disa ? GetStockObject(ANSI_FIXED_FONT):Font),TRUE);
 }
 //---------------------------------------------------------------------------
 #define GET_THIS This=(THistoryList*)GetWindowLong(Win,GWL_USERDATA);
@@ -124,13 +132,6 @@ LRESULT __stdcall THistoryList::WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lP
             EasyStr Text;
             Text.SetLength(SendMessage(HistBox,LB_GETTEXTLEN,Selected,0)+1);
             SendMessage(HistBox,LB_GETTEXT,Selected,(long)Text.Text);
-            if (get_breakpoint_or_monitor(0,pc_history[SelHistNum])>=0){
-              remove_breakpoint_or_monitor(0,pc_history[SelHistNum]);
-              Text[0]=' ';
-            }else{
-              set_breakpoint_or_monitor(0,pc_history[SelHistNum]);
-              Text[0]='X';
-            }
             SendMessage(HistBox,LB_DELETESTRING,Selected,0);
             SendMessage(HistBox,LB_INSERTSTRING,Selected,(long)Text.Text);
             SendMessage(HistBox,LB_SETITEMDATA,Selected,SelHistNum);

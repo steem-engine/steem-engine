@@ -1,3 +1,9 @@
+/*---------------------------------------------------------------------------
+FILE: controls.cpp
+MODULE: Steem
+DESCRIPTION: Custom controls used by Steem's GUI.
+---------------------------------------------------------------------------*/
+
 #ifdef WIN32
 
 #define PBS_RIGHTCLICK 1

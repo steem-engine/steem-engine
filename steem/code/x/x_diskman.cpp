@@ -13,6 +13,8 @@ TDiskManager::TDiskManager()
   DoubleClickAction=2;
   EjectDisksWhenQuit=0;
 
+  ContentConflictAction=2;
+
   Section="Disks";
 }
 //---------------------------------------------------------------------------
@@ -58,30 +60,40 @@ int TDiskManager::dir_lv_notify_handler(hxc_dir_lv *dlv,int mess,int i)
       bool is_zip=type >= This->ArchiveTypeIdx;
       bool read_only=(dlv->sl[i].Data[DLVD_FLAGS] & DLVF_READONLY)!=0;
       int pos=0;
-      if (type>0){
-        if (is_link<2){
-          if (type!=1){
-            dlv->pop.menu.InsertAt(pos++,2,StripAndT("Insert Into Drive &A"),ICO16_INSERTDISK,1010);
-            dlv->pop.menu.InsertAt(pos++,2,StripAndT("Insert Into Drive &B"),ICO16_INSERTDISK,1011);
-            dlv->pop.menu.InsertAt(pos++,2,StripAndT("Insert, Reset and &Run"),ICO16_INSERTDISK,1012);
+      if (is_link<2){ // 2 = dead link
+        if (type>=2){ // File
+          dlv->pop.menu.InsertAt(pos++,2,StripAndT("Insert Into Drive &A"),ICO16_INSERTDISK,1010);
+          dlv->pop.menu.InsertAt(pos++,2,StripAndT("Insert Into Drive &B"),ICO16_INSERTDISK,1011);
+          dlv->pop.menu.InsertAt(pos++,2,StripAndT("Insert, Reset and &Run"),ICO16_INSERTDISK,1012);
+          dlv->pop.menu.InsertAt(pos++,2,"-",-1,0);
+          dlv->pop.menu.InsertAt(pos++,2,StripAndT("Get &Contents"),-1,1015);
+          dlv->pop.menu.InsertAt(pos++,2,"-",-1,0);
+          if (is_link){
+            dlv->pop.menu.InsertAt(pos++,2,StripAndT("&Go To Disk"),ICO16_FORWARD,1090);
+            dlv->pop.menu.InsertAt(pos++,2,StripAndT("Open Disk's Folder in File Manager"),-1,1092);
             dlv->pop.menu.InsertAt(pos++,2,"-",-1,0);
-            if (is_zip==0){
-              dlv->pop.menu.InsertAt(pos++,2,StripAndT("Read &Only"),
-                                      (read_only ? ICO16_TICKED:ICO16_UNTICKED),1040);
-              dlv->pop.menu.InsertAt(pos++,2,"-",-1,0);
-            }else{
-              dlv->pop.menu.InsertAt(pos++,2,StripAndT("E&xtract Disk Here"),ICO16_ZIP_RW,1080);
-              dlv->pop.menu.InsertAt(pos++,2,"-",-1,0);
-            }
-            if (is_link){
-              dlv->pop.menu.InsertAt(pos++,2,StripAndT("&Go To Disk"),ICO16_FORWARD,1090);
-              dlv->pop.menu.InsertAt(pos++,2,"-",-1,0);
-            }
           }
+          if (is_zip==0){
+            dlv->pop.menu.InsertAt(pos++,2,StripAndT("Read &Only"),
+                                    (read_only ? ICO16_TICKED:ICO16_UNTICKED),1040);
+            dlv->pop.menu.InsertAt(pos++,2,"-",-1,0);
+          }else{
+            dlv->pop.menu.InsertAt(pos++,2,StripAndT("E&xtract Disk Here"),ICO16_ZIP_RW,1080);
+            dlv->pop.menu.InsertAt(pos++,2,"-",-1,0);
+          }
+        }else{ // Folder
+          int pos=0;
+          dlv->pop.menu.InsertAt(pos++,2,StripAndT("Open in File Manager"),-1,1060);
+          dlv->pop.menu.InsertAt(pos++,2,StripAndT("&Find..."),-1,1061);
+          dlv->pop.menu.InsertAt(pos++,2,"-",-1,0);
         }
       }
     }
-    dlv->pop.menu[dlv->pop.menu.NumStrings-1].Data[0]=ICO16_FOLDER;
+    int pos=dlv->pop.menu.NumStrings-1; // New folder
+    dlv->pop.menu[pos].Data[0]=ICO16_FOLDER;
+    dlv->pop.menu.InsertAt(pos++,2,StripAndT("Open Current Folder In File Manager"),-1,2003);
+    dlv->pop.menu.InsertAt(pos++,2,StripAndT("Find In Current Folder"),-1,2010);
+    dlv->pop.menu.InsertAt(pos++,2,"-",-1,0);  
     dlv->pop.menu.Add(StripAndT("New Standard &Disk Image"),ICO16_DISK,1001);
     dlv->pop.menu.Add(StripAndT("New Custom Disk &Image"),ICO16_DISK,1002);
   }else if (mess==DLVN_POPCHOOSE){
@@ -96,8 +108,25 @@ int TDiskManager::dir_lv_notify_handler(hxc_dir_lv *dlv,int mess,int i)
                     dlv->get_item_name(dlv->lv.sel),
                     dlv->get_item_path(dlv->lv.sel),"");
         return 0;
+      case 1015:
+        This->GetContentsSL(dlv->get_item_path(dlv->lv.sel));
+        if (This->contents_sl.NumStrings){
+          This->ContentsLinksPath=This->DisksFol;
+          This->ShowContentDiag();
+        }
+        return 0;
       case 1040:
         This->ToggleReadOnly(dlv->lv.sel);
+        return 0;
+      case 1060:case 1092:
+      {
+        Str fol=dlv->get_item_path(dlv->lv.sel);
+        if (action==1092) RemoveFileNameFromPath(fol,KEEP_SLASH);
+        shell_execute(Comlines[COMLINE_FM],Str("[PATH]\n")+fol);
+        return 0;
+      }
+      case 1061:
+        shell_execute(Comlines[COMLINE_FIND],Str("[PATH]\n")+dlv->get_item_path(dlv->lv.sel));
         return 0;
       case 1080:
         This->ExtractDisks(dlv->get_item_path(dlv->lv.sel));
@@ -133,6 +162,12 @@ int TDiskManager::dir_lv_notify_handler(hxc_dir_lv *dlv,int mess,int i)
         }
         return 0;
       }
+      case 2003:
+        shell_execute(Comlines[COMLINE_FM],Str("[PATH]\n")+This->DisksFol);
+        return 0;
+      case 2010:
+        shell_execute(Comlines[COMLINE_FIND],Str("[PATH]\n")+This->DisksFol);
+        return 0;
     }
   }else if (mess==DLVN_CONTENTSCHANGE){
     dlv_ccn_struct *p_ccn=(dlv_ccn_struct*)i;
@@ -177,7 +212,7 @@ int TDiskManager::dir_lv_notify_handler(hxc_dir_lv *dlv,int mess,int i)
   }
   return 0;
 }
-
+//---------------------------------------------------------------------------
 void TDiskManager::UpdateDiskNames(int d)
 {
   if (XD==NULL || Handle==0) return;
@@ -190,7 +225,16 @@ void TDiskManager::UpdateDiskNames(int d)
     disk_name[d].set_text("");
   }
 }
-
+//---------------------------------------------------------------------------
+void TDiskManager::set_home(Str fol)
+{
+  if (Alert(fol+"/"+"\n\n"+
+        T("Are you sure you want to make this folder your new home folder?"),
+        T("Change Home Folder?"),MB_YESNO | MB_ICONQUESTION)==IDYES){
+    HomeFol=fol;
+  }
+}
+//---------------------------------------------------------------------------
 int TDiskManager::button_notify_handler(hxc_button *But,int mess,int *Inf)
 {
   TDiskManager *This=(TDiskManager*)GetProp(But->XD,But->parent,cWinThis);
@@ -228,20 +272,42 @@ int TDiskManager::button_notify_handler(hxc_button *But,int mess,int *Inf)
 				}
       	break;
       case 4: //go home
-        if (NotSameStr_I(This->HomeFol,This->DisksFol)){
+      {
+        bool at_home=IsSameStr(This->HomeFol.Text,This->DisksFol.Text);
+        if (Inf[0]!=Button1 || at_home){
+          But->set_check(true);
+          pop.lpig=&Ico16;
+          pop.menu.DeleteAll();
+          if (at_home==0){
+            pop.menu.Add(This->HomeFol,ICO16_HOMEFOLDER,4000);
+            pop.menu.Add("-",-1);
+          }
+          for (int i=0;i<10;i++){
+            pop.menu.Add(Str(i+1)+": "+This->QuickFol[i],ICO16_FOLDER,4010+i);
+          }
+          pop.create(XD,But->handle,0,But->h,This->menu_popup_notifyproc,This);
+        }else{
           This->set_path(This->HomeFol,true);
         }
         break;
+      }
       case 5: //set home
-    	{
-        bool at_home=!strcmp(This->HomeFol.Text,This->DisksFol.Text);
-        if(at_home){
-        	Alert(T("You are already in your home folder"),
-              T("Change Home Folder?"),MB_OK);
-        }else if (Alert(This->DisksFol+"/"+"\n\n"+
-              T("Are you sure you want to make this folder your new home folder?"),
-              T("Change Home Folder?"),MB_YESNO | MB_ICONQUESTION)==IDYES){
-          This->HomeFol=This->DisksFol;
+      {
+        bool at_home=IsSameStr(This->HomeFol.Text,This->DisksFol.Text);
+        if (Inf[0]!=Button1 || at_home){
+          But->set_check(true);
+          pop.lpig=&Ico16;
+          pop.menu.DeleteAll();
+          if (at_home==0){
+            pop.menu.Add(Str("(")+This->HomeFol+")",ICO16_HOMEFOLDER,4100);
+            pop.menu.Add("-",-1);
+          }
+          for (int i=0;i<10;i++){
+            pop.menu.Add(Str(i+1)+": ("+This->QuickFol[i]+")",ICO16_FOLDER,4110+i);
+          }
+          pop.create(XD,But->handle,0,But->h,This->menu_popup_notifyproc,This);
+        }else{
+          This->set_home(This->DisksFol);
         }
       	break;
 			}
@@ -258,17 +324,19 @@ int TDiskManager::button_notify_handler(hxc_button *But,int mess,int *Inf)
         	int(FloppyArchiveIsReadWrite ? ICO16_TICKED:ICO16_UNTICKED),2014);
 
         pop.menu.Add("-",-1,0);
-/*
-        pop.menu.Add(StripAndT("Hide Dangling Links"),
-        	int(This->HideBroken ? ICO16_TICKED:ICO16_UNTICKED),2002);
-*/
+        pop.menu.Add(StripAndT("Search Disk Image Database"),-1,2025);
+        pop.menu.Add(StripAndT("Open Current Folder In File Manager"),-1,2003);
+        pop.menu.Add(StripAndT("Find In Current Folder"),-1,2010);
+        pop.menu.Add("-",-1,0);
+        pop.menu.Add(StripAndT("Automatically Insert &Second Disk"),int(This->AutoInsert2 ? ICO16_TICKED:ICO16_UNTICKED),2016);
+//        pop.menu.Add(StripAndT("Hide Dangling Links"),int(This->HideBroken),2002);
         pop.menu.Add(StripAndT("E&ject Disks When Quit"),
         	int(This->EjectDisksWhenQuit ? ICO16_TICKED:ICO16_UNTICKED),2011);
         pop.menu.Add("-",-1,0);
         int idx=pop.menu.NumStrings;
-        pop.menu.Add(StripAndT("Double Click On Disk Does &Nothing"),-1,2007);
-        pop.menu.Add(StripAndT("Double Click On Disk Inserts In &Drive A"),-1,2008);
-        pop.menu.Add(StripAndT("Double Click On Disk Inserts, &Resets and Runs"),-1,2009);
+        pop.menu.Add(StripAndT("Double Click On Disk Does &Nothing"),ICO16_UNRADIOMARKED,2007);
+        pop.menu.Add(StripAndT("Double Click On Disk Inserts In &Drive A"),ICO16_UNRADIOMARKED,2008);
+        pop.menu.Add(StripAndT("Double Click On Disk Inserts, &Resets and Runs"),ICO16_UNRADIOMARKED,2009);
         pop.menu[idx+This->DoubleClickAction].Data[0]=ICO16_RADIOMARK;
         pop.menu.Add("-",-1,0);
         pop.menu.Add(StripAndT("&Close Disk Manager After Insert, Reset and Run"),
@@ -329,7 +397,7 @@ int TDiskManager::button_notify_handler(hxc_button *But,int mess,int *Inf)
   }
   return 0;
 }
-
+//---------------------------------------------------------------------------
 int TDiskManager::menu_popup_notifyproc(hxc_popup *pPop,int mess,int i)
 {
   TDiskManager *This=(TDiskManager*)(pPop->owner);
@@ -372,11 +440,15 @@ int TDiskManager::menu_popup_notifyproc(hxc_popup *pPop,int mess,int i)
       case 2015:
         This->CloseAfterIRR=!This->CloseAfterIRR;
         break;
+      case 2016:
+        This->AutoInsert2=!This->AutoInsert2;
+        break;
+      case 2025:
+        This->ShowDatabaseDiag();
+        break;
       case 1040:  // Toggle Read-Only
-      {
         This->ToggleReadOnly(pop.menu[i].Data[2]);
         break;
-      }
       case 1100:
         This->SwapDisks(0);
         break;
@@ -392,18 +464,40 @@ int TDiskManager::menu_popup_notifyproc(hxc_popup *pPop,int mess,int i)
         This->dir_lv.select_item_by_name(GetFileNameFromPath(FloppyDrive[d].GetDisk()));
         break;
       }
+      case 2003:
+        shell_execute(Comlines[COMLINE_FM],Str("[PATH]\n")+This->DisksFol);
+        break;
+      case 2010:
+        shell_execute(Comlines[COMLINE_FIND],Str("[PATH]\n")+This->DisksFol);
+        break;
 		}
     if (id>=3000 && id<3030){
       int disk=pop.menu[i].Data[2];
       int n=id-3000;
       This->InsertDisk(disk,This->InsertHist[disk][n].Name,This->InsertHist[disk][n].Path,
                         0,true,This->InsertHist[disk][n].DiskInZip,0,true);
+    }else if (id>=4000 && id<4100){
+      if (id==4000){
+        This->set_path(This->HomeFol,true);
+      }else{
+        id-=4010;
+        if (This->QuickFol[id].NotEmpty()) This->set_path(This->QuickFol[id],true);
+      }
+    }else if (id>=4100 && id<4200){
+      if (id==4100){
+        This->set_home(This->DisksFol);
+      }else{
+        id-=4110;
+        This->QuickFol[id]=This->DisksFol;
+      }
     }
 	}
   This->MenuBut.set_check(0);
+  This->HomeBut.set_check(0);
+  This->SetHomeBut.set_check(0);
 	return 0;
 }
-
+//---------------------------------------------------------------------------
 void TDiskManager::ToggleReadOnly(int i)
 {
   EasyStr DiskPath;
@@ -436,7 +530,7 @@ void TDiskManager::ToggleReadOnly(int i)
   RemoveFileNameFromPath(DiskPath,REMOVE_SLASH);
   if (IsSameStr(DiskPath,DisksFol)) RefreshDiskView();
 }
-
+//---------------------------------------------------------------------------
 void TDiskManager::RefreshDiskView(Str sel)
 {
 	set_path(DisksFol,0);
@@ -444,7 +538,7 @@ void TDiskManager::RefreshDiskView(Str sel)
     dir_lv.select_item_by_name(GetFileNameFromPath(sel));
   }
 }
-
+//---------------------------------------------------------------------------
 void TDiskManager::set_path(EasyStr new_path,bool add_to_history,bool change_dir_lv)
 {
   if (add_to_history){
@@ -463,7 +557,7 @@ void TDiskManager::set_path(EasyStr new_path,bool add_to_history,bool change_dir
   DisksFol=new_path;
   DirOutput.set_text(DisksFol);
 }
-
+//---------------------------------------------------------------------------
 void TDiskManager::Show()
 {
   if (Handle) return;
@@ -667,7 +761,7 @@ Str TDiskManager::GetCustomDiskImage(int *pSectors,int *pSecsPerTrack,int *pSide
   p_secs_dd->changesel(SecsPerTrackIdx);
 
   Str ret;
-  if (hxc::show_modal_dialog(XD,handle,true)==1){
+  if (hxc::show_modal_dialog(XD,handle,true,p_ed->handle)==1){
     ret=p_ed->text;
 
     // 0 to tracks_per_side inclusive! Choosing 80 gives you 81 tracks.
@@ -685,6 +779,235 @@ Str TDiskManager::GetCustomDiskImage(int *pSectors,int *pSecsPerTrack,int *pSide
   hxc::destroy_modal_dialog(XD,handle);
 
   return ret;
+}
+//---------------------------------------------------------------------------
+void TDiskManager::ShowContentDiag()
+{
+  if (contents_sl.NumStrings<2) return;
+
+  int w=500,h=10+30+20+185+30+30+30+30+10,y=10;
+  if (contents_sl.NumStrings==2) h=10+30+10;
+  Window handle=hxc::create_modal_dialog(XD,w,h,T("Disk Image Contents"),0);
+  if (handle==0) return;
+
+  hxc_button *p_but,*p_but2,*p_group,*p_append_but=NULL;
+  hxc_edit *p_path_ed=NULL,*p_append_ed=NULL;
+  hxc_dropdown *p_conflict_dd=NULL;
+  hxc_listview cont_lv;
+  Window focus=0;
+
+  new hxc_button(XD,handle,10,y,0,25,NULL,this,BT_LABEL,T("Short TOSEC name")+" - "+contents_sl[1].String,0,hxc::col_bk);
+  y+=30;
+
+  if (contents_sl.NumStrings>2){
+    p_but=new hxc_button(XD,handle,10,y,0,0,NULL,this,BT_LABEL,T("Contents"),0,hxc::col_bk);
+    y+=p_but->h+2;
+
+    cont_lv.lpig=&Ico16;
+    cont_lv.display_mode=1;
+    cont_lv.checkbox_mode=true;
+    cont_lv.sl.DeleteAll();
+    cont_lv.sl.Sort=eslNoSort;
+    for (int i=2;i<contents_sl.NumStrings;i++){
+      cont_lv.additem(contents_sl[i].String,101+ICO16_TICKED);
+    }
+    cont_lv.create(XD,handle,10,y,w-20,180,diag_lv_np,this);
+    y+=185;
+
+    p_group=new hxc_button(XD,handle,10,y,w-20,120,NULL,this,BT_GROUPBOX,T("Create Links To Selected Contents"),0,hxc::col_bk);
+
+    w=p_group->w;
+    y=25;
+
+    p_but=new hxc_button(XD,p_group->handle,10,y,0,25,NULL,this,BT_LABEL,T("In folder"),0,hxc::col_bk);
+
+    p_but2=new hxc_button(XD,p_group->handle,w-10,y,0,25,diag_but_np,this,BT_TEXT,T("Browse"),200,hxc::col_bk);
+    p_but2->x-=p_but2->w;
+    XMoveWindow(XD,p_but2->handle,p_but2->x,p_but2->y);
+
+    p_path_ed=new hxc_edit(XD,p_group->handle,10+p_but->w+5,y,w-10-10-p_but->w-5-p_but2->w-5,25,NULL,this);
+    p_path_ed->set_text(ContentsLinksPath);
+    p_path_ed->id=201;
+    y+=30;
+    focus=p_path_ed->handle;
+
+    p_append_but=new hxc_button(XD,p_group->handle,10,y,0,25,NULL,this,BT_CHECKBOX,T("Append disk name"),101,hxc::col_bk);
+    p_append_but->set_check(true);
+
+    p_append_ed=new hxc_edit(XD,p_group->handle,10+p_append_but->w+5,y,w-10-10-p_append_but->w-5,25,NULL,this);
+    p_append_ed->set_text(GetContentsGetAppendName(contents_sl[1].String));
+    y+=30;
+
+    p_but=new hxc_button(XD,p_group->handle,10,y,0,25,NULL,this,BT_LABEL,T("On name conflict"),0,hxc::col_bk);
+
+    p_but2=new hxc_button(XD,p_group->handle,w-10,y,0,25,hxc::modal_but_np,this,BT_TEXT,T("Create"),1,hxc::col_bk);
+    p_but2->x-=p_but2->w;
+    XMoveWindow(XD,p_but2->handle,p_but2->x,p_but2->y);
+
+    p_conflict_dd=new hxc_dropdown(XD,p_group->handle,10+p_but->w+5,y,w-10-10-p_but->w-5-p_but2->w-10,200,NULL,this);
+    p_conflict_dd->additem(T("Skip"));
+    p_conflict_dd->additem(T("Overwrite"));
+    p_conflict_dd->additem(T("Rename new"));
+    p_conflict_dd->changesel(ContentConflictAction);
+  }
+
+  Str DestFol="///",DiskName,NewLink;
+  for(;;){
+    int id=hxc::show_modal_dialog(XD,handle,true,focus);
+
+    if (contents_sl.NumStrings<=2) break;
+
+    ContentConflictAction=p_conflict_dd->sel;
+    if (id==1){ // Create links
+      DestFol=p_path_ed->text;
+      NO_SLASH(DestFol);
+      if (p_append_but->checked) DiskName=Str(" (")+p_append_ed->text+")";
+      CreateDirectory(DestFol,NULL);
+      if (GetFileAttributes(DestFol)==0xffffffff){
+        Alert(T("Invalid directory"),T("Error"),MB_ICONEXCLAMATION);
+      }else{
+        char *ext;
+        ext=strrchr(contents_sl[0].String,'.');
+        if (ext==NULL) ext="";
+        for (int i=2;i<contents_sl.NumStrings;i++){
+          if (cont_lv.sl[i].Data[0]==101+ICO16_TICKED){
+            NewLink=DestFol+SLASH+Str(contents_sl[i].String)+DiskName+ext;
+            if (Exists(NewLink)){
+              if (ContentConflictAction==0){
+                NewLink="";
+              }else if (ContentConflictAction==2){
+                NewLink=GetUniquePath(DestFol,Str(contents_sl[i].String)+DiskName+ext);
+              }
+            }
+            if (NewLink.NotEmpty()) symlink(contents_sl[0].String,NewLink);
+          }
+        }
+        break;
+      }
+    }else{
+      break;
+    }
+  }
+  hxc::destroy_modal_dialog(XD,handle);
+
+  if (IsSameStr_I(DestFol,DisksFol)){
+    set_path(DisksFol);
+    dir_lv.select_item_by_name(GetFileNameFromPath(NewLink));
+  }
+}
+//---------------------------------------------------------------------------
+int TDiskManager::diag_lv_np(hxc_listview *lv,int mess,int i)
+{
+  if (mess==LVN_ICONCLICK){
+    int icon=lv->sl[i].Data[0]-101;
+    if (icon==ICO16_TICKED){
+      icon=ICO16_UNTICKED;
+    }else{
+      icon=ICO16_TICKED;
+    }
+    lv->sl[i].Data[0]=101+icon;
+    lv->draw(0);
+  }
+  return 0;
+}
+//---------------------------------------------------------------------------
+void TDiskManager::ShowDatabaseDiag()
+{
+  if (GetContentsCheckExist()==0) return;
+
+  int w=600,h=10+30+300+10+hxc::font->ascent+hxc::font->descent+10,y=10;
+  Window handle=hxc::create_modal_dialog(XD,w,h,T("Search Disk Image Database"),0);
+  if (handle==0) return;
+
+  hxc_button *p_but,*p_but2;
+  hxc_edit *p_ed;
+  hxc_textdisplay result_td;
+
+  p_but=new hxc_button(XD,handle,10,y,0,25,NULL,this,BT_LABEL,T("Search for"),0,hxc::col_bk);
+
+  p_but2=new hxc_button(XD,handle,w-10,y,0,25,diag_but_np,this,BT_TEXT,T("Go"),100,hxc::col_bk);
+  p_but2->x-=p_but2->w;
+  XMoveWindow(XD,p_but2->handle,p_but2->x,p_but2->y);
+
+  p_ed=new hxc_edit(XD,handle,10+p_but->w+5,y,w-10-10-p_but->w-5-p_but2->w-5,25,diag_ed_np,this);
+  p_ed->set_text("");
+  p_ed->id=101;
+  y+=30;
+
+  result_td.id=200;
+  result_td.border=1;
+  result_td.pad_x=5;
+  result_td.sy=0;
+  result_td.textheight=(hxc::font->ascent)+(hxc::font->descent)+2;
+  result_td.create(XD,handle,10,y,w-20,300,hxc::col_white,true);
+  y+=310;
+
+  p_but=new hxc_button(XD,handle,10,y,0,0,NULL,this,BT_LABEL,
+          T("To download disks see Steem's "),0,hxc::col_bk);
+
+  new hxc_button(XD,handle,10+p_but->w,y,0,0,hyperlink_np,this,BT_LINK|BT_TEXT,
+          T("links page")+"|"+STEEM_WEB+"links.htm",0,hxc::col_bk);
+
+  hxc::show_modal_dialog(XD,handle,true,p_ed->handle);
+  hxc::destroy_modal_dialog(XD,handle);
+}
+//---------------------------------------------------------------------------
+int TDiskManager::diag_but_np(hxc_button *b,int mess,int *p_i)
+{
+  if (mess!=BN_CLICKED) return 0;
+  if (b->id==100){
+//    TDiskManager *This=(TDiskManager*)(b->owner);
+    hxc_textdisplay *p_td=(hxc_textdisplay*)hxc::find(b->parent,200);
+    hxc_edit *p_ed=(hxc_edit*)hxc::find(b->parent,101);
+
+    Str Find=p_ed->text;
+    if (Find.Empty()) return 0;
+
+    char buf[65536],*p=buf;
+    GetContents_SearchDatabase(Find,buf,sizeof(buf));
+
+    Str Name,Contents;
+    Str outtext;
+    while (p[0]){
+      Name=p;
+      p+=strlen(p)+1;
+
+      Contents="";
+      while (p[0]){
+        if (Contents[0]) Contents+=", ";
+        Contents+=p;
+        p+=strlen(p)+1;
+      }
+      p++; // skip content list null
+
+      outtext+=Name+" - "+Contents+"\n\n";
+    }
+    p_td->sy=0;
+    p_td->set_text(outtext);
+    p_td->draw(true);
+  }else if (b->id==200){
+    b->set_check(true);
+    hxc_edit *p_ed=(hxc_edit*)hxc::find(b->parent,201);
+    fileselect.set_corner_icon(&Ico16,ICO16_FOLDER);
+    EasyStr new_path=fileselect.choose(XD,p_ed->text,"",T("Pick a Folder"),
+      FSM_CHOOSE_FOLDER | FSM_CONFIRMCREATE,folder_parse_routine,"");
+    if (new_path[0]){
+      NO_SLASH(new_path);
+      p_ed->set_text(new_path+"/");
+    }
+    b->set_check(0);
+  }
+  return 0;
+}
+//---------------------------------------------------------------------------
+int TDiskManager::diag_ed_np(hxc_edit *ed,int mess,int i)
+{
+  if (mess==EDN_RETURN){
+    hxc_button *p_but=(hxc_button*)hxc::find(ed->parent,100);
+    int i[1]={Button1};
+    diag_but_np(p_but,BN_CLICKED,i);
+  }
+  return 0;
 }
 //---------------------------------------------------------------------------
 

@@ -1,3 +1,11 @@
+/*---------------------------------------------------------------------------
+FILE: mfp.cpp
+MODULE: emu
+DESCRIPTION: The core of Steem's Multi Function Processor emulation
+(MFP 68901). This chip handles most of the interrupt and timing functions in
+the ST.
+---------------------------------------------------------------------------*/
+
 //---------------------------------------------------------------------------
 void mfp_gpip_set_bit(int bit,bool set)
 {
@@ -66,6 +74,7 @@ inline bool mfp_set_pending(int irq,int when_set)
   return (mfp_reg[MFPR_IPRA+mfp_interrupt_i_ab(irq)] & mfp_interrupt_i_bit(irq))!=0;
 }
 
+// NOTE: This isn't used anywhere
 void mfp_check_for_timer_timeouts()
 {
   for (int tn=0;tn<4;tn++){
@@ -176,6 +185,12 @@ void mfp_set_timer_reg(int reg,BYTE old_val,BYTE new_val)
 
     if (reg==MFPR_TBCR && new_val==8) calc_time_of_next_timer_b();
 
+#ifdef ENABLE_LOGGING
+    if (reg<=MFPR_TBCR && new_val>8){
+      log("MFP: --------------- PULSE EXTENSION MODE!! -----------------");
+    }
+#endif
+
     prepare_event_again();
   }else if (reg>=MFPR_TADR && reg<=MFPR_TDDR){ //data reg change
     timer=reg-MFPR_TADR;
@@ -216,6 +231,7 @@ void mfp_init_timers() // For load state and CPU speed change
       // This must allow for counter not being a multiple of 64
       mfp_timer_timeout[timer]=ABSOLUTE_CPU_TIME+int((double(mfp_timer_prescale[cr])*
                       double(mfp_timer_counter[timer])/64.0)*CPU_CYCLES_PER_MFP_CLK);
+      mfp_timer_period_change[timer]=true;
     }
   }
   RS232_CalculateBaud(bool(mfp_reg[MFPR_UCR] & BIT_7),mfp_get_timer_control_register(3),true);

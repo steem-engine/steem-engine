@@ -1,3 +1,10 @@
+/*---------------------------------------------------------------------------
+FILE: macros.cpp
+MODULE: Steem
+DESCRIPTION: These functions are used by Steem's macro system, to record,
+replay, load and save user input.
+---------------------------------------------------------------------------*/
+
 //---------------------------------------------------------------------------
 bool macro_mvi_blank(MACROVBLINFO *mvi)
 {

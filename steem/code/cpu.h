@@ -253,6 +253,12 @@ WORD prefetch_buf[2];
 #define IOACCESS_INTERCEPT_OS BIT_12
 #define IOACCESS_INTERCEPT_OS2 BIT_13
 
+#ifdef ENABLE_LOGFILE
+#define IOACCESS_DEBUG_MEM_WRITE_LOG BIT_14
+MEM_ADDRESS debug_mem_write_log_address;
+int debug_mem_write_log_bytes;
+#endif
+
 #define STOP_INTS_BECAUSE_INTERCEPT_OS bool(ioaccess & (IOACCESS_INTERCEPT_OS | IOACCESS_INTERCEPT_OS2))
 
 void m68k_interrupt(MEM_ADDRESS);  //non-address or bus error interrupt
@@ -283,6 +289,7 @@ signed int compare_buffer;
       m68k_dest=&iobuffer;                             \
     }                                       \
   }else{                                            \
+    DEBUG_CHECK_WRITE_B(abus); \
     if (SUPERFLAG && abus>=MEM_FIRST_WRITEABLE){                             \
       m68k_dest=lpPEEK(abus);           \
     }else if(abus>=MEM_START_OF_USER_AREA){ \
@@ -313,6 +320,7 @@ signed int compare_buffer;
       m68k_dest=&iobuffer;                             \
     }                                       \
   }else{                               \
+    DEBUG_CHECK_WRITE_W(abus);  \
     if(SUPERFLAG && abus>=MEM_FIRST_WRITEABLE){                       \
       m68k_dest=lpDPEEK(abus);           \
     }else if(abus>=MEM_START_OF_USER_AREA){ \
@@ -343,6 +351,7 @@ signed int compare_buffer;
       m68k_dest=&iobuffer;                             \
     }                                       \
   }else{                               \
+    DEBUG_CHECK_WRITE_L(abus);  \
     if(SUPERFLAG && abus>=MEM_FIRST_WRITEABLE){                       \
       m68k_dest=lpLPEEK(abus);           \
     }else if(abus>=MEM_START_OF_USER_AREA){ \

@@ -214,6 +214,7 @@ int log_to_base_2(unsigned long x)
 }
 //---------------------------------------------------------------------------
 #ifdef WIN32
+
 char *GetFileNameFromPath(char *fil)
 {
   int Len=strlen(fil);
@@ -226,7 +227,6 @@ char *GetFileNameFromPath(char *fil)
   return pos+1;
 }
 //---------------------------------------------------------------------------
-
 void RemoveProps(HWND Win,char *Prop1,...)
 {
   char* *lpProp=&Prop1;

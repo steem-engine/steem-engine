@@ -9,17 +9,9 @@ THardDiskManager::THardDiskManager()
     Drive[i].Path="";
     Drive[i].Letter=(char)('C'+i);
   }
+  DisableHardDrives=0;
   nDrives=0;
   update_mount();
-	
-	for (int i=0;i<MAX_HARDDRIVES;i++){
-		drive_browse_but[i].owner=this;
-		drive_remove_but[i].owner=this;
-	}
-	all_off_but.owner=this;
-	new_but.owner=this;
-	ok_but.owner=this;
-	cancel_but.owner=this;
 
   ApplyChanges=0;
 }
@@ -28,15 +20,15 @@ void THardDiskManager::Show()
 {
 	if (Handle) return;
 
-  if (StandardShow(500,10+60+(nDrives*30)+5,T("Hard Drives"),
+  if (StandardShow(590,10+60+(nDrives*30)+5,T("Hard Drives"),
       ICO16_HARDDRIVE,0,(LPWINDOWPROC)WinProc,true)) return;
 
   XSizeHints *pHints=XAllocSizeHints();
   if (pHints){
     pHints->flags=PMinSize | PMaxSize;
-		pHints->min_width=500;
+		pHints->min_width=590;
 		pHints->min_height=10+60+5;
-    pHints->max_width=500;
+    pHints->max_width=590;
     pHints->max_height=10+60+(MAX_HARDDRIVES*30)+5;
     XSetWMSizeHints(XD,Handle,pHints,XA_WM_NORMAL_HINTS);
     XSetWMSizeHints(XD,Handle,pHints,XA_WM_ZOOM_HINTS);
@@ -48,10 +40,10 @@ void THardDiskManager::Show()
 		CreateDriveControls(n); 				  				
   	y+=30;
 	}
-	all_off_but.create(XD,Handle,10,y,235,25,button_notify_proc,this,BT_TEXT,StripAndT("All &Off"),400,BkCol);
+	all_off_but.create(XD,Handle,10,y,0,25,button_notify_proc,this,BT_CHECKBOX,StripAndT("&Disable All Hard Drives"),400,BkCol);
 	SetWindowGravity(XD,all_off_but.handle,SouthEastGravity);
 	
-	new_but.create(XD,Handle,255,y,235,25,button_notify_proc,this,BT_TEXT,StripAndT("&New Hard Drive"),401,BkCol);
+	new_but.create(XD,Handle,345,y,235,25,button_notify_proc,this,BT_TEXT,StripAndT("&New Hard Drive"),401,BkCol);
 	SetWindowGravity(XD,new_but.handle,SouthEastGravity);
 	
 	y+=30;
@@ -67,12 +59,12 @@ void THardDiskManager::Show()
 #endif
 	boot_dd.create(XD,Handle,10+boot_label.w+5,y,50,200,NULL);
 	SetWindowGravity(XD,boot_dd.handle,SouthEastGravity);
-	
-	ok_but.create(XD,Handle,320,y,80,25,
+
+	ok_but.create(XD,Handle,410,y,80,25,
 												button_notify_proc,this,BT_TEXT,T("Ok"),403,BkCol);
 	SetWindowGravity(XD,ok_but.handle,SouthEastGravity);
-	
-	cancel_but.create(XD,Handle,410,y,80,25,
+
+	cancel_but.create(XD,Handle,500,y,80,25,
 												button_notify_proc,this,BT_TEXT,T("Cancel"),404,BkCol);
 	SetWindowGravity(XD,cancel_but.handle,SouthEastGravity);
 
@@ -102,17 +94,20 @@ void THardDiskManager::CreateDriveControls(int n)
 
 	drive_ed[n].create(XD,Handle,70,y,240,25,NULL);
 	drive_ed[n].set_text(Drive[n].Path+"/");
-		
+
 	drive_browse_but[n].create(XD,Handle,320,y,80,25,
 											button_notify_proc,this,BT_TEXT,T("Browse"),n*10,BkCol);
-  				  				
-	drive_remove_but[n].create(XD,Handle,410,y,80,25,
+
+	drive_open_but[n].create(XD,Handle,410,y,80,25,
+											button_notify_proc,this,BT_TEXT,T("Open"),n*10+2,BkCol);
+
+	drive_remove_but[n].create(XD,Handle,500,y,80,25,
 											button_notify_proc,this,BT_TEXT,T("Remove"),n*10+1,BkCol);
 }
 //---------------------------------------------------------------------------
 void THardDiskManager::SetWindowHeight()
 {
-	XResizeWindow(XD,Handle,500,10+(nDrives*30)+60+5);
+	XResizeWindow(XD,Handle,590,10+(nDrives*30)+60+5);
 //	unix_non_resizable_window(XD,Handle);
 }
 //---------------------------------------------------------------------------
@@ -166,9 +161,9 @@ void THardDiskManager::Hide()
 #endif
   }else{
     nDrives=nOldDrives;
-    for (int i=0;i<nOldDrives;i++){
-      Drive[i]=OldDrive[i];
-    }
+    for (int i=0;i<nOldDrives;i++) Drive[i]=OldDrive[i];
+    DisableHardDrives=OldDisableHardDrives;
+    update_mount();
   }
   ApplyChanges=0;
 
@@ -179,9 +174,10 @@ void THardDiskManager::Hide()
   if (StemWin) DiskMan.HardBut.set_check(0);
 }
 //---------------------------------------------------------------------------
-void THardDiskManager::RemoveLine(int dn){
- 	for(int n=dn;n<nDrives-1;n++){
- 	//copy info from line n+1 to line n 	
+void THardDiskManager::RemoveLine(int dn)
+{
+ 	for (int n=dn;n<nDrives-1;n++){
+   	// copy info from line n+1 to line n
  		drive_dd[n].changesel(drive_dd[n+1].sel);
  		drive_dd[n].draw();
  		drive_ed[n].set_text(drive_ed[n+1].text);
@@ -190,6 +186,7 @@ void THardDiskManager::RemoveLine(int dn){
  	drive_dd[nDrives].destroy(&(drive_dd[nDrives]));
  	drive_ed[nDrives].destroy(&(drive_ed[nDrives]));
  	drive_browse_but[nDrives].destroy(&(drive_browse_but[nDrives]));
+ 	drive_open_but[nDrives].destroy(&(drive_open_but[nDrives]));
  	drive_remove_but[nDrives].destroy(&(drive_remove_but[nDrives]));
  	SetWindowHeight();
 }  					
@@ -200,10 +197,7 @@ int THardDiskManager::button_notify_proc(hxc_button *But,int Mess,int *Inf)
 	if (Mess==BN_CLICKED){
 		switch (But->id){
 			case 400:
-				for (int i=0;i<MAX_HARDDRIVES;i++){
-					This->drive_dd[i].changesel(0);
-					This->drive_dd[i].draw();
-				}
+        This->DisableHardDrives=But->checked;
 				break;
 			case 401:
         if (This->nDrives<MAX_HARDDRIVES){
@@ -219,10 +213,10 @@ int THardDiskManager::button_notify_proc(hxc_button *But,int Mess,int *Inf)
 				This->Hide();
 				break;			
 			default:{
-				if(But->id<MAX_HARDDRIVES*10){
+				if (But->id<MAX_HARDDRIVES*10){
   				int r=((But->id)%10);
   				int dn=((But->id)/10);
-  				if(r==0){ //browse
+  				if (r==0){ //browse
   					char*path=This->drive_ed[dn].text.Text;
 						fileselect.set_corner_icon(&Ico16,ICO16_FOLDER);
 					  EasyStr new_path=fileselect.choose(XD,path,"",T("Pick a Folder"),
@@ -231,9 +225,11 @@ int THardDiskManager::button_notify_proc(hxc_button *But,int Mess,int *Inf)
 	   					NO_SLASH(new_path);
 	   					This->drive_ed[dn].set_text(new_path+"/");
 	   				}
-  				}else if(r==1){  //remove
+  				}else if (r==1){  //remove
   					This->RemoveLine(dn);
-  				}
+  				}else if (r==2){  // open
+            shell_execute(Comlines[COMLINE_FM],Str("[PATH]\n")+This->drive_ed[dn].text);
+          }
   			}
 			}
 		}
@@ -254,3 +250,5 @@ int THardDiskManager::WinProc(THardDiskManager *This,Window Win,XEvent*Ev)
   }
   return PEEKED_MESSAGE;
 }
+//---------------------------------------------------------------------------
+

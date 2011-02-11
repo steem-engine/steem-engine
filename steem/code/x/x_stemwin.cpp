@@ -144,7 +144,12 @@ int StemWinProc(void*,Window Win,XEvent *Ev)
         }
       }else if (Ev->xclient.message_type==LoadSnapShotAtom){
     		if (runstate==RUNSTATE_STOPPED){
-    	    LoadSnapShot(LastSnapShot);
+          bool AddToHistory=true;
+          Str fn=LastSnapShot;
+          if (Ev->xclient.data.l[0]==207) fn=WriteDir+SLASH+"auto_reset_backup.sts", AddToHistory=0;
+          if (Ev->xclient.data.l[0]==208) fn=WriteDir+SLASH+"auto_loadsnapshot_backup.sts", AddToHistory=0;
+    	    LoadSnapShot(fn,AddToHistory);
+          if (Ev->xclient.data.l[0]==207 || Ev->xclient.data.l[0]==208) DeleteFile(fn);
     	  }else{
     	  	runstate=RUNSTATE_STOPPING;
 
@@ -153,6 +158,7 @@ int StemWinProc(void*,Window Win,XEvent *Ev)
           SendEv.xclient.window=StemWin;
           SendEv.xclient.message_type=LoadSnapShotAtom;
           SendEv.xclient.format=32;
+          SendEv.xclient.data.l[0]=Ev->xclient.data.l[0];
           XSendEvent(XD,StemWin,0,0,&SendEv);
     	  }
       }
@@ -252,6 +258,7 @@ int snapshot_parse_filename(char*fn,struct stat*s)
 //---------------------------------------------------------------------------
 void SnapShotProcess(int i)
 {
+  bool WaitUntilStopped=0;
   if (i==200 /* Load Snapshot */ || i==201 /* Save Snapshot */){
     fileselect.set_corner_icon(&Ico16,ICO16_SNAPSHOT);
     Str LastSnapShotFol=LastSnapShot;
@@ -261,18 +268,7 @@ void SnapShotProcess(int i)
                 FSM_CONFIRMOVERWRITE,snapshot_parse_filename,".sts");
     if (fileselect.chose_option==FSM_LOAD){
       LastSnapShot=fn;
-      if (runstate==RUNSTATE_STOPPED){
-        LoadSnapShot(fn);
-      }else{
-        runstate=RUNSTATE_STOPPING;
-
-        XEvent SendEv;
-        SendEv.type=ClientMessage;
-        SendEv.xclient.window=StemWin;
-        SendEv.xclient.message_type=LoadSnapShotAtom;
-        SendEv.xclient.format=32;
-        XSendEvent(XD,StemWin,0,0,&SendEv);
-      }
+      WaitUntilStopped=true;
     }else if (fileselect.chose_option==FSM_SAVE){
       LastSnapShot=fn;
       SaveSnapShot(fn,-1);
@@ -289,18 +285,20 @@ void SnapShotProcess(int i)
     remove(SnapShotGetLastBackupPath());
   }else if (i>=210 && i<220){ // Load recent
     LastSnapShot=StateHist[i-210];
-    if (runstate==RUNSTATE_STOPPED){
-      LoadSnapShot(LastSnapShot);
-    }else{
-      runstate=RUNSTATE_STOPPING;
+    WaitUntilStopped=true;
+  }else if (i==207 || i==208){ // undo reset/last snap
+    WaitUntilStopped=true;
+  }
+  if (WaitUntilStopped){
+    if (runstate==RUNSTATE_RUNNING) runstate=RUNSTATE_STOPPING;
 
-      XEvent SendEv;
-      SendEv.type=ClientMessage;
-      SendEv.xclient.window=StemWin;
-      SendEv.xclient.message_type=LoadSnapShotAtom;
-      SendEv.xclient.format=32;
-      XSendEvent(XD,StemWin,0,0,&SendEv);
-    }
+    XEvent SendEv;
+    SendEv.type=ClientMessage;
+    SendEv.xclient.window=StemWin;
+    SendEv.xclient.message_type=LoadSnapShotAtom;
+    SendEv.xclient.format=32;
+    SendEv.xclient.data.l[0]=i;
+    XSendEvent(XD,StemWin,0,0,&SendEv);
   }
 }
 //---------------------------------------------------------------------------
@@ -352,7 +350,8 @@ int StemWinButtonNotifyProc(hxc_button *But,int Mess,int *Inf)
     case 102:
     {
       bool Warm=(Inf[0]==Button3);
-      reset_st(bool(Warm ? 0:true) /*Stop*/,Warm);
+      reset_st(DWORD(Warm ? RESET_WARM:RESET_COLD) | DWORD(Warm ? RESET_NOSTOP:RESET_STOP) |
+                  RESET_CHANGESETTINGS | RESET_BACKUP);
       break;
     }
     case 108: // Memory Snapshots
@@ -386,7 +385,7 @@ int StemWinButtonNotifyProc(hxc_button *But,int Mess,int *Inf)
       		pop.lpig=&Ico16;
 	      	pop.menu.DeleteAll();
 	        for (int n=0;n<11;n++){
-	        	long ico=-1;
+	        	long ico=ICO16_UNRADIOMARKED;
 	        	if (PasteSpeed==(1+n)) ico=ICO16_RADIOMARK;
 	        	pop.menu.Add(T("Delay")+" - "+n,ico,100+n);
 	        }

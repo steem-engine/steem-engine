@@ -1,3 +1,10 @@
+/*---------------------------------------------------------------------------
+FILE: steemh.h
+MODULE: emu
+DESCRIPTION: Many crucial variable declarations and macro definitions that
+allow Steem to perform emulation.
+---------------------------------------------------------------------------*/
+
 #ifdef IN_EMU
 #define EXT
 #define INIT(s) =s
@@ -30,12 +37,12 @@ EXT bool mmu_confused;        //144
 EXT unsigned long hbl_count INIT(0);
 
 // Don't forget to update this in the resource file too!
-EXT const char *stem_version_text INIT("3.2b1");
-EXT const char *stem_x_version_text INIT("12");
+EXT const char *stem_version_text INIT("3.2");
 
 #define STEEM_EMAIL "steem@gmx.net"
 #define STEEM_WEB "http:/""/steem.atari.st/"
-#define MSACONV_WEB "http:/""/pageperso.aol.fr/zorg63/"
+#define MSACONV_WEB "http:/""/msaconverter.free.fr/"
+#define DIDATABASE_WEB STEEM_WEB "database.htm"
 
 #define MEM_EXTRA_BYTES 320
 
@@ -358,6 +365,22 @@ EXT char m68k_src_b;
 #define MSB_L 0x80000000
 
 #define BYTE_00_TO_256(x) ( (int) ((unsigned char) (( (unsigned char)x )-1))  +1 )
+
+#ifndef _DEBUG_BUILD
+#define DEBUG_CHECK_WRITE_B(ad) 
+#define DEBUG_CHECK_WRITE_W(ad)
+#define DEBUG_CHECK_WRITE_L(ad)
+#define DEBUG_CHECK_READ_B(ad)
+#define DEBUG_CHECK_READ_W(ad)
+#define DEBUG_CHECK_READ_L(ad)
+
+#define DEBUG_CHECK_WRITE_IO_B(ad,v)
+#define DEBUG_CHECK_WRITE_IO_W(ad,v)
+#define DEBUG_CHECK_WRITE_IO_L(ad,v)
+#define DEBUG_CHECK_READ_IO_B(ad)
+#define DEBUG_CHECK_READ_IO_W(ad)
+#define DEBUG_CHECK_READ_IO_L(ad)
+#endif
 
 #undef EXT
 #undef INIT

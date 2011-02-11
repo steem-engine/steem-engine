@@ -65,11 +65,6 @@ BYTE d2_peek(MEM_ADDRESS ad);
 WORD d2_dpeek(MEM_ADDRESS ad);
 LONG d2_lpeek(MEM_ADDRESS ad);
 
-extern "C" void log_old_pc(){
-  EasyStr Dissasembly=disa_d2(old_pc);
-  log_write(EasyStr(HEXSl(old_pc,6))+" - "+Dissasembly);
-}
-
 EasyStr d2_src,d2_dest,d2_command,d2_pc_rel_ex;
 WORD d2_ap;
 int d2_n_movem_regs;

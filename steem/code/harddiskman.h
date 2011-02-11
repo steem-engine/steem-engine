@@ -20,7 +20,7 @@ private:
 		
 	hxc_dropdown drive_dd[MAX_HARDDRIVES];
 	hxc_edit drive_ed[MAX_HARDDRIVES];
-	hxc_button drive_browse_but[MAX_HARDDRIVES],drive_remove_but[MAX_HARDDRIVES];
+	hxc_button drive_browse_but[MAX_HARDDRIVES],drive_open_but[MAX_HARDDRIVES],drive_remove_but[MAX_HARDDRIVES];
 	hxc_button all_off_but,new_but,boot_label,ok_but,cancel_but;
 	hxc_dropdown boot_dd;
 #endif
@@ -42,8 +42,10 @@ public:
 
   Hard_Disk_Info *OldDrive;
   int nOldDrives;
+  bool OldDisableHardDrives;
 
   Hard_Disk_Info Drive[MAX_HARDDRIVES];
   int nDrives;
+  bool DisableHardDrives;
 };
 

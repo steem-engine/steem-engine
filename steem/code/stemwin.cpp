@@ -1,3 +1,10 @@
+/*---------------------------------------------------------------------------
+FILE: stemwin.cpp
+MODULE: Steem
+DESCRIPTION: This file (included from gui.cpp) handles the main Steem window
+and its various buttons.
+---------------------------------------------------------------------------*/
+
 //---------------------------------------------------------------------------
 void StemWinResize(int xo,int yo)
 {
@@ -245,10 +252,15 @@ LRESULT PASCAL WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lPar)
             }
           }
         }
-      }else if ((LOWORD(wPar)>=210 && LOWORD(wPar)<220) || LOWORD(wPar)==203){
+      }else if ((LOWORD(wPar)>=210 && LOWORD(wPar)<220) || LOWORD(wPar)==203 || LOWORD(wPar)==207 || LOWORD(wPar)==208){
         if (runstate==RUNSTATE_STOPPED){
+          bool AddToHistory=true;
           if (LOWORD(wPar)>=210) LastSnapShot=StateHist[LOWORD(wPar)-210];
-          LoadSnapShot(LastSnapShot);
+          EasyStr fn=LastSnapShot;
+          if (LOWORD(wPar)==207) fn=WriteDir+SLASH+"auto_reset_backup.sts", AddToHistory=0;
+          if (LOWORD(wPar)==208) fn=WriteDir+SLASH+"auto_loadsnapshot_backup.sts", AddToHistory=0;
+          LoadSnapShot(fn,AddToHistory);
+          if (LOWORD(wPar)==207 || LOWORD(wPar)==208) DeleteFile(fn);
         }else{
           runstate=RUNSTATE_STOPPING;
           PostMessage(Win,Mess,wPar,lPar); // Keep delaying message until stopped
@@ -339,6 +351,7 @@ LRESULT PASCAL WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lPar)
             }
             case 205:
               if (SnapShotGetLastBackupPath().NotEmpty()){
+                DeleteFile(SnapShotGetLastBackupPath());
                 MoveFile(LastSnapShot,SnapShotGetLastBackupPath()); // Make backup
               }
               SaveSnapShot(LastSnapShot,-1);
@@ -518,8 +531,11 @@ LRESULT PASCAL WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lPar)
             return 0;
           }
           break;
-        case SC_SCREENSAVE:case SC_MONITORPOWER:
-          if (runstate==RUNSTATE_RUNNING || FullScreen) return 0;
+        case SC_MONITORPOWER:
+          if (runstate == RUNSTATE_RUNNING) return 0;
+          break;
+        case SC_SCREENSAVE:
+          if (runstate == RUNSTATE_RUNNING || FullScreen) return 0;
           break;
         case SC_TASKLIST:case SC_PREVWINDOW:case SC_NEXTWINDOW:
           if (runstate==RUNSTATE_RUNNING) return 0;
@@ -599,7 +615,7 @@ LRESULT PASCAL WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lPar)
           if (screen_res==2) ad+=y*80;else ad+=y*160;
           if (screen_res==0) ad+=x*8;else if(screen_res==1)ad+=x*4;else ad+=x*2;
           d2_dpoke(ad,0xface);
-          set_breakpoint_or_monitor(1,ad);
+          debug_set_mon(ad,0,0xffff);
           SetStemMouseMode(STEM_MOUSEMODE_DISABLED);
         }
       }
@@ -629,53 +645,33 @@ LRESULT PASCAL WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lPar)
       }
       break;
     case WM_COPYDATA:
-    {
-      COPYDATASTRUCT *cds=(COPYDATASTRUCT*)lPar;
-      if (cds->dwData==MAKECHARCONST('S','C','O','M')){  // Steem comline file
-        EasyStr OldDiskA=FloppyDrive[0].GetDisk();
-
-        BootStateFile="";BootTOSImage=0;
-        BootDisk[0]=0;BootDisk[1]=0;
-        ParseCommandLine(1,(char**)&(cds->lpData));
-
-        if (BootStateFile.NotEmpty()){
-          if (LoadSnapShot(BootStateFile)){
-            SetForegroundWindow(Win);
-            PostRunMessage();
-          }
-        }else{
-          bool Run=(OldDiskA!=FloppyDrive[0].GetDisk());
-          if (BootTOSImage || OldDiskA!=FloppyDrive[0].GetDisk()){
-            SetForegroundWindow(Win);
-            reset_st(Run==0,0);
-            if (Run && runstate!=RUNSTATE_RUNNING) PostRunMessage();
-          }
-        }
-        return MAKECHARCONST('Y','A','Y','S');
-      }
-      break;
-    }
     case WM_DROPFILES:
     {
-      int nFiles=DragQueryFile((HDROP)wPar,0xffffffff,NULL,0);
-      EasyStr *Files=new EasyStr[nFiles];
-      char* *lpFile=new char*[nFiles];
-      for (int i=0;i<nFiles;i++){
-        Files[i].SetLength(MAX_PATH);
-        DragQueryFile((HDROP)wPar,i,Files[i],MAX_PATH);
-        lpFile[i]=Files[i];
+      EasyStr *Files=NULL;
+      char **lpFile;
+      int nFiles;
+      if (Mess==WM_COPYDATA){
+        COPYDATASTRUCT *cds=(COPYDATASTRUCT*)lPar;
+        if (cds->dwData!=MAKECHARCONST('S','C','O','M')) break;  // Not Steem comline file
+        nFiles=1;
+        lpFile=(char**)&(cds->lpData); // lpFile is an array of nFiles pointers to char*s, cds->lpData is a char*
+      }else{
+        nFiles=DragQueryFile((HDROP)wPar,0xffffffff,NULL,0);
+        Files=new EasyStr[nFiles];
+        lpFile=new char*[nFiles];
+        for (int i=0;i<nFiles;i++){
+          Files[i].SetLength(MAX_PATH);
+          DragQueryFile((HDROP)wPar,i,Files[i],MAX_PATH);
+          lpFile[i]=Files[i].Text;
+        }
+        DragFinish((HDROP)wPar);
       }
-
-      DragFinish((HDROP)wPar);
-
       EasyStr OldDiskA=FloppyDrive[0].GetDisk();
 
       BootStateFile="";BootTOSImage=0;
-      BootDisk[0]=0;BootDisk[1]=0;
+      BootDisk[0]="";BootDisk[1]="";
+      BootInMode=0;
       ParseCommandLine(nFiles,lpFile);
-
-      delete[] Files;
-      delete[] lpFile;
 
       if (BootStateFile.NotEmpty()){
         if (LoadSnapShot(BootStateFile)){
@@ -683,14 +679,27 @@ LRESULT PASCAL WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lPar)
           PostRunMessage();
         }
       }else{
-        bool Run=(OldDiskA!=FloppyDrive[0].GetDisk());
-        if (BootTOSImage || OldDiskA!=FloppyDrive[0].GetDisk()){
+        for (int Drive=0;Drive<2;Drive++){
+          if (BootDisk[Drive].NotEmpty()){
+            EasyStr Name=GetFileNameFromPath(BootDisk[Drive]);
+            *strrchr(Name,'.')=0;
+            DiskMan.InsertDisk(Drive,Name,BootDisk[Drive],0,0);
+          }
+        }
+        bool ChangedDisk=NotSameStr_I(OldDiskA,FloppyDrive[0].GetDisk());
+        if (BootTOSImage || ChangedDisk){
           SetForegroundWindow(Win);
-          reset_st(Run==0,0);
-          if (Run && runstate!=RUNSTATE_RUNNING) PostRunMessage();
+          reset_st(RESET_COLD | DWORD(ChangedDisk ? RESET_NOSTOP:RESET_STOP) | RESET_CHANGESETTINGS | RESET_BACKUP);
+          if (ChangedDisk && runstate!=RUNSTATE_RUNNING) PostRunMessage();
+        }else if (BootInMode & BOOT_MODE_RUN){
+          if (runstate==RUNSTATE_STOPPED) PostRunMessage();
         }
       }
-      break;
+      if (Mess==WM_COPYDATA) return MAKECHARCONST('Y','A','Y','S');
+
+      delete[] Files;
+      delete[] lpFile;
+      return 0;
     }
     case WM_GETMINMAXINFO:
       ((MINMAXINFO*)lPar)->ptMinTrackSize.x=320+GetSystemMetrics(SM_CXFRAME)*2+4;
@@ -805,7 +814,11 @@ LRESULT PASCAL WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lPar)
           RECT rc;GetClientRect(Win,&rc);
           if (pt.x>2 && pt.x<rc.right-2 && pt.y>MENUHEIGHT+1 && pt.y<rc.bottom-2){
             if (stem_mousemode==STEM_MOUSEMODE_WINDOW){
-              SetCursor(NULL);
+              if (no_set_cursor_pos){
+                SetCursor(LoadCursor(NULL,RCNUM(IDC_CROSS)));
+              }else{
+                SetCursor(NULL);
+              }
             }else if (stem_mousemode==STEM_MOUSEMODE_BREAKPOINT){
               SetCursor(LoadCursor(NULL,IDC_CROSS));
             }else{
@@ -899,7 +912,8 @@ void HandleButtonMessage(UINT Id,HWND hBut)
     case 102:
     {
       bool Warm=(SendMessage(hBut,BM_GETCLICKBUTTON,0,0)==2);
-      reset_st(bool(Warm ? 0:true),Warm);
+      reset_st(DWORD(Warm ? RESET_WARM:RESET_COLD) | DWORD(Warm ? RESET_NOSTOP:RESET_STOP) |
+                  RESET_CHANGESETTINGS | RESET_BACKUP);
       break;
     }
     case 106:
@@ -1255,6 +1269,19 @@ void SnapShotGetOptions(EasyStringList *p_sl)
     if (stemdos_any_files_open()) NoSaveExplain=T("The ST has file(s) open");
   }
 #endif
+#if USE_PASTI
+  if (NoSaveExplain.Empty()){
+    if (hPasti && pasti_active){
+      NoSaveExplain=T("The ST is in the middle of a disk operation");
+      pastiSTATEINFO psi;
+      psi.bufSize=0;
+      psi.buffer=NULL;
+      psi.cycles=ABSOLUTE_CPU_TIME;
+      pasti->SaveState(&psi);
+      if (psi.bufSize>0) NoSaveExplain="";
+    }
+  }
+#endif
   if (NoSaveExplain.IsEmpty()){
     p_sl->Add(T("&Save Memory Snapshot"),201,0);
     Str Name=GetFileNameFromPath(LastSnapShot);
@@ -1270,6 +1297,14 @@ void SnapShotGetOptions(EasyStringList *p_sl)
   }else{
     p_sl->Add(T("Can't save snapshot because"),0,1);
     p_sl->Add(NoSaveExplain,0,1);
+  }
+  if (Exists(WriteDir+SLASH+"auto_reset_backup.sts")){
+    p_sl->Add("-",0,0);
+    p_sl->Add(T("Undo Last Reset"),207,0);
+  }
+  if (Exists(WriteDir+SLASH+"auto_loadsnapshot_backup.sts")){
+    p_sl->Add("-",0,0);
+    p_sl->Add(T("Undo Last Memory Snapshot Load"),208,0);
   }
 
   // Add history

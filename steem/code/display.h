@@ -116,7 +116,7 @@ public:
   Str ScreenShotNextFile;
   int ScreenShotFormat;
   int ScreenShotMinSize;
-  bool ScreenShotUseFullName;
+  bool ScreenShotUseFullName,ScreenShotAlwaysAddNum;
   bool DoAsyncBlit;
 
 #ifdef WIN32
@@ -133,6 +133,7 @@ public:
   bool DrawToVidMem,BlitHideMouse;
   
   DWORD ChangeToWinTimeOut;
+  bool DrawLetterboxWithGDI;
 #endif
 
 #if defined(UNIX)

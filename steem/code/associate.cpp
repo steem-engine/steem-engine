@@ -1,6 +1,10 @@
-//---------------------------------------------------------------------------
-// Porting: Re-write all of it! (don't bother)
-//---------------------------------------------------------------------------
+/*---------------------------------------------------------------------------
+FILE: associate.cpp
+MODULE: Steem
+DESCRIPTION: The code to perform the sometimes confusing task of associating
+Steem with required file types.
+---------------------------------------------------------------------------*/
+
 #ifdef WIN32
 LONG RegCopyKey(HKEY FromKeyParent,char *FromKeyName,HKEY ToKeyParent,char *ToKeyName)
 {

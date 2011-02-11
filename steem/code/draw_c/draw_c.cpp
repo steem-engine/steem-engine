@@ -1,3 +1,10 @@
+/*---------------------------------------------------------------------------
+FILE: draw_c.cpp
+MODULE: draw_c
+DESCRIPTION: Alternative C++ drawing routines for systems that don't support
+Steem's faster x86 assembler versions.
+---------------------------------------------------------------------------*/
+
 #include "pch.h"
 #pragma hdrstop
 
@@ -447,8 +454,4 @@ extern "C" void ASMCALL draw_scanline_32_hires(int border1,int picture,int borde
 #include "draw_c_hires_scanline.cpp"
 }
 #undef DRAWPIXEL
-
-#ifdef COMPILE_THOS
-
-#endif
 

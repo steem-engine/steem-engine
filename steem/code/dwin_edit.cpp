@@ -1,3 +1,10 @@
+/*---------------------------------------------------------------------------
+FILE: dwin_edit.cpp
+MODULE: Steem
+CONDITION: _DEBUG_BUILD
+DESCRIPTION: The edit box that is used to change values in the debugger.
+---------------------------------------------------------------------------*/
+
 long __stdcall DWin_edit_WndProc(HWND,unsigned int,unsigned int,long);
 WNDPROC Old_edit_WndProc;
 
@@ -64,7 +71,7 @@ void DWin_edit_pressed_return()
 
 void set_DWin_edit(int type,void*subject,int n,int col)
 {
-  char ttt[256];
+  char ttt[1024];
   RECT rc;POINT pt;
   if (DWin_edit_subject_type!=-1) DWin_edit_finish(true);
   if (type==0){
@@ -79,7 +86,7 @@ void set_DWin_edit(int type,void*subject,int n,int col)
     GetWindowRect(win,&rc);
     pt.x=rc.left;pt.y=rc.top;ScreenToClient(ms->owner,&pt);
     MoveWindow(DWin_edit,pt.x,pt.y,rc.right-rc.left,rc.bottom-rc.top,true);
-    GetWindowText(win,ttt,250);
+    GetWindowText(win,ttt,1024);
     SetWindowText(DWin_edit,ttt);
     ShowWindow(win,SW_HIDE);
     ShowWindow(DWin_edit,SW_SHOW);
@@ -103,7 +110,7 @@ void set_DWin_edit(int type,void*subject,int n,int col)
       item.iSubItem=3;
       item.mask=LVIF_TEXT;
       item.pszText=ttt;
-      item.cchTextMax=250;
+      item.cchTextMax=1024;
       SendMessage(mb->handle,LVM_GETITEM,0,(LPARAM)&item);
       DWin_edit_subject_ad=HexToVal(ttt); //(mb->ad)+n*2*(mb->wpl);
       c=col;
@@ -117,8 +124,10 @@ void set_DWin_edit(int type,void*subject,int n,int col)
     item.iSubItem=col;
     item.mask=LVIF_TEXT;
     item.pszText=ttt;
-    item.cchTextMax=250;
+    item.cchTextMax=1024;
     SendMessage(mb->handle,LVM_GETITEM,0,(LPARAM)&item);
+    char *end=strrchr(ttt,'\01');
+    if (end) *end=0;
     SetWindowText(DWin_edit,ttt);
 
 //    rc.left=LVIR_LABEL;

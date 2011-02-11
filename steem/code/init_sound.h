@@ -17,14 +17,19 @@ EXT void sound_record_open_file();
 EXT void sound_record_close_file();
 EXT DWORD SoundGetTime();
 WIN_ONLY( EXT void SoundChangeVolume(); )
+EXT bool SoundActive();
 
-EXT bool UseSound INIT(0),DSOpen INIT(0);
+EXT bool DSOpen INIT(0);
+EXT int UseSound INIT(0);
 
 #ifdef UNIX
 EXT void internal_speaker_sound_by_period(int);
 
 EXT EasyStr sound_device_name; // INIT("/dev/dsp");
-EXT int sound_device INIT(-1),console_device INIT(-1);
+EXT int console_device INIT(-1);
+
+EXT int rt_buffer_size INIT(256),rt_buffer_num INIT(4);
+
 #endif
 
 #if defined(UNIX) || (defined(USE_PORTAUDIO_ON_WIN32) && defined(WIN32))
@@ -56,8 +61,24 @@ UINT DSStopBufferTimerID=0;
 
 #endif
 
+
 bool TrySound=true;
+
+#ifdef UNIX
+
+#define XS_PA 1
+#define XS_RT 2
+
+int x_sound_lib=XS_PA;
+
+#ifndef NO_RTAUDIO
+RtAudio *rt_audio=NULL;
+int rt_unsigned_8bit=0;
 #endif
+#endif
+
+#endif
+
 
 #undef EXT
 #undef INIT

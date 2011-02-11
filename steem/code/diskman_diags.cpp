@@ -1,16 +1,90 @@
+/*---------------------------------------------------------------------------
+FILE: diskman_diags.cpp
+MODULE: Steem
+DESCRIPTION: The dialogs that can be shown by the Disk Manager.
+---------------------------------------------------------------------------*/
+
+//---------------------------------------------------------------------------
+void TDiskManager::ShowDatabaseDiag()
+{
+  if (GetContentsCheckExist()==0) return;
+
+  int th=GetTextSize(Font,T("To download disks see Steem's ")).Height;
+
+  DatabaseDiag=CreateWindowEx(WS_EX_CONTROLPARENT,"Steem Disk Manager Dialog",T("Search Disk Image Database"),
+                          WS_CAPTION | WS_SYSMENU,100,100,506,10+30+300+10+th+10+GetSystemMetrics(SM_CYCAPTION)+6,
+                           Handle,NULL,HInstance,NULL);
+  if (DatabaseDiag==NULL || IsWindow(DatabaseDiag)==0){
+    return;
+  }
+  EnableWindow(Handle,0);
+
+  SetWindowLong(DatabaseDiag,GWL_USERDATA,(long)this);
+
+  if (FullScreen) SetParent(DatabaseDiag,StemWin);
+
+  int y=10,w,page_r=500-10;
+  HWND Win;
+
+  w=GetTextSize(Font,T("Search for")).Width;
+  CreateWindow("Static",T("Search for"),WS_CHILD | WS_VISIBLE,
+                          10,y+4,w,23,DatabaseDiag,(HMENU)102,HInstance,NULL);
+
+  CreateWindowEx(512,"Edit","",WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL,
+                w+15,y,page_r-50-(w+15),23,DatabaseDiag,(HMENU)103,HInstance,NULL);
+
+  CreateWindow("Button",T("Go"),WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_DEFPUSHBUTTON,
+                          page_r-45,y,45,23,DatabaseDiag,(HMENU)IDOK,HInstance,NULL);
+  y+=30;
+
+  Win=CreateWindowEx(512,WC_LISTVIEW,"",WS_CHILD | WS_VISIBLE | WS_TABSTOP |
+                      LVS_SINGLESEL | LVS_REPORT,
+                      10,y,page_r-10,300,DatabaseDiag,(HMENU)111,HInstance,NULL);
+
+  RECT rc;
+  GetClientRect(Win,&rc);
+
+  LV_COLUMN lvc;
+  lvc.mask=LVCF_FMT | LVCF_SUBITEM | LVCF_TEXT | LVCF_WIDTH;
+  lvc.fmt=LVCFMT_LEFT;
+  lvc.cx=180;
+  lvc.pszText=StaticT("Name");
+  lvc.iSubItem=0;
+  SendMessage(Win,LVM_INSERTCOLUMN,0,LPARAM(&lvc));
+
+  lvc.fmt=LVCFMT_LEFT;
+  lvc.cx=300;
+  lvc.pszText=StaticT("Contents");
+  lvc.iSubItem=1;
+  SendMessage(Win,LVM_INSERTCOLUMN,1,LPARAM(&lvc));
+
+  y+=310;
+
+  w=GetTextSize(Font,T("To download disks see Steem's ")).Width;
+  CreateWindow("Static",T("To download disks see Steem's "),WS_CHILD | WS_VISIBLE,
+                          10,y,w,th,DatabaseDiag,(HMENU)300,HInstance,NULL);
+
+  CreateWindowEx(0,"Steem HyperLink",T("links page")+"|"+STEEM_WEB+"links.htm",WS_CHILD | WS_VISIBLE,
+                  10+w,y,200,th,DatabaseDiag,(HMENU)301,HInstance,NULL);
+
+
+  SetWindowAndChildrensFont(DatabaseDiag,Font);
+
+  CentreWindow(DatabaseDiag,0);
+  DiagFocus=GetDlgItem(DatabaseDiag,103);
+  ShowWindow(DatabaseDiag,SW_SHOW);
+}
 //---------------------------------------------------------------------------
 void TDiskManager::ShowContentDiag()
 {
   int h=GetTextSize(Font,T("Contents")).Height;
   ContentDiag=CreateWindowEx(WS_EX_CONTROLPARENT,"Steem Disk Manager Dialog",T("Disk Image Contents"),
-                          WS_CAPTION | WS_SYSMENU,100,100,406,10+30+30+h+2+160+80+10+GetSystemMetrics(SM_CYCAPTION)+6,
+                          WS_CAPTION | WS_SYSMENU,100,100,406,10+30+30+h+2+160+110+10+GetSystemMetrics(SM_CYCAPTION)+6,
                            Handle,NULL,HInstance,NULL);
-
-  if (ContentDiag==NULL) return;
-
-  if (IsWindow(ContentDiag)==0){
-    ContentDiag=NULL;return;
+  if (ContentDiag==NULL || IsWindow(ContentDiag)==0){
+    return;
   }
+  EnableWindow(Handle,0);
 
   SetWindowLong(ContentDiag,GWL_USERDATA,(long)this);
 
@@ -28,8 +102,8 @@ void TDiskManager::ShowContentDiag()
                 w+15,y,page_r-(w+15),23,ContentDiag,(HMENU)103,HInstance,NULL);
   y+=30;
 
-  w=GetTextSize(Font,T("TOSEC name")).Width;
-  CreateWindow("Static",T("TOSEC name"),WS_CHILD | WS_VISIBLE,
+  w=GetTextSize(Font,T("Short TOSEC name")).Width;
+  CreateWindow("Static",T("Short TOSEC name"),WS_CHILD | WS_VISIBLE,
                           10,y+4,w,23,ContentDiag,(HMENU)100,HInstance,NULL);
 
   CreateWindowEx(512,"Edit",contents_sl[1].String,
@@ -73,7 +147,7 @@ void TDiskManager::ShowContentDiag()
   int Disable=0;
   if (contents_sl.NumStrings<=2) Disable=WS_DISABLED;
   CreateWindow("Button",T("Create Shortcuts To Selected Contents"),WS_CHILD | WS_VISIBLE | BS_GROUPBOX | Disable,
-                          10,y,page_r-10,80,ContentDiag,(HMENU)200,HInstance,NULL);
+                          10,y,page_r-10,110,ContentDiag,(HMENU)200,HInstance,NULL);
   y+=20;
 
   w=GetTextSize(Font,T("In folder")).Width;
@@ -87,6 +161,18 @@ void TDiskManager::ShowContentDiag()
 
   CreateWindow("Button",T("Browse"),WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_CHECKBOX | BS_PUSHLIKE | Disable,
                     page_r-80,y,70,23,ContentDiag,(HMENU)202,HInstance,NULL);
+  y+=30;
+
+  w=GetCheckBoxSize(Font,T("Append disk name")).Width;
+  Win=CreateWindow("Button",T("Append disk name"),WS_CHILD | WS_VISIBLE | Disable | BS_AUTOCHECKBOX,
+                          20,y,w,23,ContentDiag,(HMENU)220,HInstance,NULL);
+  SendMessage(Win,BM_SETCHECK,BST_CHECKED,0);
+
+  Str ShortName=GetContentsGetAppendName(contents_sl[1].String);
+  Win=CreateWindowEx(512,"Edit",ShortName,
+                WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL | Disable,
+                25+w,y,page_r-10-(w+25),23,ContentDiag,(HMENU)221,HInstance,NULL);
+  SendMessage(Win,EM_LIMITTEXT,50,0);
   y+=30;
 
   w=GetTextSize(Font,T("On name conflict")).Width;
@@ -117,12 +203,10 @@ void TDiskManager::ShowDiskDiag()
   DiskDiag=CreateWindowEx(WS_EX_CONTROLPARENT,"Steem Disk Manager Dialog",T("Create Custom Disk Image"),
                           WS_CAPTION | WS_SYSMENU,100,100,256,171+GetSystemMetrics(SM_CYCAPTION),
                            Handle,NULL,HInstance,NULL);
-
-  if (DiskDiag==NULL) return;
-
-  if (IsWindow(DiskDiag)==0){
-    DiskDiag=NULL;return;
+  if (DiskDiag==NULL || IsWindow(DiskDiag)==0){
+    return;
   }
+  EnableWindow(Handle,0);
 
   SetWindowLong(DiskDiag,GWL_USERDATA,(long)this);
 
@@ -197,12 +281,10 @@ void TDiskManager::ShowLinksDiag()
   LinksDiag=CreateWindowEx(WS_EX_CONTROLPARENT,"Steem Disk Manager Dialog",T("Create Multiple Shortcuts"),WS_CAPTION,
                            100,100,406,376+GetSystemMetrics(SM_CYCAPTION),
                            Handle,NULL,HInstance,NULL);
-
-  if (LinksDiag==NULL) return;
-
-  if (IsWindow(LinksDiag)==0){
-    LinksDiag=NULL;return;
+  if (LinksDiag==NULL || IsWindow(LinksDiag)==0){
+    return;
   }
+  EnableWindow(Handle,0);
 
   SetWindowLong(LinksDiag,GWL_USERDATA,(long)this);
 
@@ -280,12 +362,10 @@ void TDiskManager::ShowImportDiag()
   ImportDiag=CreateWindowEx(WS_EX_CONTROLPARENT,"Steem Disk Manager Dialog",T("Import WinSTon Favourites"),WS_CAPTION,
                            100,100,406,196+GetSystemMetrics(SM_CYCAPTION),
                            Handle,NULL,HInstance,NULL);
-
-  if (ImportDiag==NULL) return;
-
-  if (IsWindow(ImportDiag)==0){
-    ImportDiag=NULL;return;
+  if (ImportDiag==NULL || IsWindow(ImportDiag)==0){
+    return;
   }
+  EnableWindow(Handle,0);
 
   SetWindowLong(ImportDiag,GWL_USERDATA,(long)this);
 
@@ -378,10 +458,50 @@ void TDiskManager::ShowImportDiag()
 //---------------------------------------------------------------------------
 void TDiskManager::ShowPropDiag()
 {
+#if USE_PASTI
+  if (hPasti){
+    // sl will contain all pasti disks in the archive (if PropInf.Path is an archive)
+    EasyStringList sl(eslNoSort);
+    if (FileIsDisk(PropInf.Path)==DISK_COMPRESSED){
+      // disks_sl will contain all disks (pasti and non-pasti) in the archive
+      EasyStringList disks_sl(eslNoSort);
+      zippy.list_contents(PropInf.Path,&disks_sl,true);
+      for (int i=0;i<disks_sl.NumStrings;i++){
+        if (FileIsDisk(disks_sl[i].String)==DISK_PASTI){
+          // have to pass correct name to pasti
+          Str temp_out=WriteDir+SLASH+GetFileNameFromPath(disks_sl[i].String);
+          sl.Add(temp_out);
+          zippy.extract_file(PropInf.Path,disks_sl[i].Data[0],temp_out,true,0);
+        }
+      }
+    }
+    if (sl.NumStrings || FileIsDisk(PropInf.Path)==DISK_PASTI){
+      // pass null-term list, disks first, followed by archive 
+      char buf[8192],*p;
+      ZeroMemory(buf,sizeof(buf));
+      p=buf;
+      for (int i=0;i<sl.NumStrings;i++){
+        strcpy(p,sl[i].String);
+        p+=strlen(p)+1;
+      }
+      strcpy(p,PropInf.Path);
+      pasti->DlgFileProps(Handle,buf);
+
+      // clean up unwanted files
+      for (int i=0;i<sl.NumStrings;i++) DeleteFile(sl[i].String);
+      return;
+    }
+  }else{
+    if (has_extension(PropInf.Path,".STX")) return;
+  }
+#endif
+
   PropDiag=CreateWindowEx(WS_EX_CONTROLPARENT,"Steem Disk Manager Dialog",T("Disk Properties"),
                           WS_CAPTION | WS_SYSMENU,100,100,100,199,Handle,NULL,HInstance,NULL);
-
-  if (PropDiag==NULL) return;
+  if (PropDiag==NULL || IsWindow(PropDiag)==0){
+    return;
+  }
+  EnableWindow(Handle,0);
 
   SetWindowLong(PropDiag,GWL_USERDATA,(long)this);
 
@@ -437,7 +557,7 @@ void TDiskManager::ShowPropDiag()
                     10,y,280,215,PropDiag,(HMENU)130,HInstance,NULL);
 
     CreateWindowEx(512,"Edit","",WS_CHILD | WS_VISIBLE | WS_TABSTOP |
-                    ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL,
+                    ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL | ES_READONLY,
                     10,y,280,215,PropDiag,(HMENU)190,HInstance,NULL);
     y+=20;
 
@@ -535,8 +655,6 @@ void TDiskManager::ShowPropDiag()
 //---------------------------------------------------------------------------
 void TDiskManager::PropShowFileInfo(int i)
 {
-  if (has_extension(PropInf.Path,".STT")) return;
-
   EasyStr FileInZip;
   DWORD FileHOffset=0;
   if (FileIsDisk(PropInf.Path)==DISK_COMPRESSED){
@@ -552,9 +670,19 @@ void TDiskManager::PropShowFileInfo(int i)
     }
 
     TFloppyImage TempDrive;
-    // bpbi is what Steem detects the BPB should be (not including the .steembpb file)
-    // file_bpbi is what the raw BPB from the disk is
-    if (TempDrive.SetDisk(PropInf.Path,FileInZip,&bpbi,&file_bpbi)==FIMAGE_OK){
+    Str ErrMsg;
+    Str DiskPath=PropInf.Path;
+    if (FileInZip.NotEmpty()) DiskPath=FileInZip;
+    if (has_extension(DiskPath,".STT")==0 && FileIsDisk(DiskPath)!=DISK_PASTI){
+      // bpbi is what Steem detects the BPB should be (not including the .steembpb file)
+      // file_bpbi is what the raw BPB from the disk is
+      if (TempDrive.SetDisk(PropInf.Path,FileInZip,&bpbi,&file_bpbi)!=FIMAGE_OK){
+        ErrMsg=T("No BPB information");
+      }
+    }else{
+      ErrMsg=T("No BPB information");
+    }
+    if (ErrMsg.Empty()){
       final_bpbi.BytesPerSector=TempDrive.BytesPerSector;
       final_bpbi.Sectors=TempDrive.SectorsPerTrack*TempDrive.TracksPerSide*TempDrive.Sides;
       final_bpbi.SectorsPerTrack=TempDrive.SectorsPerTrack;
@@ -588,7 +716,7 @@ void TDiskManager::PropShowFileInfo(int i)
       }
       TempDrive.RemoveDisk(true);
     }else{
-      SetWindowText(GetDlgItem(PropDiag,131),"Disk is corrupt!");
+      SetWindowText(GetDlgItem(PropDiag,131),ErrMsg);
       SetWindowText(GetDlgItem(PropDiag,132),"");
       for (int i=140;i<190;i++){
         if (GetDlgItem(PropDiag,i)) EnableWindow(GetDlgItem(PropDiag,i),0);
@@ -599,9 +727,10 @@ void TDiskManager::PropShowFileInfo(int i)
     ZipTemp.SetLength(MAX_PATH);
     GetTempFileName(WriteDir,"ZIP",0,ZipTemp);
     if (zippy.extract_file(PropInf.Path,FileHOffset,ZipTemp,true)==ZIPPY_SUCCEED){
-      char Text[32001];
+      char Text[20001];
       FILE *f=fopen(ZipTemp,"rb");
-      Text[fread(Text,1,32000,f)]=0;
+      int Len=fread(Text,1,20000,f);
+      Text[Len]=0;
       fclose(f);
       SetWindowText(GetDlgItem(PropDiag,190),Text);
     }
@@ -621,14 +750,99 @@ LRESULT __stdcall TDiskManager::Dialog_WndProc(HWND Win,UINT Mess,WPARAM wPar,LP
     return DefWindowProc(Win,Mess,wPar,lPar);
   }
 
-  if (Win==This->ContentDiag){
+  if (Win==This->DatabaseDiag){
+    switch (Mess){
+      case WM_COMMAND:
+        switch (LOWORD(wPar)){
+          case IDOK:
+          {
+            Str Find=GetWindowTextStr(GetDlgItem(Win,103));
+            if (Find.Empty()){
+              MessageBeep(0);
+              break;
+            }
+
+            char buf[65536],*p=buf;
+            GetContents_SearchDatabase(Find,buf,sizeof(buf));
+            int n_items=0;
+            while (p[0]){
+              p+=strlen(p)+1;
+              while (p[0]){
+                p+=strlen(p)+1;
+              }
+              p++;
+              n_items++;
+            }
+            if (n_items==0){
+              MessageBeep(0);
+              break;
+            }
+
+            SendDlgItemMessage(Win,111,LVM_DELETEALLITEMS,0,0);
+            SendDlgItemMessage(Win,111,LVM_SETITEMCOUNT,n_items,0);
+            SendDlgItemMessage(Win,111,WM_SETREDRAW,0,0);
+            int i=0;
+            LV_ITEM lvi;
+            lvi.mask=LVIF_TEXT;
+            Str Contents;
+            p=buf;
+            while (p[0]){
+              lvi.iItem=i;
+              lvi.iSubItem=0;
+              lvi.pszText=p;
+              SendDlgItemMessage(Win,111,LVM_INSERTITEM,0,LPARAM(&lvi));
+              p+=strlen(p)+1;
+
+              Contents="";
+              while (p[0]){
+                if (Contents[0]) Contents+=", ";
+                Contents+=p;
+                p+=strlen(p)+1;
+              }
+              lvi.iSubItem=1;
+              lvi.pszText=Contents;
+              SendDlgItemMessage(Win,111,LVM_SETITEM,0,LPARAM(&lvi));
+              p++; // skip content list null
+              i++;
+            }
+            SendDlgItemMessage(Win,111,LVM_SETCOLUMNWIDTH,0,LVSCW_AUTOSIZE);
+            SendDlgItemMessage(Win,111,LVM_SETCOLUMNWIDTH,1,LVSCW_AUTOSIZE);
+            SendDlgItemMessage(Win,111,WM_SETREDRAW,1,0);
+            break;
+          }
+          case IDCANCEL:
+            SetForegroundWindow(This->Handle);
+            EnableWindow(This->Handle,true);
+            DestroyWindow(Win);
+            return 0;
+        }
+        break;
+      case WM_CLOSE:
+        SetForegroundWindow(This->Handle);
+        EnableWindow(This->Handle,true);
+        break;
+      case WM_DESTROY:
+        This->DatabaseDiag=NULL;
+        break;
+    }
+  }else if (Win==This->ContentDiag){
     switch (Mess){
       case WM_COMMAND:
         switch (LOWORD(wPar)){
           case IDOK:
           {
             Str DestFol=GetWindowTextStr(GetDlgItem(Win,201));
+            NO_SLASH(DestFol);
             Str NewLink;
+            Str DiskName;
+            if (SendDlgItemMessage(Win,220,BM_GETCHECK,BST_CHECKED,0)==BST_CHECKED){
+              DiskName=Str(" (")+GetWindowTextStr(GetDlgItem(Win,221))+")";
+            }
+            CreateDirectory(DestFol,NULL);
+            if (GetFileAttributes(DestFol)==0xffffffff){
+              Alert(T("Invalid directory"),T("Error"),0);
+              break;
+            }
             for (int i=2;i<This->contents_sl.NumStrings;i++){
               LV_ITEM lvi;
               lvi.iItem=i-2;
@@ -637,22 +851,24 @@ LRESULT __stdcall TDiskManager::Dialog_WndProc(HWND Win,UINT Mess,WPARAM wPar,LP
               lvi.stateMask=LVIS_STATEIMAGEMASK;
               SendDlgItemMessage(Win,111,LVM_GETITEM,0,(LPARAM)&lvi);
               if (lvi.state & LVI_SI_CHECKED){
-                NewLink=DestFol+SLASH+Str(This->contents_sl[i].String)+".lnk";
+                NewLink=DestFol+SLASH+Str(This->contents_sl[i].String)+DiskName+".lnk";
                 if (Exists(NewLink)){
                   if (This->ContentConflictAction==0){
                     NewLink="";
                   }else if (This->ContentConflictAction==2){
-                    NewLink=GetUniquePath(DestFol,Str(This->contents_sl[i].String)+".lnk");
+                    NewLink=GetUniquePath(DestFol,Str(This->contents_sl[i].String)+DiskName+".lnk");
                   }
                 }
                 if (NewLink.NotEmpty()) CreateLink(NewLink,This->contents_sl[0].String);
               }
             }
-            This->RefreshDiskView("",0,NewLink);
+            if (IsSameStr_I(DestFol,This->DisksFol)) This->RefreshDiskView("",0,NewLink);
           }
           case IDCANCEL:
+            EnableWindow(This->Handle,true);
+            SetForegroundWindow(This->Handle);
             DestroyWindow(Win);
-            break;
+            return 0;
           case 202:
           {
             SendMessage(HWND(lPar),BM_SETCHECK,1,true);
@@ -682,10 +898,11 @@ LRESULT __stdcall TDiskManager::Dialog_WndProc(HWND Win,UINT Mess,WPARAM wPar,LP
             break;
         }
         break;
+      case WM_CLOSE:
+        SendMessage(Win,WM_COMMAND,IDCANCEL,0);
+        break;
       case WM_DESTROY:
         This->ContentDiag=NULL;
-        SetForegroundWindow(This->Handle);
-        EnableWindow(This->Handle,true);
         This->contents_sl.DeleteAll();
         break;
     }
@@ -790,6 +1007,9 @@ LRESULT __stdcall TDiskManager::Dialog_WndProc(HWND Win,UINT Mess,WPARAM wPar,LP
             break;
         }
         break;
+      case WM_CLOSE:
+        SendMessage(Win,WM_COMMAND,IDCANCEL,0);
+        return 0;
       case WM_DESTROY:
         This->LinksDiag=NULL;
         EnableWindow(This->Handle,true);
@@ -840,6 +1060,9 @@ LRESULT __stdcall TDiskManager::Dialog_WndProc(HWND Win,UINT Mess,WPARAM wPar,LP
           }
         }
         break;
+      case WM_CLOSE:
+        SendMessage(Win,WM_COMMAND,IDCANCEL,0);
+        return 0;
       case WM_DESTROY:
         This->ImportDiag=NULL;
         EnableWindow(This->Handle,true);
@@ -982,10 +1205,10 @@ bool TDiskManager::DoCreateMultiLinks()
   SendMessage(GetDlgItem(LinksDiag,101),WM_GETTEXT,MAX_PATH,(LPARAM)LinksTargetPath.Text);
   NO_SLASH(LinksTargetPath);
   if (LinksTargetPath[0]==0){
-    Alert(T("Please enter a file/folder to be the target for the shortcuts."),T("Multiple Links Error"),MB_ICONEXCLAMATION);
+    Alert(T("Please enter a file/folder to be the target for the shortcuts."),T("Multiple Shortcuts Error"),MB_ICONEXCLAMATION);
     return 0;
   }else if (GetFileAttributes(LinksTargetPath)==0xffffffff){
-    Alert(LinksTargetPath+" "+T("does not exist."),T("Multiple Links Error"),MB_ICONEXCLAMATION);
+    Alert(LinksTargetPath+" "+T("does not exist."),T("Multiple Shortcuts Error"),MB_ICONEXCLAMATION);
     return 0;
   }
 
@@ -993,12 +1216,12 @@ bool TDiskManager::DoCreateMultiLinks()
   SendMessage(GetDlgItem(LinksDiag,201),WM_GETTEXT,MAX_PATH,(LPARAM)MultipleLinksPath.Text);
   NO_SLASH(MultipleLinksPath);
   if (MultipleLinksPath[0]==0){
-    Alert(T("Please enter a folder to create the shortcuts in."),T("Multiple Links Error"),MB_ICONEXCLAMATION);
+    Alert(T("Please enter a folder to create the shortcuts in."),T("Multiple Shortcuts Error"),MB_ICONEXCLAMATION);
     return 0;
   }
   if (GetFileAttributes(MultipleLinksPath)==0xffffffff){
     if (CreateDirectory(MultipleLinksPath,NULL)==0){
-      Alert(T("Couldn't create the folder to create the shortcuts in")+" "+MultipleLinksPath,T("Multiple Links Error"),MB_ICONEXCLAMATION);
+      Alert(T("Couldn't create the folder to create the shortcuts in")+" "+MultipleLinksPath,T("Multiple Shortcuts Error"),MB_ICONEXCLAMATION);
       return 0;
     }
   }
@@ -1280,4 +1503,5 @@ bool TDiskManager::DoImport()
 
   return true;
 }
+//---------------------------------------------------------------------------
 

@@ -1,3 +1,9 @@
+/*---------------------------------------------------------------------------
+FILE: notifyinit.cpp
+MODULE: Steem
+DESCRIPTION: The window that appears while Steem is initialising.
+---------------------------------------------------------------------------*/
+
 #ifdef WIN32
 
 #ifndef ONEGAME
@@ -49,6 +55,8 @@ void CreateNotifyInitWin()
 #ifndef ONEGAME
 void SetNotifyInitText(char *NewText)
 {
+  if (NotifyWin==NULL) return;
+  
   SendMessage(NotifyWin,WM_USER,12345,(LPARAM)NewText);
   UpdateWindow(NotifyWin);
 }

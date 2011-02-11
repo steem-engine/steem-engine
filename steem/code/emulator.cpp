@@ -1,3 +1,12 @@
+/*---------------------------------------------------------------------------
+FILE: emulator.cpp
+MODULE: emu
+DESCRIPTION: Miscellaneous core emulator functions. An important function is
+init_timings that sets up all Steem's counters and clocks. Also included is
+the code for Steem's agenda system that schedules tasks to be performed at
+the end of scanlines.
+---------------------------------------------------------------------------*/
+
 //---------------------------------------------------------------------------
 void init_timings()
 {
@@ -66,6 +75,15 @@ void init_timings()
   ikbd_joy_poll_line=0;
   ikbd_key_poll_line=0;
   ikbd_mouse_poll_line=0;
+
+  dma_sound_on_this_screen=0;
+  dma_sound_output_countdown=0;
+  dma_sound_samples_countdown=0;
+  dma_sound_channel_buf_last_write_t=0;
+
+#if USE_PASTI
+  pasti_update_time=ABSOLUTE_CPU_TIME+8000000;
+#endif
 
   hbl_count=0;
 }
@@ -137,7 +155,7 @@ void intercept_bios()
 
   if (func==10){ // Drvbits
     if (os_hdimg_init_vector==0) hdimg_init_vectors();
-    disable_mouse_until=0; // If TOS is making BIOS calls then the IKBD int is ready
+    if (disable_input_vbl_count>30) disable_input_vbl_count=0; // If TOS is making BIOS calls then the IKBD int is ready
 #ifdef DISABLE_STEMDOS
   }
 #else
@@ -187,6 +205,17 @@ void intercept_xbios()
     r[0]=TMToDOSDateTime(lpTime);
 
     M68K_PERFORM_RTE(;);  //don't need to check interrupts because sr won't actually have changed
+/*
+  }else if (m68k_dpeek(sp)==4 && extended_monitor){
+    /// Getrez returns different values in TT modes
+    int em_mode=-1;
+    if (em_width==640 && em_height==480 && em_planes==4) em_mode=4;
+    if (em_width==1280 && em_height==960 && em_planes==1) em_mode=6;
+    if (em_mode>=0){
+      r[0]=em_mode;
+      M68K_PERFORM_RTE(;);  //don't need to check interrupts because sr won't actually have changed
+    }
+*/
   }
 }
 
@@ -667,9 +696,9 @@ void ASMCALL emudetect_falcon_draw_scanline(int border1,int picture,int border2,
       DWORD src;
       for (int n=picture;n>0;n--){
         src=DPEEK(source);source+=2;
-        int r= src & MAKEBINW(b00000000,b00011111);
+        int r=(src & MAKEBINW(b11111000,b00000000)) >> 11;
         int g=(src & MAKEBINW(b00000111,b11100000)) >> 5;
-        int b=(src & MAKEBINW(b11111000,b00000000)) >> 11;
+        int b=(src & MAKEBINW(b00000000,b00011111));
         for (int x=0;x<wh_mul;x++){
           switch (BytesPerPixel){
             case 1: *(pbDest++)=0; break;

@@ -1,3 +1,10 @@
+/*---------------------------------------------------------------------------
+FILE: emu.cpp
+MODULE: emu
+DESCRIPTION: The hub for the emu module that contains Steem's core emulation
+functions. Basically includes all the files that are in the object.
+---------------------------------------------------------------------------*/
+
 #include "pch.h"
 #pragma hdrstop
 
@@ -10,6 +17,9 @@ inline int abs_quick(int i)
 }
 
 #include "conditions.h"
+#if USE_PASTI
+#include <pasti/pasti.h>
+#endif
 
 #include "easystr.h"
 typedef EasyStr Str;
@@ -34,7 +44,7 @@ typedef EasyStr Str;
 
 #ifdef WIN32
 
-#ifndef NO_486_ASM
+#ifndef NO_ASM_PORTIO
 #include <internal_speaker.h>
 #else
 void internal_speaker_sound(int){}
@@ -113,4 +123,23 @@ void m68k_process()
 void m68k_poke_noinline(MEM_ADDRESS ad,BYTE x){ m68k_poke(ad,x); }
 void m68k_dpoke_noinline(MEM_ADDRESS ad,WORD x){ m68k_dpoke(ad,x); }
 void m68k_lpoke_noinline(MEM_ADDRESS ad,LONG x){ m68k_lpoke(ad,x); }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 

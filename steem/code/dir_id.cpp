@@ -1,5 +1,13 @@
+/*---------------------------------------------------------------------------
+FILE: dir_id.cpp
+MODULE: Steem
+DESCRIPTION: This file contains the code for the GUI and the implementation
+of Steem's DirID system. A DirID is an integer representing a PC input that
+can be mapped to perform a function.
+---------------------------------------------------------------------------*/
+
 //---------------------------------------------------------------------------
-bool IsDirIDPressed(int ID,int DeadZonePercent,bool CheckDisable)
+bool IsDirIDPressed(int ID,int DeadZonePercent,bool CheckDisable,bool DiagonalPOV)
 {
   if (BLANK_DIRID(ID)) return 0;
 
@@ -32,10 +40,21 @@ bool IsDirIDPressed(int ID,int DeadZonePercent,bool CheckDisable)
 
       if (DirID>=200){    //POV
         DirID-=200;
+        if (DirID>=8) return 0;
         if (CheckDisable && CutDisablePOV[JoyNum][DirID]) return 0;
         if (JoyInfo[JoyNum].AxisExists[AXIS_POV]==0) return 0;
 
-        return POV_CONV(JoyPos[JoyNum].dwPOV)==DWORD(DirID);
+        int pos=POV_CONV(JoyPos[JoyNum].dwPOV);
+        if (pos==0xffff) return 0;
+        if (pos<0) pos=7;
+        pos%=8;
+        if (pos==DirID) return true;
+        if (DiagonalPOV==0) return 0;
+
+        int prev=DirID-1,next=(DirID+1) % 8;
+        if (prev<0) prev=7;
+        prev%=8;
+        return (pos==next || pos==prev);
       }else if (DirID>=100){ // Button
         DirID-=100;
         if (DirID>=JoyInfo[JoyNum].NumButtons) return 0;

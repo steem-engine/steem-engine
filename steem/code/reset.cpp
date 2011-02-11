@@ -1,3 +1,9 @@
+/*---------------------------------------------------------------------------
+FILE: reset.cpp
+MODULE: emu
+DESCRIPTION: Functions to reset the emulator to a startup state.
+---------------------------------------------------------------------------*/
+
 //---------------------------------------------------------------------------
 void power_on()
 {
@@ -66,15 +72,17 @@ void power_on()
 
   hdimg_reset();
 
-  reset_peripherals();
+  reset_peripherals(true);
 
   init_screen();
   init_timings();
   hbl_pending=false;
+
+  disable_input_vbl_count=50*3; // 3 seconds
 }
 //---------------------------------------------------------------------------
 #define LOGSECTION LOGSECTION_ALWAYS
-void reset_peripherals()
+void reset_peripherals(bool Cold)
 {
   log("***** reset peripherals ****");
 
@@ -113,6 +121,13 @@ void reset_peripherals()
   fdc_read_address_buffer_len=0;
   dma_bytes_written_for_sector_count=0;
 
+#if USE_PASTI
+  if (hPasti){
+//    log_to(LOGSECTION_PASTI,"PASTI: Reset, calling HwReset()");
+    pasti->HwReset(Cold);
+  }
+#endif
+
   ZeroMemory(mfp_reg,sizeof(mfp_reg));
   mfp_reg[MFPR_GPIP]=mfp_gpip_no_interrupt;
   mfp_reg[MFPR_AER]=0x4;   // CTS goes the other way
@@ -124,10 +139,12 @@ void reset_peripherals()
   dma_sound_control=0;
   dma_sound_start=0,next_dma_sound_start=0;
   dma_sound_end=0,next_dma_sound_end=0;
-  dma_sound_addr_to_read_next=dma_sound_start;
+  dma_sound_fetch_address=dma_sound_start;
   dma_sound_mode=BIT_7;
-  dma_sound_freq=dma_sound_mode_to_freq[0][0];
-  dma_sound_countdown=dma_sound_freq;
+  dma_sound_freq=dma_sound_mode_to_freq[0];
+  dma_sound_output_countdown=0;
+  dma_sound_samples_countdown=0;
+  dma_sound_last_word=MAKEWORD(128,128);
 
   MicroWire_Mask=0x07ff,MicroWire_Data=0;
   dma_sound_volume=40;
@@ -139,7 +156,7 @@ void reset_peripherals()
 
   ACIA_Reset(NUM_ACIA_IKBD,true);
 
-  ikbd_reset(true);
+  ikbd_reset(true); // Always cold reset, soft reset is different
 
   ACIA_Reset(NUM_ACIA_MIDI,true);
 
@@ -161,12 +178,18 @@ void reset_peripherals()
 }
 #undef LOGSECTION
 //---------------------------------------------------------------------------
-void reset_st(bool Stop,bool Warm,bool ChangeSettings)
+void reset_st(DWORD flags)
 {
+  bool Stop=bool(flags & RESET_NOSTOP)==0;
+  bool Warm=bool(flags & RESET_WARM);
+  bool ChangeSettings=bool(flags & RESET_NOCHANGESETTINGS)==0;
+  bool Backup=bool(flags & RESET_NOBACKUP)==0;
+  
   if (runstate==RUNSTATE_RUNNING && Stop) runstate=RUNSTATE_STOPPING;
+  if (Backup) GUISaveResetBackup();
 
   if (Warm){
-    reset_peripherals();
+    reset_peripherals(0);
 #ifndef DISABLE_STEMDOS
     stemdos_set_drive_reset();
 #endif

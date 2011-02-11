@@ -1,3 +1,10 @@
+/*---------------------------------------------------------------------------
+FILE: ior.cpp
+MODULE: emu
+DESCRIPTION: I/O address reads. This file contains crucial core functions
+that deal with reads from ST I/O addresses ($ff8000 onwards).
+---------------------------------------------------------------------------*/
+
 #define LOGSECTION LOGSECTION_IO
 
 MEM_ADDRESS get_shifter_draw_pointer(int cycles_since_hbl)
@@ -23,7 +30,6 @@ MEM_ADDRESS get_shifter_draw_pointer(int cycles_since_hbl)
 
     if (left_border==0){ starts_counting-=26;bytes_to_count+=28; }
 
-//    if (left_border==BORDER_SIDE-4) shifter_starts_counting-=2;
     if (right_border==0){
       bytes_to_count+=50; //44
     }else if (shifter_skip_raster_for_hscroll){
@@ -82,9 +88,7 @@ BYTE ASMCALL io_read_b(MEM_ADDRESS addr)
   FFFA00 - FFFA3F   MFP
 */
 
-#ifdef _DEBUG_BUILD
-  debug_check_io_monitor(addr,true);
-#endif
+  DEBUG_CHECK_READ_IO_B(addr);
 
 #ifdef ONEGAME
   if (addr>=OG_TEXT_ADDRESS && addr<OG_TEXT_ADDRESS+OG_TEXT_LEN){
@@ -95,7 +99,24 @@ BYTE ASMCALL io_read_b(MEM_ADDRESS addr)
     case 0xfffc00:      //----------------------------------- ACIAs
     {
       // Only cause bus jam once per word
-      DEBUG_ONLY( if (mode==STEM_MODE_CPU) ) if (io_word_access==0 || (addr & 1)==0) BUS_JAM_TIME(8);
+      DEBUG_ONLY( if (mode==STEM_MODE_CPU) )
+      {
+        if (io_word_access==0 || (addr & 1)==0){
+//          if (passed VBL or HBL point){
+//            BUS_JAM_TIME(4);
+//          }else{
+          // Jorge Cwik:
+          // Access to the ACIA is synchronized to the E signal. Which is a clock with
+          // one tenth the frequency of the main CPU clock (800 Khz). So the timing
+          // should depend on the phase relationship between both clocks.
+
+          int rel_cycle=ABSOLUTE_CPU_TIME-shifter_cycle_base;
+          rel_cycle=8000000-rel_cycle;
+          rel_cycle%=10;
+          BUS_JAM_TIME(rel_cycle+6);
+//          BUS_JAM_TIME(8);
+        }
+      }
 
       switch (addr){
 /******************** Keyboard ACIA ************************/
@@ -204,7 +225,7 @@ BYTE ASMCALL io_read_b(MEM_ADDRESS addr)
                   }
                 }
               }
-              LOG_ONLY( if (mode==STEM_MODE_CPU) log_to(LOGSECTION_MFP_TIMERS,Str("MFP: ")+HEXSl(old_pc,6)+
+              LOG_ONLY( DEBUG_ONLY( if (mode==STEM_MODE_CPU) ) log_to(LOGSECTION_MFP_TIMERS,Str("MFP: ")+HEXSl(old_pc,6)+
                       " - Read timer "+char('A'+(n-MFPR_TADR))+" counter as "+x); )
             }else if (n>=MFPR_SCR){
               x=RS232_ReadReg(n);
@@ -247,8 +268,7 @@ BYTE ASMCALL io_read_b(MEM_ADDRESS addr)
     }case 0xff8900:{      //----------------------------------- STE DMA Sound
       switch (addr){
         case 0xff8901:   //DMA control register
-//          CheckForDMAEndOrLoop();
-          LOG_ONLY( if (mode==STEM_MODE_CPU) log_to(LOGSECTION_SOUND,Str("SOUND: ")+HEXSl(old_pc,6)+
+          LOG_ONLY( DEBUG_ONLY( if (mode==STEM_MODE_CPU) ) log_to(LOGSECTION_SOUND,Str("SOUND: ")+HEXSl(old_pc,6)+
                         " - Read DMA sound control as $"+HEXSl(dma_sound_control,2)); )
           return dma_sound_control;
         case 0xff8903:   //HiByte of frame start address
@@ -259,38 +279,9 @@ BYTE ASMCALL io_read_b(MEM_ADDRESS addr)
         case 0xff890B:   //MidByte of frame address counter
         case 0xff890D:   //LoByte of frame address counter
         {
-          LOG_ONLY( if (mode==STEM_MODE_CPU) log_to(LOGSECTION_SOUND,Str("SOUND: ")+HEXSl(old_pc,6)+
-                          " - Read DMA sound pointer"); )
-          MEM_ADDRESS Adr=dma_sound_start;
-          if (dma_sound_control & BIT_0){ // Playing
-            dma_sound_write_to_buffer(ABSOLUTE_CPU_TIME);
-
-            double a;
-            a=(ABSOLUTE_CPU_TIME-dma_sound_start_time);
-            a*=dma_sound_freq;
-            a/=n_cpu_cycles_per_second;
-
-            int samples_since_last_start=int(a);
-
-            if ((dma_sound_mode & BIT_7)==0) samples_since_last_start*=2;   //stereo
-
-            Adr=min(dma_sound_start+samples_since_last_start,dma_sound_end);
-#ifdef ENABLE_LOGFILE
-            if (mode==STEM_MODE_CPU){
-              log_to_section(LOGSECTION_SOUND,EasyStr("     dma_sound_start_time=")+dma_sound_start_time);
-              log_to_section(LOGSECTION_SOUND,EasyStr("     ABSOLUTE_CPU_TIME=")+ABSOLUTE_CPU_TIME);
-              log_to_section(LOGSECTION_SOUND,EasyStr("     samples_since_last_start=")+samples_since_last_start);
-            }
-#endif
-          }else{
-            Adr=dma_sound_addr_to_read_next;
-          }
-          LOG_ONLY( if (mode==STEM_MODE_CPU) log_to_section(LOGSECTION_SOUND,EasyStr("     POINTER=")+HEXSl(Adr,6)+
-                          "; start="+HEXSl(dma_sound_start,6)+"; end="+HEXSl(dma_sound_end,6)); )
-          Adr&=-2;
-          if (addr==0xff8909) return DWORD_B_2(&Adr);
-          if (addr==0xff890B) return DWORD_B_1(&Adr);
-          return DWORD_B_0(&Adr);
+          if (addr==0xff8909) return DWORD_B_2(&dma_sound_fetch_address);
+          if (addr==0xff890B) return DWORD_B_1(&dma_sound_fetch_address);
+          return DWORD_B_0(&dma_sound_fetch_address);
         }
         case 0xff890F:   //HiByte of frame end address
           return LOBYTE(HIWORD(next_dma_sound_end));
@@ -338,11 +329,12 @@ BYTE ASMCALL io_read_b(MEM_ADDRESS addr)
         ioaccess|=IOACCESS_FLAG_PSG_BUS_JAM_R;
       }
       if ((addr & 1) && io_word_access) return 0xff; //odd addresses ignored on word writes
+
       if ((addr & 2)==0){ //read data / register select, mirrored at 4,8,12,...
         if (psg_reg_select==PSGR_PORT_A){
           // Drive A, drive B, side, RTS, DTR, strobe and monitor GPO
           // are normally set by ST
-          BYTE Ret=BYTE(psg_reg[PSGR_PORT_A] | b10000000); // Bit 7 unused
+          BYTE Ret=psg_reg[PSGR_PORT_A];
 
           // Parallel port 0 joystick fire (strobe)
           if (stick[N_JOY_PARALLEL_0] & BIT_4){
@@ -371,6 +363,29 @@ BYTE ASMCALL io_read_b(MEM_ADDRESS addr)
       }
       return 0xff;
     }case 0xff8600:{      //----------------------------------- DMA/FDC
+      if (addr>0xff860f) exception(BOMBS_BUS_ERROR,EA_READ,addr);
+      if (addr<0xff8604) exception(BOMBS_BUS_ERROR,EA_READ,addr);
+      if (addr<0xff8608 && io_word_access==0) exception(BOMBS_BUS_ERROR,EA_READ,addr);
+#if USE_PASTI
+      if (hPasti && pasti_active){
+        if (addr<0xff8608){ // word only
+          if (addr & 1) return LOBYTE(pasti_store_byte_access);
+        }
+        struct pastiIOINFO pioi;
+        pioi.addr=addr;
+        pioi.stPC=pc;
+        pioi.cycles=ABSOLUTE_CPU_TIME;
+//          log_to(LOGSECTION_PASTI,Str("PASTI: IO read addr=$")+HEXSl(addr,6)+" pc=$"+HEXSl(pc,6)+" cycles="+pioi.cycles);
+        pasti->Io(PASTI_IOREAD,&pioi);
+        pasti_handle_return(&pioi);
+        if (addr<0xff8608){ // word only
+          pasti_store_byte_access=WORD(pioi.data);
+          pioi.data=HIBYTE(pioi.data);
+        }
+//          log_to(LOGSECTION_PASTI,Str("PASTI: Read returning $")+HEXSl(BYTE(pioi.data),2)+" ("+BYTE(pioi.data)+")");
+        return BYTE(pioi.data);
+      }
+#endif
       switch(addr){
       case 0xff8604:  //high byte of FDC access
         //should check bit 8 = 0 (read)
@@ -378,7 +393,7 @@ BYTE ASMCALL io_read_b(MEM_ADDRESS addr)
           return HIBYTE(dma_sector_count);
         }
         if (dma_mode & BIT_3){ // HD access
-          LOG_ONLY( if (mode==STEM_MODE_CPU) log_to(LOGSECTION_FDC,Str("FDC: ")+HEXSl(old_pc,6)+
+          LOG_ONLY( DEBUG_ONLY( if (mode==STEM_MODE_CPU) ) log_to(LOGSECTION_FDC,Str("FDC: ")+HEXSl(old_pc,6)+
                 " - Reading high byte of HDC register #"+((dma_mode & BIT_1) ? 1:0)); )
           return 0xff;
         }
@@ -390,7 +405,7 @@ BYTE ASMCALL io_read_b(MEM_ADDRESS addr)
         }
 
         if (dma_mode & BIT_3){ // HD access
-          LOG_ONLY( if (mode==STEM_MODE_CPU) log_to(LOGSECTION_FDC,Str("FDC: ")+HEXSl(old_pc,6)+
+          LOG_ONLY( DEBUG_ONLY( if (mode==STEM_MODE_CPU) ) log_to(LOGSECTION_FDC,Str("FDC: ")+HEXSl(old_pc,6)+
                   " - Reading low byte of HDC register #"+((dma_mode & BIT_1) ? 1:0)); )
           return 0xff;
         }
@@ -434,12 +449,13 @@ BYTE ASMCALL io_read_b(MEM_ADDRESS addr)
               }
             } // else it should be set in fdc_execute()
             if ((mfp_reg[MFPR_GPIP] & BIT_5)==0){
-              LOG_ONLY( if (mode==STEM_MODE_CPU) log_to(LOGSECTION_FDC,Str("FDC: ")+HEXSl(old_pc,6)+
+              LOG_ONLY( DEBUG_ONLY( if (mode==STEM_MODE_CPU) ) log_to(LOGSECTION_FDC,Str("FDC: ")+HEXSl(old_pc,6)+
                           " - Reading status register as "+Str(itoa(fdc_str,d2_t_buf,2)).LPad(8,'0')+
                           " ($"+HEXSl(fdc_str,2)+"), clearing IRQ"); )
               floppy_irq_flag=0;
               mfp_gpip_set_bit(MFP_GPIP_FDC_BIT,true); // Turn off IRQ output
             }
+//            log_DELETE_SOON(Str("FDC: ")+HEXSl(old_pc,6)+" - reading FDC status register as $"+HEXSl(fdc_str,2));
 /*
             LOG_ONLY( if (mode==STEM_MODE_CPU) log_to(LOGSECTION_FDC,Str("FDC: ")+HEXSl(old_pc,6)+
                             " - Read status register as $"+HEXSl(fdc_str,2)); )
@@ -473,9 +489,6 @@ BYTE ASMCALL io_read_b(MEM_ADDRESS addr)
       }
       case 0xff860f: //high byte of frequency/density control?
         return 0;
-      }
-      if (addr & 0xf0){ //forbidden range
-        exception(BOMBS_BUS_ERROR,EA_READ,addr);
       }
       break;
     }case 0xff8200:{      //----------------------------------- shifter
@@ -519,10 +532,9 @@ FF8240 - FF827F   palette, res
             sdp=shifter_draw_pointer;
           }else{
             sdp=get_shifter_draw_pointer(ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl);
-            LOG_ONLY( if (mode==STEM_MODE_CPU) log_to(LOGSECTION_VIDEO,Str("VIDEO: ")+HEXSl(old_pc,6)+
+            LOG_ONLY( DEBUG_ONLY( if (mode==STEM_MODE_CPU) ) log_to(LOGSECTION_VIDEO,Str("VIDEO: ")+HEXSl(old_pc,6)+
                         " - Read shifter draw pointer as $"+HEXSl(sdp,6)+
-                        " on picture scanline "+scan_y+" cycles "+
-                        (ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl)); )
+                        " on "+scanline_cycle_log()); )
           }
           return DWORD_B(&sdp, (2-(addr-0xff8205)/2) );    // change for big endian
         }
@@ -610,6 +622,7 @@ FF8240 - FF827F   palette, res
           case 0xffc11a: return emudetect_write_logs_to_printer;
           case 0xffc11b: return emudetect_falcon_mode;
           case 0xffc11c: return BYTE((emudetect_falcon_mode_size-1) + (emudetect_falcon_extra_height ? 2:0));
+          case 0xffc11d: return emudetect_overscans_fixed;
         }
         if (addr<0xffc120) return 0;
       }
@@ -623,10 +636,7 @@ FF8240 - FF827F   palette, res
 WORD ASMCALL io_read_w(MEM_ADDRESS addr)
 {
   if (addr>=0xff8240 && addr<0xff8260){  //palette
-#ifdef _DEBUG_BUILD
-    debug_check_io_monitor(addr,true);
-    debug_check_io_monitor(addr+1,true);
-#endif
+    DEBUG_CHECK_READ_IO_W(addr);
     int n=addr-0xff8240;n/=2;
     return STpal[n];
   }else{

@@ -37,7 +37,6 @@ EXT void osd_routines_init();
 EXT void osd_init_draw_static();
 EXT bool osd_is_on(bool);
 
-
 #ifdef WIN32
 EXT void osd_draw_reset_info(HDC);
 #else
@@ -51,6 +50,7 @@ UNIX_ONLY( extern "C" long* Get_charset_blk(); )
 #ifdef IN_MAIN
 
 void osd_pick_scroller();
+EXT EasyStr get_osd_scroller_text(int n);
 
 EasyStr osd_scroller;
 EasyStringList osd_scroller_array;

@@ -1,3 +1,10 @@
+/*---------------------------------------------------------------------------
+FILE: steemintro.cpp
+MODULE: Steem
+DESCRIPTION: The intro that appears when Steem is first run that allows the
+user to configure the most common options.
+---------------------------------------------------------------------------*/
+
 //---------------------------------------------------------------------------
 int SteemIntro()
 {
@@ -178,7 +185,7 @@ int SteemIntro()
   }
 
 	caption=T("Get Ready For Steem!");
-	text=T("Congratulations, Steem is now ready to go. Click on the green play button to start emulation. To release the PC mouse press the Pause/Break key. To stop emulation click on the run button again or press Shift + Pause/Break.")+
+	text=T("Congratulations, Steem is now ready to go. Click on the yellow play button to start emulation. To release the PC mouse press the Pause/Break key. To stop emulation click on the run button again or press Shift + Pause/Break.")+
          "\n\n"+T("Have fun!");
 
 #ifdef WIN32

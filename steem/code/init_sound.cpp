@@ -1,3 +1,10 @@
+/*---------------------------------------------------------------------------
+FILE: init_sound.cpp
+MODULE: Steem
+DESCRIPTION: The guts of Steem's sound output code, uses a DirectSound buffer
+for output.
+---------------------------------------------------------------------------*/
+
 #define LOGSECTION LOGSECTION_SOUND
 //---------------------------------------------------------------------------
 void sound_record_open_file()
@@ -64,6 +71,8 @@ HRESULT InitSound()
 {
   SetNotifyInitText("DirectSound");
 
+  SoundRelease();
+
   HRESULT Ret;
   // Hey, this allows Steem to run even if there is no DSound.dll
   log("SOUND: Attempting to load dsound.dll");
@@ -83,7 +92,6 @@ HRESULT InitSound()
   Ret=CoCreateInstance(CLSID_DirectSound,NULL,CLSCTX_ALL,IID_IDirectSound,(void**)&DSObj);
   if (Ret!=S_OK || DSObj==NULL){
     DSObj=NULL;
-    UseSound=0;
 
     EasyStr Err="Unknown error";
     switch (Ret){
@@ -182,6 +190,7 @@ HRESULT InitSound()
     // Apparently cannot even achieve lowest possible frequency
     SoundCaps.dwMaxSecondarySampleRate=100000; //Ignore!
   }
+  UseSound=1;
   return DS_OK;
 }
 //---------------------------------------------------------------------------
@@ -483,13 +492,18 @@ HRESULT SoundStartBuffer(int flatlevel1,int flatlevel2)
   return DS_OK;
 }
 //---------------------------------------------------------------------------
+bool SoundActive()
+{
+  return UseSound && DSOpen;
+}
+//---------------------------------------------------------------------------
 HRESULT Sound_Stop(bool Immediate)
 {
   sound_record_close_file();
   sound_record=false;
   if (sound_internal_speaker) SoundStopInternalSpeaker();
 
-  if (Immediate || sound_click_at_start){
+  if (Immediate || sound_click_at_start || sound_write_primary){
     DSReleaseAllBuffers();
   }else if (SoundBuf && DSOpen){
     // No rush, so stop click
@@ -506,8 +520,9 @@ HRESULT Sound_Stop(bool Immediate)
     if (SoundLockBuffer(StartWrite,(play_cursor-StartWrite)-1,
                         &(lpDat[0]),&(DatLen[0]),&(lpDat[1]),&(DatLen[1]))==DS_OK){
       int target_level=BYTE((sound_num_bits==8) ? 128:0);
-      int current[2]={(psg_voltage+dma_sound_last_sample_l) >> 8,
-                      (psg_voltage+dma_sound_last_sample_r) >> 8};
+      WORD dma_l,dma_r;
+      dma_sound_get_last_sample(&dma_l,&dma_r);
+      int current[2]={(psg_voltage >> 8) + HIBYTE(dma_l),(psg_voltage >> 8) + HIBYTE(dma_r)};
       if (sound_num_bits==16){
         current[0]^=128;current[1]^=128;
       }

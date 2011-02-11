@@ -1,3 +1,9 @@
+/*---------------------------------------------------------------------------
+FILE: diskman_drag.cpp
+MODULE: Steem
+DESCRIPTION: Routines to handle dragging in the Disk Manager.
+---------------------------------------------------------------------------*/
+
 //---------------------------------------------------------------------------
 void TDiskManager::BeginDrag(int Item,HWND From)
 {
@@ -256,6 +262,7 @@ void TDiskManager::EndDrag(int x,int y,bool RightDrag)
             AppendMenu(OpMenu,MF_STRING,4002,T("Create &Shortcut Here"));
             if (DragInf->Folder==0) AppendMenu(OpMenu,MF_STRING,4010,T("Create M&ultiple Shortcuts Here"));
             if (DestFol!=DisksFol && DragInf->Folder==0){
+              AppendMenu(OpMenu,MF_STRING,4012,T("Move Disk Here and &Get Contents"));
               AppendMenu(OpMenu,MF_STRING,4011,T("Move Disk Here and Create Multiple Shortcuts to it"));
             }
           }else{
@@ -283,7 +290,7 @@ void TDiskManager::EndDrag(int x,int y,bool RightDrag)
         }else{
           MenuTarget=int(DragInf->LinkPath.IsEmpty() ? 4000:4003);
         }
-        EasyStr SrcFol=LPSTR((MenuTarget==4000 || MenuTarget==4001 || MenuTarget==4011) ? DragInf->Path:DragInf->LinkPath);
+        EasyStr SrcFol=LPSTR((MenuTarget==4000 || MenuTarget==4001 || MenuTarget==4011 || MenuTarget==4012) ? DragInf->Path:DragInf->LinkPath);
         RemoveFileNameFromPath(SrcFol,REMOVE_SLASH);
         if (MenuTarget==4002){  //Create Shortcut
           EasyStr LinkName=DestFol+"\\"+DragInf->Name+".lnk";
@@ -300,10 +307,17 @@ void TDiskManager::EndDrag(int x,int y,bool RightDrag)
           }
         }else if (((MenuTarget==4001 && DragInf->Folder==0) || MenuTarget==4004) && SrcFol==DestFol){
           EasyStr Name=GetFileNameFromPath(LPSTR((MenuTarget==4001) ? DragInf->Path:DragInf->LinkPath));
+          EasyStr Ext;
+          char *dot=strrchr(Name,'.');
+          if (dot){
+            Ext=dot;
+            *dot=0;
+          }
+
           EasyStr Path;
           int n=2;
           do{
-            Path=DestFol+"\\"+Name+" ("+ (n++) +")";
+            Path=DestFol+"\\"+Name+" ("+ (n++) +")"+Ext;
           }while (Exists(Path));
 
           CopyFile(LPSTR((MenuTarget==4001) ? DragInf->Path:DragInf->LinkPath),Path,true);
@@ -315,10 +329,17 @@ void TDiskManager::EndDrag(int x,int y,bool RightDrag)
             RefreshDiskView("",true,Path);
           }
           DropTarget=-1;
-        }else if (MenuTarget==4000 || MenuTarget==4001 || MenuTarget==4011 || //Move/Copy Path
+        }else if (MenuTarget==4000 || MenuTarget==4001 || MenuTarget==4011 || MenuTarget==4012 || //Move/Copy Path
                     MenuTarget==4003 || MenuTarget==4004){  //Move/Copy LinkPath
           bool Moving=(MenuTarget==4000 || MenuTarget==4011 || MenuTarget==4003);
           bool DiskIsTarget=(MenuTarget<4003 || MenuTarget==4011);
+          bool DoIt=true;
+          if (MenuTarget==4012){ // Get contents
+            Moving=true;
+            DiskIsTarget=true;
+            GetContentsSL(DragInf->Path);
+            if (contents_sl.NumStrings==0) DoIt=0;
+          }
           EasyStr To;
           char From[MAX_PATH+2];
           ZeroMemory(From,MAX_PATH+2);
@@ -332,50 +353,55 @@ void TDiskManager::EndDrag(int x,int y,bool RightDrag)
           }
           char *DiskPath="";
           if (DiskIsTarget) DiskPath=DragInf->Path;
-          if (MoveOrCopyFile(Moving,From,To,DiskPath,IsSameStr_I(SrcFol,DestFol))){
-            if (Moving && DiskIsTarget && DragInf->LinkPath.NotEmpty()){
-              //Update shortcut for the new location of disk
-              CreateLink(DragInf->LinkPath,To);
-            }
-            LinksTargetPath=To;
-            if (IsSameStr_I(SrcFol,DisksFol) || IsSameStr_I(DestFol,DisksFol)){
-              //Refresh the DiskView
-              if (DraggedToFolder){
-                if (DestInf->LinkPath.NotEmpty()){
-                  RefreshDiskView("",0,DestInf->LinkPath);
+          if (DoIt){
+            if (MoveOrCopyFile(Moving,From,To,DiskPath,IsSameStr_I(SrcFol,DestFol))){
+              if (Moving && DiskIsTarget && DragInf->LinkPath.NotEmpty()){
+                //Update shortcut for the new location of disk
+                CreateLink(DragInf->LinkPath,To);
+              }
+              LinksTargetPath=To;
+              if (IsSameStr_I(SrcFol,DisksFol) || IsSameStr_I(DestFol,DisksFol)){
+                //Refresh the DiskView
+                if (DraggedToFolder){
+                  if (DestInf->LinkPath.NotEmpty()){
+                    RefreshDiskView("",0,DestInf->LinkPath);
+                  }else{
+                    RefreshDiskView(DestInf->Path);
+                  }
                 }else{
-                  RefreshDiskView(DestInf->Path);
-                }
-              }else{
-                if (DiskIsTarget){ // Path operation
-                  if (DragInf->LinkPath.NotEmpty()){
-                    if (IsSameStr_I(DestFol,DisksFol)){
-                      RefreshDiskView(To);
+                  if (DiskIsTarget){ // Path operation
+                    if (DragInf->LinkPath.NotEmpty()){
+                      if (IsSameStr_I(DestFol,DisksFol)){
+                        RefreshDiskView(To);
+                      }else{
+                        RefreshDiskView("",0,DragInf->LinkPath);
+                      }
+                    }else{
+                      RefreshDiskView("",0,"",GetSelectedItem());
+                    }
+                  }else{                // LinkPath operation
+                    if (MenuTarget==4003){
+                      RefreshDiskView("",0,"",GetSelectedItem());
                     }else{
                       RefreshDiskView("",0,DragInf->LinkPath);
                     }
-                  }else{
-                    RefreshDiskView("",0,"",GetSelectedItem());
-                  }
-                }else{                // LinkPath operation
-                  if (MenuTarget==4003){
-                    RefreshDiskView("",0,"",GetSelectedItem());
-                  }else{
-                    RefreshDiskView("",0,DragInf->LinkPath);
                   }
                 }
+                DropTarget=-1;
               }
-              DropTarget=-1;
-            }
-            if (MenuTarget==4011){
-              EnableWindow(Handle,0);
-              MultipleLinksPath=SrcFol;
-              ShowLinksDiag();
-              RefreshDiskView("",0,"",GetSelectedItem());
+              if (MenuTarget==4011){
+                MultipleLinksPath=SrcFol;
+                ShowLinksDiag();
+                RefreshDiskView("",0,"",GetSelectedItem());
+              }else if (MenuTarget==4012){
+                contents_sl.SetString(0,To);
+                ContentsLinksPath=DisksFol;
+                EnableWindow(Handle,0);
+                ShowContentDiag();
+              }
             }
           }
         }else if (MenuTarget==4010){
-          EnableWindow(Handle,0);
           MultipleLinksPath=DestFol;
           LinksTargetPath=DragInf->Path;
           ShowLinksDiag();
@@ -434,10 +460,17 @@ bool TDiskManager::MoveOrCopyFile(bool Moving,char *From,char *To,char *DiskPath
   if (SameFol){
     RemoveFileNameFromPath(Dest,KEEP_SLASH);
     Str FromName=GetFileNameFromPath(From);
+    EasyStr Ext;
+    char *dot=strrchr(FromName,'.');
+    if (dot){
+      Ext=dot;
+      *dot=0;
+    }
+    
     Str f;
     int i=2;
     do{
-      f=FromName+" ("+(i++)+")";
+      f=FromName+" ("+(i++)+")"+Ext;
     }while (Exists(Dest+f));
     Dest+=f;
   }
@@ -479,4 +512,5 @@ bool TDiskManager::MoveOrCopyFile(bool Moving,char *From,char *To,char *DiskPath
     return true;
   }
 }
+//---------------------------------------------------------------------------
 

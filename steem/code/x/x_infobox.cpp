@@ -25,7 +25,7 @@ void TGeneralInfo::Show()
   if (ShowFAQ) page_lv.sl.Add("FAQ",101+ICO16_FAQ,INFOPAGE_FAQ);
   page_lv.sl.Add(T("About"),101+ICO16_GENERALINFO,INFOPAGE_ABOUT);
   if (ShowDrawSpeed) page_lv.sl.Add(T("Draw Speed"),101+ICO16_DRAWSPEED,INFOPAGE_DRAWSPEED);
-//  page_lv.sl.Add(T("Links"),101+ICO16_LINKS,INFOPAGE_LINKS);
+  page_lv.sl.Add(T("Links"),101+ICO16_LINKS,INFOPAGE_LINKS);
   if (ShowDiskHowto) page_lv.sl.Add("Disk Image Howto",101+ICO16_DISK,INFOPAGE_HOWTO_DISK);
   if (ShowCartHowto) page_lv.sl.Add("Cartridge Image Howto",101+ICO16_CHIP,INFOPAGE_HOWTO_CART);
 
@@ -52,7 +52,7 @@ void TGeneralInfo::Show()
 
 void TGeneralInfo::CreateAboutPage()
 {
-  EasyStr Text=EasyStr("Steem Engine v")+(char*)stem_version_text+", X release "+(char*)stem_x_version_text+"\n";
+  EasyStr Text=EasyStr("Steem Engine v")+(char*)stem_version_text+"\n";
 	Text+="Built " __DATE__ "\n";
   Text+="Written by Anthony & Russell Hayward";
   if (TranslateBuf){
@@ -79,13 +79,10 @@ void TGeneralInfo::CreateAboutPage()
   thanks_label.create(XD,gb.handle,10,20+h,0,0,NULL,this,
                     BT_LABEL,T("Thanks To"),-59,hxc::col_bk);
   thanks.create(XD,gb.handle,10,thanks_label.y+thanks_label.h,
-                  gb.w-20,gb.h-h-90,hxc::col_white);
+                  gb.w-20,gb.h-h-70,hxc::col_white);
 
 	steem_link.create(XD,gb.handle,10,thanks.y+thanks.h+10,0,0,
-            button_notifyproc,this,BT_LINK|BT_TEXT,STEEM_WEB,-56,
-            hxc::col_bk);
-	email_link.create(XD,gb.handle,10,steem_link.y+steem_link.h+4,0,0,
-            button_notifyproc,this,BT_LINK|BT_TEXT,"mailto:" STEEM_EMAIL,-57,
+            hyperlink_np,this,BT_LINK|BT_TEXT,STEEM_WEB,-56,
             hxc::col_bk);
 }
 
@@ -105,13 +102,13 @@ void TGeneralInfo::CreateLinksPage()
   for (int n=0;n<desc_sl.NumStrings;n++){
     if (desc_sl[n].Data[0]==0){
       b=new hxc_button(XD,sa.handle,10,y,0,0,
-          button_notifyproc,this,BT_LINK|BT_TEXT,
+          hyperlink_np,this,BT_LINK|BT_TEXT,
           Str(desc_sl[n].String)+"|"+link_sl[n].String,0,hxc::col_bk);
       y+=b->h+5;
     }else{
       y+=10;
       b=new hxc_button(XD,sa.handle,10,y,0,0,
-          button_notifyproc,this,BT_STATIC|BT_TEXT,
+          NULL,this,BT_STATIC|BT_TEXT,
           desc_sl[n].String,0,hxc::col_bk);
       y+=b->h+5;
     }
@@ -198,7 +195,7 @@ int TGeneralInfo::WinProc(TGeneralInfo *This,Window Win,XEvent *Ev)
 
   return PEEKED_MESSAGE;
 }
-
+//---------------------------------------------------------------------------
 int TGeneralInfo::button_notifyproc(hxc_button *b,int mess,int*ip)
 {
   if (b->id==500){
@@ -206,18 +203,9 @@ int TGeneralInfo::button_notifyproc(hxc_button *b,int mess,int*ip)
     if (mess==BN_CLICKED) edit_notify_proc((hxc_edit*)hxc::find(This->gb.handle,501),EDN_RETURN,0);
     return 0;
   }
-	if (b->type & BT_LINK){
-    EasyStr Text=b->text;
-    char *pipe=strchr(Text,'|');
-    if (pipe) Text=pipe+1;
-		if (IsSameStr_I(Text.Lefts(7),"http://") || IsSameStr_I(Text.Lefts(7),"mailto:")){
-// Shell netscape somehow
-//  		if (fork()) execlp("netscape","netscape",Text.Text,NULL);
-		}
-  }
 	return 0;
 }
-
+//---------------------------------------------------------------------------
 int TGeneralInfo::listview_notify_proc(hxc_listview *LV,int Mess,int I)
 {
   TGeneralInfo *This=(TGeneralInfo*)(LV->owner);
@@ -231,7 +219,7 @@ int TGeneralInfo::listview_notify_proc(hxc_listview *LV,int Mess,int I)
   }
   return 0;
 }
-
+//---------------------------------------------------------------------------
 int TGeneralInfo::edit_notify_proc(hxc_edit *ed,int mess,int i)
 {
   TGeneralInfo *This=(TGeneralInfo*)(ed->owner);
@@ -247,7 +235,8 @@ int TGeneralInfo::edit_notify_proc(hxc_edit *ed,int mess,int i)
       char *s=strstr(t.Text + This->last_find_idx,ed->text.UpperCase());
       if (s){
         int line=This->readme.get_line_from_character_index(DWORD(s-t.Text));
-        This->readme.highlight_line=line;
+        This->readme.highlight_lines.DeleteAll();
+        This->readme.highlight_lines.Add(line);
         This->readme.scrollto(max(line-3,0)*This->readme.textheight);
         This->readme.draw(true);
 
@@ -264,3 +253,5 @@ int TGeneralInfo::edit_notify_proc(hxc_edit *ed,int mess,int i)
   }
   return 0;
 }
+//---------------------------------------------------------------------------
+

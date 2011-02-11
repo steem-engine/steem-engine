@@ -548,7 +548,7 @@ Str TShortcutBox::ChooseMacro(Str Current)
   EasyStr ret;
   bool show=true;
   for (;;){
-    int chosen=hxc::show_modal_dialog(XD,handle,show);
+    int chosen=hxc::show_modal_dialog(XD,handle,show,dlv.lv.handle);
     if (chosen!=1) break;
 
     ret=dlv.get_item_path(dlv.lv.sel);

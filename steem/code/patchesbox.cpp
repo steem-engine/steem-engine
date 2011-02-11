@@ -1,3 +1,11 @@
+/*---------------------------------------------------------------------------
+FILE: patchesbox.cpp
+MODULE: Steem
+DESCRIPTION: The code for Steem's patches dialog that allows the user to
+apply patches to fix ST programs that don't work or are incompatible with
+Steem.
+---------------------------------------------------------------------------*/
+
 //---------------------------------------------------------------------------
 void TPatchesBox::RefreshPatchList()
 {
@@ -95,77 +103,113 @@ void TPatchesBox::ApplyPatch()
     fread(Text.Text,1,Len,f);
     fclose(f);
 
-    int NumBytesChanged=0;
     strupr(Text);
+
+    int NumBytesChanged=0;
+    DynamicArray<BYTE> Bytes;
+    EasyStringList Offsets;
+    Offsets.Sort=eslNoSort;
+
     char *Sect=strstr(Text,"\n[PATCH]");
+
+    bool WordOnly;
+    char *OffsetSect=strstr(Text,"\n[OFFSETS]");
+    if (OffsetSect){
+      OffsetSect+=2; // skip \n[
+      char *OffsetSectEnd=strstr(OffsetSect,"\n[");
+      if (OffsetSectEnd==NULL) OffsetSectEnd=Text.Right()+1; // point to NULL
+      char *tp=OffsetSect;
+      while (tp<OffsetSectEnd){
+        if (*tp==13 || *tp==10) *tp=0;
+        tp++;
+      }
+      tp=OffsetSect+strlen(OffsetSect)+1;
+      while (tp<OffsetSectEnd){
+        char *next_line=tp+strlen(tp)+1;
+        char *eq=strchr(tp,'=');
+        if (eq){
+          *eq=0;eq++;
+          // Offset name = tp
+          WordOnly=0;
+          acc_parse_search_string(eq,Bytes,WordOnly);
+          MEM_ADDRESS offset_ad=acc_find_bytes(Bytes,WordOnly,0,1);
+          if (offset_ad<=0xffffff){
+            while (tp[0]==' ') tp++;
+            while (*(tp+strlen(tp)-1)==' ') *(tp+strlen(tp)-1)=0;
+            Offsets.Add(tp,(long)offset_ad);
+          }
+        }
+        tp=next_line;
+      }
+    }
+
+    bool ReturnLengths;
     if (Sect){
-      Sect+=7;
+      Sect+=2; // skip \n[
       char *SectEnd=strstr(Sect,"\n[");
-      if (SectEnd==NULL) SectEnd=Text.Right()+1; // point to NULL
+      if (SectEnd==NULL) SectEnd=Sect+strlen(Sect); // point to NULL
 
       char *tp=Sect;
       while (tp<SectEnd){
         if (*tp==13 || *tp==10) *tp=0;
         tp++;
       }
-      tp=Sect;
+      tp=Sect+strlen(Sect)+1;
       while (tp<SectEnd){
-        if ((tp[0]>='0' && tp[0]<='9') || (tp[0]>='A' && tp[0]<='F')){
-          char *eq=strchr(tp,'=');
-          if (eq){
-            *eq=0;eq++;
-            char *eqend=eq+strlen(eq);
-            MEM_ADDRESS ad=HexToVal(tp);
-            MEM_ADDRESS old_ad=ad;
+        char *next_line=tp+strlen(tp)+1;
+        char *eq=strchr(tp,'=');
+        if (eq){
+          *eq=0;eq++;
 
-            char *vp=eq;
-            while (vp<eqend){
-              if (*vp==' ' || *vp=='\t') *vp=0;
-              vp++;
+          // tp can = Off+$x= or Off= or $x=.
+          MEM_ADDRESS offset_ad=0xffffffff;
+          int dir=-1;
+          char *sym=strchr(tp,'-');
+          if (sym==NULL) sym=strchr(tp,'+'), dir=1;
+          if (sym) *sym=0;
+
+          // sym points to + or -, dir is 1 for + and -1 for -. If sym==null tp is either Off= or $x=.
+          while (tp[0]==' ') tp++;
+          while (*(tp+strlen(tp)-1)==' ') *(tp+strlen(tp)-1)=0;
+
+          for (int i=0;i<Offsets.NumStrings;i++){
+            if (IsSameStr(Offsets[i].String,tp)){
+              offset_ad=(MEM_ADDRESS)Offsets[i].Data[0];
+              if (sym==NULL) dir=0; // no offset
+              break;
             }
-            vp=eq;
-            while (vp<eqend){
-              if (vp[0]=='$' || (vp[0]=='0' && vp[1]=='x')){ //hex
-                vp++;if (vp[0]=='x') vp++;
-                DWORD Data=HexToVal(vp);
-                int Len=4;
-                if (strlen(vp)<=2){
-                  Len=1;
-                }else if (strlen(vp)<=4){
-                  Len=2;
-                }
-                PatchPoke(ad,Len,Data);
-              }else if (vp[0]=='b' || vp[0]=='%'){ //binary
-                vp++;
-                DWORD Num=0;
-                int BinLen=0;
-                for (;BinLen<(int)strlen(vp);BinLen++){
-                  if (vp[BinLen+1]!='0' && vp[BinLen+1]!='1') break;
-                  if (BinLen>=31) break;
-                }
-                if (BinLen>0){
-                  int Bit=0;
-                  for (int n=BinLen;n>0;n--){
-                    if (vp[n]=='1') Num |= 1 << Bit;
-                    Bit++;
-                  }
-                  int Bytes=4;
-                  if (BinLen<=8){
-                    Bytes=1;
-                  }else if (BinLen<=16){
-                    Bytes=2;
-                  }
-                  PatchPoke(ad,Bytes,Num);
-                }
-              }else if (vp[0]>='0' && vp[0]<='9'){ //decimal byte
-                PatchPoke(ad,1,BYTE(atoi(vp)));
+          }
+          // if offset_ad is 0xffffffff then tp hasn't been found. When sym is set
+          // this should cause this part of the patch to be skipped. If sym isn't set then
+          // we assume tp is an absolute address.
+          if (sym){
+            tp=sym+1;
+          }else if (offset_ad==0xffffffff && dir){
+            offset_ad=0; // not found so treat tp as an absolute address
+          }
+          if (offset_ad<=0xffffff){
+            MEM_ADDRESS ad=offset_ad + HexToVal(tp)*dir;  // dir=0 if there is no offset
+
+            ReturnLengths=true;
+            acc_parse_search_string(eq,Bytes,ReturnLengths);
+            // Bytes is now a list of bytes in big endian format, between each byte is a length byte
+            int i=0;
+            while (i<Bytes.NumItems){
+              NumBytesChanged+=Bytes[i+1];
+              if (Bytes[i+1]==1){
+                PatchPoke(ad,1,Bytes[i]);
+                i+=2;
+              }else if (Bytes[i+1]==2){
+                PatchPoke(ad,2,MAKEWORD(Bytes[i+2],Bytes[i]));
+                i+=4;
+              }else if (Bytes[i+1]==4){
+                PatchPoke(ad,4,MAKELONG(MAKEWORD(Bytes[i+6],Bytes[i+4]),MAKEWORD(Bytes[i+2],Bytes[i])));
+                i+=8;
               }
-              vp+=strlen(vp)+1;
             }
-            NumBytesChanged += ad-old_ad;
           }
         }
-        tp+=strlen(tp)+1;
+        tp=next_line;
       }
     }
     if (NumBytesChanged){
@@ -423,6 +467,7 @@ LRESULT __stdcall TPatchesBox::WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lPa
 
       HWND NewParent=(HWND)lPar;
       if (NewParent){
+        This->CheckFSPosition(NewParent);
         SetWindowPos(Win,NULL,This->FSLeft,This->FSTop,0,0,SWP_NOZORDER | SWP_NOSIZE);
       }else{
         SetWindowPos(Win,NULL,This->Left,This->Top,0,0,SWP_NOZORDER | SWP_NOSIZE);

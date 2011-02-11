@@ -85,7 +85,7 @@ void InitColoursAndIcons()
   hxc::font_sl.Add("-adobe-helvetica-medium-r-normal-*-*-140-*-*-p-*-iso8859-1");
   hxc::font_sl.Add("-urw-palatino-medium-r-normal-*-*-140-*-*-p-*-iso8859-1");
 	
-  fileselect.set_alert_box_icons(&Ico64,&Ico16);
+  fileselect.set_alert_box_icons(&Ico32,&Ico16);
 	fileselect.lpig=&Ico16;
 
   hints.XD=XD;
@@ -339,7 +339,7 @@ void CleanupGUI()
 void PrintHelpToStdout()
 {
   printf(" \nsteem: run XSteem, the Atari STE emulator for X \n");
-  printf("Written by Anthony and Russell Hayward.  Email: steem@gmx.net \n \n");
+  printf("Written by Anthony and Russell Hayward.   \n \n");
 
   printf("Usage:  steem [options] [disk_image_a [disk_image_b]] [cartridge]\n");
   printf("        steem [options] [state_file]\n \n");
@@ -579,9 +579,7 @@ void GUIUpdateInternalSpeakerBut()
 //---------------------------------------------------------------------------
 void HandleKeyPress(UINT KeyCode,bool Up,int Extend)
 {
-  if (disable_mouse_until){
-    if (timeGetTime()<disable_mouse_until) return;
-  }
+  if (disable_input_vbl_count) return;
   if (ikbd_keys_disabled()) return;  //duration mode
 
   BYTE STCode=0;
@@ -658,18 +656,18 @@ int MessageBox(WINDOWTYPE,char *Text,char *Caption,UINT Flags)
   int icon_index=-1;
   int mb_ico=(Flags&MB_ICONMASK);
   if(mb_ico==MB_ICONEXCLAMATION){
-    icon_index=2;
+    icon_index=ICO32_EXCLAM;
   }else if(mb_ico==MB_ICONQUESTION){
-    icon_index=3;
+    icon_index=ICO32_QUESTION;
   }else if(mb_ico==MB_ICONSTOP){
-    icon_index=4;
+    icon_index=ICO32_STOP;
   }else if(mb_ico==MB_ICONINFORMATION){
-    icon_index=5;
+    icon_index=ICO32_INFO;
   }
   if(icon_index==-1){
     alert.set_icons(NULL,0);
   }else{
-    alert.set_icons(&Ico64,icon_index,&Ico16,icon_index);
+    alert.set_icons(&Ico32,icon_index,&Ico16,icon_index);
   }
   int default_option=-1;
   switch(Flags&MB_DEFMASK){
@@ -723,6 +721,27 @@ void GetCursorPos(POINT *pPt)
 void SetCursorPos(int x,int y)
 {
   XWarpPointer(XD,None,Window(FullScreen ? Disp.XVM_FullWin:StemWin),0,0,0,0,x,y);
+}
+//---------------------------------------------------------------------------
+int hyperlink_np(hxc_button *b,int mess,int *pi)
+{
+  if (mess!=BN_CLICKED) return 0;
+
+  EasyStr Text=b->text;
+  char *pipe=strchr(Text,'|');
+  if (pipe) Text=pipe+1;
+  bool web=IsSameStr_I(Text.Lefts(7),"http://");
+  bool ftp=IsSameStr_I(Text.Lefts(6),"ftp://");
+  bool email=IsSameStr_I(Text.Lefts(7),"mailto:");
+  if (web || ftp || email){
+    if (email) Text=Text.Text+7; // strip "mailto:"
+    // Shell browser
+    Str comline=Comlines[COMLINE_HTTP];
+    if (ftp) comline=Comlines[COMLINE_FTP];
+    if (email) comline=Comlines[COMLINE_MAILTO];
+    shell_execute(comline,Str("[URL]\n")+Text+"\n[ADDRESS]\n"+Text);
+  }
+  return 0;
 }
 //---------------------------------------------------------------------------
 

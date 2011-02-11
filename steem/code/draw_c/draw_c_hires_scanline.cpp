@@ -1,3 +1,9 @@
+/*---------------------------------------------------------------------------
+FILE: draw_c_hires_scanline.cpp
+MODULE: draw_c
+DESCRIPTION: High res C++ drawing routine
+---------------------------------------------------------------------------*/
+
 //void draw_scanline_hires_pixelwise_8(int border1,int picture,int border2,int hscroll){
   int n;
   WORD w0;

@@ -1,6 +1,15 @@
+/*---------------------------------------------------------------------------
+FILE: loadsave.cpp
+MODULE: Steem
+DESCRIPTION: Lots of functions to deal with loading and saving various data
+to and from files. This includes loading TOS images and handling steem.ini
+and steem.new.
+---------------------------------------------------------------------------*/
+
 //---------------------------------------------------------------------------
 int LoadSnapShotChangeDisks(Str NewDisk[2],Str NewDiskInZip[2],Str NewDiskName[2])
 {
+  int save_mediach[2]={floppy_mediach[0],floppy_mediach[1]};
   for (int disk=0;disk<2;disk++){
     if (NewDisk[disk].IsEmpty()){
       DiskMan.EjectDisk(disk);
@@ -68,6 +77,7 @@ int LoadSnapShotChangeDisks(Str NewDisk[2],Str NewDiskInZip[2],Str NewDiskName[2
         if (DiskMan.IsVisible()){
           DiskMan.InsertDisk(disk,FloppyDrive[disk].DiskName,FloppyDrive[disk].GetDisk(),true,0,NewDiskInZip[disk]);
         }
+        floppy_mediach[disk]=save_mediach[disk];
       }
     }
   }
@@ -233,7 +243,7 @@ void AddSnapShotToHistory(char *FilNam)
   StateHist[0]=FilNam;
 }
 //---------------------------------------------------------------------------
-bool LoadSnapShot(char *FilNam,bool Auto=0,bool ShowErrorMess=true)
+bool LoadSnapShot(char *FilNam,bool AddToHistory=true,bool ShowErrorMess=true,bool ChangeDisks=true)
 {
 #ifndef ONEGAME
   int Failed=2,Version=0;
@@ -241,11 +251,17 @@ bool LoadSnapShot(char *FilNam,bool Auto=0,bool ShowErrorMess=true)
 
   if (Exists(FilNam)==0) FileError=true;
   if (FileError==0){
-		reset_st(true,0,0); // Don't change settings to what the user has chosen
+    bool LoadingResetBackup=IsSameStr_I(FilNam,WriteDir+SLASH+"auto_reset_backup.sts");
+    bool LoadingLoadSnapBackup=IsSameStr_I(FilNam,WriteDir+SLASH+"auto_loadsnapshot_backup.sts");
+    if (ChangeDisks && LoadingResetBackup==0 && LoadingLoadSnapBackup==0){ // Don't backup on auto load
+      DeleteFile(WriteDir+SLASH+"auto_reset_backup.sts");
+      SaveSnapShot(WriteDir+SLASH+"auto_loadsnapshot_backup.sts",-1,0);
+    }
+    reset_st(RESET_COLD | RESET_STOP | RESET_NOCHANGESETTINGS | RESET_NOBACKUP);
 
     FILE *f=fopen(FilNam,"rb");
     if (f){
-      Failed=LoadSaveAllStuff(f,LS_LOAD,-1,(Auto==0),&Version);
+      Failed=LoadSaveAllStuff(f,LS_LOAD,-1,ChangeDisks,&Version);
       if (Failed==0){
         Failed=int((EasyUncompressToMem(Mem+MEM_EXTRA_BYTES,mem_len,f)!=0) ? 2:0);
       }
@@ -259,16 +275,16 @@ bool LoadSnapShot(char *FilNam,bool Auto=0,bool ShowErrorMess=true)
 		return 0;
   }
 #else
-  reset_st(true,0,0); // Don't change settings to what the user has chosen
+  reset_st(RESET_COLD | RESET_STOP | RESET_NOCHANGESETTINGS | RESET_NOBACKUP);
 
   BYTE *p=(BYTE*)FilNam;
-  int Failed=LoadSaveAllStuff(p,LS_LOAD,-1,(Auto==0),&Version);
+  int Failed=LoadSaveAllStuff(p,LS_LOAD,-1,ChangeDisks,&Version);
   if (Failed==0) Failed=EasyUncompressToMemFromMem(Mem+MEM_EXTRA_BYTES,mem_len,p);
   if (Failed) Failed=1; 
 #endif
 
   if (Failed==0){
-    if (Auto==0) AddSnapShotToHistory(FilNam);
+    if (AddToHistory) AddSnapShotToHistory(FilNam);
 
     LoadSnapShotUpdateVars(Version);
 
@@ -283,13 +299,13 @@ bool LoadSnapShot(char *FilNam,bool Auto=0,bool ShowErrorMess=true)
     if (Failed>1 && ShowErrorMess){
       Alert(T("Cannot load the snapshot, it is corrupt."),T("Load Memory Snapshot Failed"),MB_ICONEXCLAMATION);
     }
-    reset_st(); // Change settings if required
+    reset_st(RESET_COLD | RESET_STOP | RESET_CHANGESETTINGS | RESET_NOBACKUP);
   }
   return Failed==0;
 }
 //---------------------------------------------------------------------------
 #ifndef ONEGAME
-void SaveSnapShot(char *FilNam,int Version=-1,bool Auto=0)
+void SaveSnapShot(char *FilNam,int Version=-1,bool AddToHistory=true)
 {
   FILE *f=fopen(FilNam,"wb");
   if (f!=NULL){
@@ -299,11 +315,11 @@ void SaveSnapShot(char *FilNam,int Version=-1,bool Auto=0)
 
     fclose(f);
 
-    if (Auto==0) AddSnapShotToHistory(FilNam);
+    if (AddToHistory) AddSnapShotToHistory(FilNam);
   }
 }
 #else
-void SaveSnapShot(char *,int=-1,bool=0) {}
+void SaveSnapShot(char *,int=-1,bool=true) {}
 #endif
 //---------------------------------------------------------------------------
 #ifdef ENABLE_LOGFILE
@@ -448,6 +464,7 @@ typedef struct{
   type_disp_type type;
   int x,y,w,h;
   int n_cols,col_w[20];
+  char name[256];
 }MEM_BROW_LOAD;
 #endif
 
@@ -457,125 +474,81 @@ void LoadState(GoodConfigStoreFile *pCSF)
   log_to(LOGSECTION_INIT,"STARTUP: Finished LoadAllDialogData");
 
 #ifdef _DEBUG_BUILD
-  char wt[50];
   DynamicArray<MEM_BROW_LOAD> browsers;
   int dru_combo_idx=0;
   Str dru_edit;
 
-  log_to(LOGSECTION_INIT,Str("STARTUP: Loading ")+WriteDir+"\\breaks.dat");
-  FILE *bf=fopen(WriteDir+"\\breaks.dat","rb");
-  if (bf!=NULL){
-    fgets(wt,49,bf);
-    num_breakpoints=atoi(wt);
-    for (int n=0;n<num_breakpoints;n++){
-      fgets(wt,49,bf);
-      breakpoint[n]=HexToVal(wt);
-    }
-
-    breakpoint_menu_setup();
-    fgets(wt,49,bf);
-    crash_notification=atoi(wt) & 3;
-    LOOP{
-      wt[0]='*';
-      if (fgets(wt,49,bf)==NULL) break; //get window title
-      if (wt[0]=='*'){
-        break;
-      }else if (strstr(wt,"Monitors")){
-        num_monitors=file_read_num(bf);
-        for (int n=0;n<num_monitors;n++){
-          fgets(wt,49,bf);
-          monitor_ad[n]=HexToVal(wt);
-          monitor_contents[n]=d2_dpeek(monitor_ad[n]) & monitor_mask[n];
-        }
-      }else if (strstr(wt,"Monitor_masks")){
-        num_monitors=file_read_num(bf);
-        for (int n=0;n<num_monitors;n++){
-          fgets(wt,49,bf);
-          monitor_mask[n]=(WORD)HexToVal(wt);
-          monitor_contents[n]=d2_dpeek(monitor_ad[n]) & monitor_mask[n];
-        }
-      }else if (strstr(wt,"IO_mons")){
-        num_io_monitors=file_read_num(bf);
-        for (int n=0;n<num_io_monitors;n++){
-          fgets(wt,49,bf);
-          monitor_io_ad[n]=HexToVal(wt);
-          fgets(wt,49,bf);
-          monitor_io_mask[n]=(WORD)HexToVal(wt);
-          monitor_io_readflag[n]=bool(file_read_num(bf));
-        }
-      }else if (strstr(wt,"Monitor_breakpoints")){
-        monitor_mode=file_read_num(bf);
-      }else if (strstr(wt,"Breakpoint_mode")){
-        breakpoint_mode=file_read_num(bf);
-      }else if (strstr(wt,"Suspend_logging")){
-        logging_suspended=file_read_num(bf);
-      }else if (strstr(wt,"Stack_display")){
-        boiler_show_stack_display(file_read_num(bf));
-      }else if (strstr(wt,"Wipe_log_on_reset")){
-        debug_wipe_log_on_reset=(bool)file_read_num(bf);
-      }else if (strstr(wt,"Brow_on_taskbar")){
-        mem_browser::ex_style=(DWORD)file_read_num(bf);
-      }else if (strstr(wt,"Log_view_prog")){
-        LogViewProg.SetLength(MAX_PATH);
-        fgets(LogViewProg.Text,MAX_PATH,bf);
-        while (LogViewProg.RightChar()=='\n' || LogViewProg.RightChar()=='\r'){
-          *LogViewProg.Right()=0;
-        }
-      }else if (strstr(wt,"Gun_display_pos_col")){
-        debug_gun_pos_col=(DWORD)file_read_num(bf);
-      }else if (strstr(wt,"trace_show_window")){
-        trace_show_window=(bool)file_read_num(bf);
-      }else if (strstr(wt,"debug_run_until_combo")){
-        dru_combo_idx=file_read_num(bf);
-      }else if (strstr(wt,"debug_run_until_edit")){
-        dru_edit.SetLength(49);
-        fgets(dru_edit.Text,49,bf);
-        while (dru_edit.RightChar()==10 || dru_edit.RightChar()==13) *dru_edit.Right()=0;
-      }else{
-        int old_pos=ftell(bf);
-        int x1,y1,x2,y2;
-        x1=file_read_num(bf);y1=file_read_num(bf);
-        x2=file_read_num(bf);y2=file_read_num(bf);
-        if (strstr(wt,"DWin")){
-          MoveWindow(DWin,x1,y1,x2-x1,y2-y1,true);
-        }else if (strstr(wt,"trace")){
-          SetWindowPos(trace_window_handle,0,x1,y1,0,0,SWP_NOSIZE | SWP_NOZORDER);
-        }else if (strstr(wt,"browser") || strstr(wt,"25_brow")){
-          MEM_BROW_LOAD b;
-          b.ad=(MEM_ADDRESS)file_read_num(bf);
-          b.type=(type_disp_type)file_read_num(bf);
-          b.x=x1, b.y=y1, b.w=x2-x1, b.h=y2-y1;
-          if (strstr(wt,"25_brow")){
-            int n_cols=file_read_num(bf);
-            b.n_cols=min(n_cols,20);
-            for (int n=0;n<n_cols;n++){
-              int c=file_read_num(bf);
-              if (n<20) b.col_w[n]=c;
-            }
-          }
-          browsers.Add(b);
-        }else{
-          fseek(bf,old_pos,SEEK_SET);
-        }
-      }
-    }
-    log_to(LOGSECTION_INIT,Str("STARTUP: Finished loading ")+WriteDir+"\\breaks.dat");
-    fclose(bf);
-  }else{
-    num_breakpoints=0;
-    num_monitors=0;
-    num_io_monitors=0;
+  debug_ads.DeleteAll();
+  for (int n=0;;n++){
+    DEBUG_ADDRESS da;
+    da.ad=pCSF->GetInt("Debug Addresses",Str("Address")+n,0xffffffff);
+    if (da.ad==0xffffffff) break;
+    da.mode=pCSF->GetInt("Debug Addresses",Str("Mode")+n,0);
+    da.bwr=pCSF->GetInt("Debug Addresses",Str("BWR")+n,0);
+    da.mask[0]=(WORD)pCSF->GetInt("Debug Addresses",Str("MaskW")+n,0xffff);
+    da.mask[1]=(WORD)pCSF->GetInt("Debug Addresses",Str("MaskR")+n,0xffff);
+    strcpy(da.name,pCSF->GetStr("Debug Addresses",Str("Name")+n,""));
+    debug_ads.Add(da);
   }
+
+  WINPOSITIONDATA wpd;
+  GetWindowPositionData(DWin,&wpd);
+  MoveWindow(DWin,pCSF->GetInt("Debug Options","Boiler Left",wpd.Left),pCSF->GetInt("Debug Options","Boiler Top",wpd.Top),
+                    pCSF->GetInt("Debug Options","Boiler Width",wpd.Width),pCSF->GetInt("Debug Options","Boiler Height",wpd.Height),0);
+
+  GetWindowPositionData(trace_window_handle,&wpd);
+  MoveWindow(trace_window_handle,pCSF->GetInt("Debug Options","Trace Left",wpd.Left),pCSF->GetInt("Debug Options","Trace Top",wpd.Top),wpd.Width,wpd.Height,0);
+
+  for (int n=0;n<MAX_MEMORY_BROWSERS;n++){
+    Str Key=Str("Browser")+n+" ";
+    MEM_BROW_LOAD b;
+    b.x=pCSF->GetInt("Debug Browsers",Key+"Left",-300);
+    if (b.x==-300) break;
+    b.y=pCSF->GetInt("Debug Browsers",Key+"Top",0);
+    b.w=pCSF->GetInt("Debug Browsers",Key+"Width",100);
+    b.h=pCSF->GetInt("Debug Browsers",Key+"Height",100);
+    b.ad=pCSF->GetInt("Debug Browsers",Key+"Address",0);
+    strcpy(b.name,pCSF->GetStr("Debug Browsers",Key+"Name","Memory"));
+    b.type=(type_disp_type)pCSF->GetInt("Debug Browsers",Key+"Type",0);
+    b.n_cols=0;
+    for (int m=0;m<20;m++){
+      b.col_w[m]=pCSF->GetInt("Debug Browsers",Key+"Column"+m,-1);
+      if (b.col_w[m]<0) break;
+      b.n_cols++;
+    }
+    browsers.Add(b);
+  }
+
+  breakpoint_mode=pCSF->GetInt("Debug Options","Breakpoint Mode",breakpoint_mode);
+  monitor_mode=pCSF->GetInt("Debug Options","Monitor Mode",monitor_mode);
+
+  mem_browser::ex_style=pCSF->GetInt("Debug Options","Browsers on Taskbar",mem_browser::ex_style);
+
+  logging_suspended=pCSF->GetInt("Debug Options","Suspend Logging",logging_suspended);
+  debug_wipe_log_on_reset=pCSF->GetInt("Debug Options","Wipe Log On Reset",debug_wipe_log_on_reset);
+  LogViewProg=pCSF->GetStr("Debug Options","Log Viewer",LogViewProg);
+
+  crash_notification=pCSF->GetInt("Debug Options","Crash Notify",crash_notification);
+  boiler_show_stack_display(pCSF->GetInt("Debug Options","Stack Display",0));
+
+  debug_gun_pos_col=pCSF->GetInt("Debug Options","Gun Display Colour",debug_gun_pos_col);
+  trace_show_window=pCSF->GetInt("Debug Options","Trace Show",trace_show_window);
+  dru_combo_idx=pCSF->GetInt("Debug Options","Run Until",dru_combo_idx);
+  dru_edit=pCSF->GetStr("Debug Options","Run Until Text",dru_edit);
+  debug_monospace_disa=pCSF->GetInt("Debug Options","Monospace Disa",debug_monospace_disa);
+  debug_uppercase_disa=pCSF->GetInt("Debug Options","Uppercase Disa",debug_uppercase_disa);
+
   log_to(LOGSECTION_INIT,"STARTUP: Updating debug GUI");
-  UPDATE_DO_MON_CHECK;
-  UPDATE_DO_BREAK_CHECK;
+  debug_update_bkmon();
   CheckMenuRadioItem(boiler_op_menu,1501,1503,1501+crash_notification,MF_BYCOMMAND);
   CheckMenuItem(boiler_op_menu,1514,MF_BYCOMMAND | int(trace_show_window ? MF_CHECKED:MF_UNCHECKED));
+  CheckMenuItem(boiler_op_menu,1515,MF_BYCOMMAND | int(debug_monospace_disa ? MF_CHECKED:MF_UNCHECKED));
+  CheckMenuItem(boiler_op_menu,1516,MF_BYCOMMAND | int(debug_uppercase_disa ? MF_CHECKED:MF_UNCHECKED));
   CheckMenuItem(logsection_menu,1013,MF_BYCOMMAND | int(debug_wipe_log_on_reset ? MF_CHECKED:MF_UNCHECKED));
-  CheckMenuItem(breakpoint_menu,1103,MF_BYCOMMAND | int((monitor_mode==1) ? MF_CHECKED:MF_UNCHECKED));
-  CheckMenuItem(breakpoint_menu,1104,MF_BYCOMMAND | int((monitor_mode==2) ? MF_CHECKED:MF_UNCHECKED));
-  CheckMenuItem(breakpoint_menu,1107,MF_BYCOMMAND | int((breakpoint_mode==1) ? MF_CHECKED:MF_UNCHECKED));
-  CheckMenuItem(breakpoint_menu,1108,MF_BYCOMMAND | int((breakpoint_mode==2) ? MF_CHECKED:MF_UNCHECKED));
+  CheckMenuItem(breakpoint_menu,1103,MF_BYCOMMAND | int((monitor_mode==2) ? MF_CHECKED:MF_UNCHECKED));
+  CheckMenuItem(breakpoint_menu,1104,MF_BYCOMMAND | int((monitor_mode==3) ? MF_CHECKED:MF_UNCHECKED));
+  CheckMenuItem(breakpoint_menu,1107,MF_BYCOMMAND | int((breakpoint_mode==2) ? MF_CHECKED:MF_UNCHECKED));
+  CheckMenuItem(breakpoint_menu,1108,MF_BYCOMMAND | int((breakpoint_mode==3) ? MF_CHECKED:MF_UNCHECKED));
   CheckMenuItem(logsection_menu,1012,MF_BYCOMMAND | int(logging_suspended ? MF_CHECKED:MF_UNCHECKED));
   CheckMenuItem(mem_browser_menu,907,MF_BYCOMMAND | int(mem_browser::ex_style ? 0:MF_CHECKED));
   SendDlgItemMessage(DWin,1020,CB_SETCURSEL,dru_combo_idx,0);
@@ -593,6 +566,7 @@ void LoadState(GoodConfigStoreFile *pCSF)
       SendMessage(mb->handle,WM_SETREDRAW,1,0);
     }
     MoveWindow(mb->owner,browsers[b].x,browsers[b].y,browsers[b].w,browsers[b].h,true);
+    SetWindowText(mb->owner,browsers[b].name);
   }
 
 #endif
@@ -637,60 +611,67 @@ void SaveState(ConfigStoreFile *pCSF)
   SaveAllDialogData(true,INIFile,pCSF);
 
 #ifdef _DEBUG_BUILD
-  FILE *bf=fopen(WriteDir+"\\breaks.dat","wb");
-  if (bf){
-    fprintf(bf,"%i\n",num_breakpoints);
-    for(int n=0;n<num_breakpoints;n++){
-      fprintf(bf,"%s\n",HEXSl(breakpoint[n],6).Text);
-    }
-    fprintf(bf,"%i\n",crash_notification);
-
-    WINPOSITIONDATA wpd;
-    GetWindowPositionData(DWin,&wpd);
-    fprintf(bf,"%s\n%i\n%i\n%i\n%i\n","DWin",wpd.Left,wpd.Top,wpd.Left+wpd.Width,wpd.Top+wpd.Height);
-    GetWindowPositionData(trace_window_handle,&wpd);
-    fprintf(bf,"%s\n%i\n%i\n%i\n%i\n","trace",wpd.Left,wpd.Top,wpd.Left+wpd.Width,wpd.Top+wpd.Height);
-
-    for (int n=0;n<MAX_MEMORY_BROWSERS;n++){
-      if (m_b[n]!=NULL){
-        GetWindowPositionData(m_b[n]->owner,&wpd);
-        fprintf(bf,"%s\n%i\n%i\n%i\n%i\n","25_brow",wpd.Left,wpd.Top,wpd.Left+wpd.Width,wpd.Top+wpd.Height);
-        fprintf(bf,"%i\n%i\n%i\n",int(m_b[n]->ad),m_b[n]->disp_type,m_b[n]->columns);
-        for (int m=0;m<m_b[n]->columns;m++){
-          fprintf(bf,"%i\n",(int)SendMessage(m_b[n]->handle,LVM_GETCOLUMNWIDTH,m,0));
-        }
-      }
-    }
-    fprintf(bf,"Monitor_breakpoints\n%i\n",monitor_mode);
-    fprintf(bf,"Breakpoint_mode\n%i\n",breakpoint_mode);
-    fprintf(bf,"Suspend_logging\n%i\n",logging_suspended);
-
-    fprintf(bf,"Monitors\n%i\n",num_monitors);
-    for (int n=0;n<num_monitors;n++) fprintf(bf,"%s\n",HEXSl(monitor_ad[n],6).Text);
-    fprintf(bf,"Monitor_masks\n%i\n",num_monitors);
-    for (int n=0;n<num_monitors;n++) fprintf(bf,"%s\n",HEXSl(monitor_mask[n],4).Text);
-
-    fprintf(bf,"IO_mons\n%i\n",num_io_monitors);
-    for (int n=0;n<num_io_monitors;n++){
-      fprintf(bf,"%s\n",HEXSl(monitor_io_ad[n],6).Text);
-      fprintf(bf,"%s\n",HEXSl(monitor_io_mask[n],4).Text);
-      fprintf(bf,"%i\n",int(monitor_io_readflag[n]));
-    }
-
-    int s=SendDlgItemMessage(DWin,209,CB_GETCURSEL,0,0);
-    fprintf(bf,"Stack_display\n%i\n",s);
-    fprintf(bf,"Wipe_log_on_reset\n%i\n",debug_wipe_log_on_reset);
-    fprintf(bf,"Brow_on_taskbar\n%i\n",mem_browser::ex_style);
-    fprintf(bf,"Log_view_prog\n%s\n",LogViewProg.Text);
-    fprintf(bf,"Gun_display_pos_col\n%i\n",debug_gun_pos_col);
-    fprintf(bf,"trace_show_window\n%i\n",trace_show_window);
-    fprintf(bf,"debug_run_until_combo\n%i\n",SendDlgItemMessage(DWin,1020,CB_GETCURSEL,0,0));
-    fprintf(bf,"debug_run_until_edit\n%s\n",GetWindowTextStr(GetDlgItem(DWin,1021)).Text);
-    fprintf(bf,"*\n");
-    fclose(bf);
+  pCSF->DeleteSection("Debug Addresses");
+  for (int n=0;n<debug_ads.NumItems;n++){
+    pCSF->SetInt("Debug Addresses",Str("Address")+n,debug_ads[n].ad & 0xffffff);
+    pCSF->SetInt("Debug Addresses",Str("Mode")+n,debug_ads[n].mode);
+    pCSF->SetInt("Debug Addresses",Str("BWR")+n,debug_ads[n].bwr);
+    pCSF->SetInt("Debug Addresses",Str("MaskW")+n,debug_ads[n].mask[0]);
+    pCSF->SetInt("Debug Addresses",Str("MaskR")+n,debug_ads[n].mask[1]);
+    pCSF->SetStr("Debug Addresses",Str("Name")+n,debug_ads[n].name);
   }
 
-  bf=fopen(WriteDir+SLASH "logsection.dat","wb");
+  WINPOSITIONDATA wpd;
+  GetWindowPositionData(DWin,&wpd);
+  pCSF->SetInt("Debug Options","Boiler Left",wpd.Left);
+  pCSF->SetInt("Debug Options","Boiler Top",wpd.Top);
+  pCSF->SetInt("Debug Options","Boiler Width",wpd.Width);
+  pCSF->SetInt("Debug Options","Boiler Height",wpd.Height);
+
+  GetWindowPositionData(trace_window_handle,&wpd);
+  pCSF->SetInt("Debug Options","Trace Left",wpd.Left);
+  pCSF->SetInt("Debug Options","Trace Top",wpd.Top);
+
+  pCSF->DeleteSection("Debug Browsers");
+  int i=0;
+  for (int n=0;n<MAX_MEMORY_BROWSERS;n++){
+    if (m_b[n]!=NULL){
+      Str Key=Str("Browser")+i+" ";
+      GetWindowPositionData(m_b[n]->owner,&wpd);
+      pCSF->SetInt("Debug Browsers",Key+"Left",wpd.Left);
+      pCSF->SetInt("Debug Browsers",Key+"Top",wpd.Top);
+      pCSF->SetInt("Debug Browsers",Key+"Width",wpd.Width);
+      pCSF->SetInt("Debug Browsers",Key+"Height",wpd.Height);
+      pCSF->SetInt("Debug Browsers",Key+"Address",int(m_b[n]->ad));
+      pCSF->SetInt("Debug Browsers",Key+"Type",m_b[n]->disp_type);
+      for (int m=0;m<m_b[n]->columns;m++){
+        pCSF->SetInt("Debug Browsers",Key+"Column"+m,(int)SendMessage(m_b[n]->handle,LVM_GETCOLUMNWIDTH,m,0));
+      }
+      pCSF->SetStr("Debug Browsers",Key+"Name",GetWindowTextStr(m_b[n]->owner));
+      i++;
+    }
+  }
+
+  pCSF->SetInt("Debug Options","Breakpoint Mode",breakpoint_mode);
+  pCSF->SetInt("Debug Options","Monitor Mode",monitor_mode);
+
+  pCSF->SetInt("Debug Options","Browsers on Taskbar",mem_browser::ex_style);
+
+  pCSF->SetInt("Debug Options","Suspend Logging",logging_suspended);
+  pCSF->SetInt("Debug Options","Wipe Log On Reset",debug_wipe_log_on_reset);
+  pCSF->SetStr("Debug Options","Log Viewer",LogViewProg);
+
+  pCSF->SetInt("Debug Options","Crash Notify",crash_notification);
+  pCSF->SetInt("Debug Options","Stack Display",SendDlgItemMessage(DWin,209,CB_GETCURSEL,0,0));
+
+  pCSF->SetInt("Debug Options","Gun Display Colour",debug_gun_pos_col);
+  pCSF->SetInt("Debug Options","Trace Show",trace_show_window);
+  pCSF->SetInt("Debug Options","Run Until",SendDlgItemMessage(DWin,1020,CB_GETCURSEL,0,0));
+  pCSF->SetStr("Debug Options","Run Until Text",GetWindowTextStr(GetDlgItem(DWin,1021)));
+  pCSF->SetInt("Debug Options","Monospace Disa",debug_monospace_disa);
+  pCSF->SetInt("Debug Options","Uppercase Disa",debug_uppercase_disa);
+
+  FILE *bf=fopen(WriteDir+SLASH "logsection.dat","wb");
   if (bf){
     for (int n=0;n<100;n++){
       if (logsection_enabled[n]==false) fprintf(bf,"%i\r\n",n);
@@ -699,6 +680,12 @@ void SaveState(ConfigStoreFile *pCSF)
     fclose(bf);
   }
 #endif
-  if (AutoLoadSnapShot) SaveSnapShot(WriteDir+SLASH+AutoSnapShotName+".sts",-1,true);
+  if (AutoLoadSnapShot) SaveSnapShot(WriteDir+SLASH+AutoSnapShotName+".sts",-1,0);
 }
+//---------------------------------------------------------------------------
+void LoadSavePastiActiveChange()
+{
+  DiskMan.RefreshDiskView();
+}
+//---------------------------------------------------------------------------
 

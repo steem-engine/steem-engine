@@ -1,3 +1,11 @@
+/*---------------------------------------------------------------------------
+FILE: gui.cpp
+MODULE: Steem
+DESCRIPTION: This is a core file that has lots and lots of miscellaneous
+GUI functions. It creates the main window in MakeGUI, handles translations
+and (for some reason) command-line options.
+---------------------------------------------------------------------------*/
+
 #include "stemwin.cpp"
 #define LOGSECTION LOGSECTION_INIT
 //---------------------------------------------------------------------------
@@ -12,6 +20,7 @@ void GUIRunStart()
 	if (HighPriority) setpriority(PRIO_PROCESS,0,PRIO_MAX);
 #endif
   CheckResetDisplay(true);
+  WIN_ONLY( if (FullScreen) TScreenSaver::killTimer(); )
 }
 //---------------------------------------------------------------------------
 bool GUIPauseWhenInactive()
@@ -79,6 +88,7 @@ void GUIRunEnd()
   WIN_ONLY( EnableTaskSwitch(); )
   WIN_ONLY( SetTimer(StemWin,SHORTCUTS_TIMER_ID,50,NULL); )
   UNIX_ONLY( hxc::set_timer(StemWin,SHORTCUTS_TIMER_ID,50,timerproc,NULL); )
+  WIN_ONLY( if (FullScreen) TScreenSaver::prepareTimer(); )
 }
 //---------------------------------------------------------------------------
 void GUIColdResetChangeSettings()
@@ -139,6 +149,12 @@ void GUIColdResetChangeSettings()
     }
     OptionBox.NewROMFile="";
   }
+}
+//---------------------------------------------------------------------------
+void GUISaveResetBackup()
+{
+  DeleteFile(WriteDir+SLASH+"auto_loadsnapshot_backup.sts");
+  SaveSnapShot(WriteDir+SLASH+"auto_reset_backup.sts",-1,0); // Don't add to history
 }
 //---------------------------------------------------------------------------
 void GUIDiskErrorEject(int f)
@@ -304,7 +320,7 @@ bool MakeGUI()
   SendMessage(ToolTip,TTM_SETMAXTIPWIDTH,0,150);
 #else
   SendMessage(ToolTip,TTM_SETDELAYTIME,TTDT_AUTOPOP,20000); // 20 seconds before disappear
-  SendMessage(ToolTip,TTM_SETDELAYTIME,TTDT_INITIAL,600);   // 0.6 second before appear
+  SendMessage(ToolTip,TTM_SETDELAYTIME,TTDT_INITIAL,400);   // 0.4 second before appear
   SendMessage(ToolTip,TTM_SETDELAYTIME,TTDT_RESHOW,200);     // 0.2 moving from one tool to next
   SendMessage(ToolTip,TTM_SETMAXTIPWIDTH,0,400);
 #endif
@@ -443,12 +459,7 @@ void CleanupGUI()
 #ifdef _DEBUG_BUILD
   DWin_edit_is_being_temporarily_defocussed=true;
   log("SHUTDOWN: Destroying debug-build menus");
-  if (insp_menu){
-    DestroyMenu(insp_menu);
-    for (int n=0;n<3;n++){
-      DestroyMenu(insp_menu_reg_submenu[n]);
-    }
-  }
+  if (insp_menu) DestroyMenu(insp_menu);
 
   if (trace_window_handle) DestroyWindow(trace_window_handle);
   trace_window_handle=NULL;
@@ -475,6 +486,8 @@ void CleanupGUI()
 
   }
 
+  debug_plugin_free();
+
   if (HiddenParent) DestroyWindow(HiddenParent);
 
   if (GetClassInfo(Inst,"Steem Debug Window",&wc)){
@@ -483,6 +496,10 @@ void CleanupGUI()
   if (GetClassInfo(Inst,"Steem Trace Window",&wc)){
     UnregisterClass("Steem Mem Browser Window",Inst);
     UnregisterClass("Steem Trace Window",Inst);
+  }
+  if (mem_browser::icons_bmp){
+    DeleteDC(mem_browser::icons_dc);
+    DeleteObject(mem_browser::icons_bmp);
   }
 #endif
 
@@ -566,8 +583,26 @@ int GetComLineArgType(char *Arg,EasyStr &Path)
     return ARG_STFMBORDER;
   }else if (ComLineArgCompare(Arg,"SCREENSHOTUSEFULLNAME")){
     return ARG_SCREENSHOTUSEFULLNAME;
+  }else if (ComLineArgCompare(Arg,"SCREENSHOTALWAYSADDNUM")){
+    return ARG_SCREENSHOTALWAYSADDNUM;
   }else if (ComLineArgCompare(Arg,"ALLOWLPTINPUT")){
     return ARG_ALLOWLPTINPUT;
+  }else if (ComLineArgCompare(Arg,"NONOTIFYINIT")){
+    return ARG_NONOTIFYINIT;
+  }else if (ComLineArgCompare(Arg,"PSGCAPTURE")){
+    return ARG_PSGCAPTURE;
+  }else if (ComLineArgCompare(Arg,"CROSSMOUSE")){
+    return ARG_CROSSMOUSE;
+  }else if (ComLineArgCompare(Arg,"RUN")){
+    return ARG_RUN;
+  }else if (ComLineArgCompare(Arg,"GDIFSBORDER")){
+    return ARG_GDIFSBORDER;
+  }else if (ComLineArgCompare(Arg,"PASTI")){
+    return ARG_PASTI;
+  }else if (ComLineArgCompare(Arg,"NOPASTI")){
+    return ARG_NOPASTI;
+  }else if (ComLineArgCompare(Arg,"NOAUTOSNAPSHOT")){
+    return ARG_NOAUTOSNAPSHOT;
 
   }else if (ComLineArgCompare(Arg,"SOF=",true)){
     Path=strchr(Arg,'=')+1;
@@ -590,6 +625,12 @@ int GetComLineArgType(char *Arg,EasyStr &Path)
   }else if (ComLineArgCompare(Arg,"PABUFSIZE=",true)){
     Path=strchr(Arg,'=')+1;
     return ARG_SETPABUFSIZE;
+  }else if (ComLineArgCompare(Arg,"RTBUFSIZE",true)){
+    Path=strchr(Arg,'=')+1;
+    return ARG_RTBUFSIZE;
+  }else if (ComLineArgCompare(Arg,"RTBUFNUM",true)){
+    Path=strchr(Arg,'=')+1;
+    return ARG_RTBUFNUM;
 
   }else{
     int Type=ARG_UNKNOWN;
@@ -611,8 +652,10 @@ int GetComLineArgType(char *Arg,EasyStr &Path)
 
     char *dot=strrchr(GetFileNameFromPath(Path),'.');
     if (dot){
-      if (ExtensionIsDisk(dot)){
+      if (ExtensionIsDisk(dot,false)){
         return ARG_DISKIMAGEFILE;
+      }else if (ExtensionIsPastiDisk(dot)){
+        return ARG_PASTIDISKIMAGEFILE;
       }else if (IsSameStr_I(dot,".STS")){
         return ARG_SNAPSHOTFILE;
       }else if (IsSameStr_I(dot,".STC")){
@@ -645,8 +688,8 @@ void ParseCommandLine(int NumArgs,char *Arg[],int Level)
       case ARG_NOSHM:  UNIX_ONLY( TrySHM=0; ) break;
       case ARG_NOLPT:  AllowLPT=0; break;
       case ARG_NOCOM:  AllowCOM=0; break;
-      case ARG_WINDOW: BootInMode=BOOT_MODE_WINDOW; break;
-      case ARG_FULLSCREEN: BootInMode=BOOT_MODE_FULLSCREEN; break;
+      case ARG_WINDOW: BootInMode&=~BOOT_MODE_FLAGS_MASK;BootInMode=BOOT_MODE_WINDOW; break;
+      case ARG_FULLSCREEN: BootInMode&=~BOOT_MODE_FLAGS_MASK;BootInMode=BOOT_MODE_FULLSCREEN; break;
       case ARG_SETSOF: sound_comline_freq=atoi(Path);sound_chosen_freq=sound_comline_freq;break;
       case ARG_SOUNDCLICK: sound_click_at_start=true; break;
       case ARG_DOUBLECHECKSHORTCUTS: WIN_ONLY( DiskMan.DoExtraShortcutCheck=true; ) break;
@@ -669,27 +712,38 @@ void ParseCommandLine(int NumArgs,char *Arg[],int Level)
       case ARG_NOINTS:        _no_ints=true; break;
       case ARG_STFMBORDER:    stfm_borders=4; break;
       case ARG_SCREENSHOTUSEFULLNAME: Disp.ScreenShotUseFullName=true; break;
+      case ARG_SCREENSHOTALWAYSADDNUM: Disp.ScreenShotAlwaysAddNum=true; break;
       case ARG_ALLOWLPTINPUT: comline_allow_LPT_input=true; break;
+      case ARG_PSGCAPTURE: psg_always_capture_on_start=true; break;
+      case ARG_CROSSMOUSE: no_set_cursor_pos=true; break;
+#if defined(UNIX) && !defined(NO_RTAUDIO)
+      case ARG_RTBUFSIZE: rt_buffer_size=atoi(Path); break;
+      case ARG_RTBUFNUM: rt_buffer_num=atoi(Path); break;
+#endif
+      case ARG_RUN: BootInMode|=BOOT_MODE_RUN; break;
+WIN_ONLY( case ARG_GDIFSBORDER:   Disp.DrawLetterboxWithGDI=true; break; )
+      case ARG_PASTI: BootPasti=BOOT_PASTI_ON; break;
+      case ARG_NOPASTI: BootPasti=BOOT_PASTI_OFF; break;
+      case ARG_NOAUTOSNAPSHOT:
+        BootDisk[0]=".";
+        BootDisk[1]=".";
+        break;
 
       case ARG_DISKIMAGEFILE:
-        if (BootDisk[1]==0){
-          int Drive=BootDisk[0];
-
-          EasyStr Name=GetFileNameFromPath(Path);
-          *strrchr(Name,'.')=0;
-
-          if (DiskMan.InsertDisk(Drive,Name,Path,0,0)) BootDisk[Drive]=true;
-        }
+        if (BootDisk[1].Empty()) BootDisk[int(BootDisk[0].Empty() ? 0:1)]=Path;
+        break;
+      case ARG_PASTIDISKIMAGEFILE:
+        BootPasti=BOOT_PASTI_ON;
+        if (BootDisk[1].Empty()) BootDisk[int(BootDisk[0].Empty() ? 0:1)]=Path;
         break;
       case ARG_SNAPSHOTFILE:
-        BootDisk[0]=true;
-        BootDisk[1]=true;
+        BootDisk[0]=".";
+        BootDisk[1]=".";
         BootStateFile=Path;
         break;
       case ARG_CARTFILE:
         if (load_cart(Path)==0){
           CartFile=Path;
-
           OptionBox.MachineUpdateIfVisible();
         }
         break;
@@ -720,7 +774,7 @@ void ParseCommandLine(int NumArgs,char *Arg[],int Level)
   }
 }
 //---------------------------------------------------------------------------
-bool OpenComLineFilesInCurrent()
+bool OpenComLineFilesInCurrent(bool AlwaysSendToCurrent)
 {
   EasyStringList esl;
   esl.Sort=eslNoSort;
@@ -741,15 +795,28 @@ bool OpenComLineFilesInCurrent()
     }
 #endif
     switch (Type){
-      case ARG_DISKIMAGEFILE:case ARG_SNAPSHOTFILE:
+      case ARG_DISKIMAGEFILE:case ARG_PASTIDISKIMAGEFILE:case ARG_SNAPSHOTFILE:
       case ARG_CARTFILE:case ARG_TOSIMAGEFILE:
-        esl.Add(Path);
+        esl.Add(Path,0);
       case ARG_TAKESHOT:
-        esl.Add(_argv[1+n]);
+        esl.Add(_argv[1+n],0);
+        break;
+      case ARG_RUN:
+        esl.Add(_argv[1+n],1);
         break;
     }
   }
   if (esl.NumStrings){
+    bool RunOnly=true;
+    for (int i=0;i<esl.NumStrings;i++){
+      if (esl[i].Data[0]==0){
+        RunOnly=0;
+        break;
+      }
+    }
+    // If you only pass the RUN command and haven't specified to open in current
+    // then we shouldn't do anything, RUN is handled later.
+    if (RunOnly && AlwaysSendToCurrent==0) return 0;
     // Send strings to running Steem
 #ifdef WIN32
     HWND CurSteemWin=FindWindow("Steem Window",NULL);
@@ -894,14 +961,22 @@ char *FSTypes(int Type,...)
   ZeroMemory(FileTypes,512);
 
   if (Type==2){
-    strcpy(tp,T("Disk Images"));tp+=T("Disk Images").Length()+1;
-    strcpy(tp,"*.st;*.stt;*.msa;*.dim;*.zip;*.stz");tp+=strlen("*.st;*.stt;*.msa;*.dim;*.zip;*.stz");
+    strcpy(tp,T("Disk Images"));tp+=strlen(tp)+1;
+    strcpy(tp,"*.st;*.stt;*.msa;*.dim;*.zip;*.stz");tp+=strlen(tp);
 #ifdef RAR_SUPPORT
-    strcpy(tp,";*.rar");tp+=strlen(";*.rar")+1;
+    strcpy(tp,";*.rar");tp+=strlen(tp);
 #endif
+#if USE_PASTI
+    if (hPasti){
+      tp[0]=';';tp++;
+      pasti->GetFileExtensions(tp,160,TRUE); // will add "*.st;*.stx"
+      tp+=strlen(tp);
+    }
+#endif
+    tp++;
   }else if (Type==3){
-    strcpy(tp,T("TOS Images"));tp+=T("TOS Images").Length()+1;
-    strcpy(tp,"*.img;*.rom");tp+=strlen("*.img;*.rom")+1;
+    strcpy(tp,T("TOS Images"));tp+=strlen(tp)+1;
+    strcpy(tp,"*.img;*.rom");tp+=strlen(tp)+1;
   }else{
     char **pStr=((char**)&Type)+1;
     while (*pStr){
@@ -914,7 +989,7 @@ char *FSTypes(int Type,...)
     }
   }
   if (Type){
-    strcpy(tp,T("All Files"));tp+=T("All Files").Length()+1;
+    strcpy(tp,T("All Files"));tp+=strlen(tp)+1;
     strcpy(tp,"*.*");
   }
   return FileTypes;
@@ -1026,9 +1101,7 @@ void ShowAllDialogs(bool Show)
 //---------------------------------------------------------------------------
 void HandleKeyPress(UINT VKCode,bool Up,int Extended)
 {
-  if (disable_mouse_until){
-    if (timeGetTime()<disable_mouse_until) return;
-  }
+  if (disable_input_vbl_count) return;
   if (ikbd_keys_disabled()) return; //in duration mode
   if (macro_play_has_keys) return;
 
@@ -1075,18 +1148,26 @@ void SetStemMouseMode(int NewMM)
   if (stem_mousemode!=STEM_MOUSEMODE_WINDOW && NewMM==STEM_MOUSEMODE_WINDOW) GetCursorPos(&OldMousePos);
   stem_mousemode=NewMM;
   if (NewMM==STEM_MOUSEMODE_WINDOW){
-    SetCursor(NULL);
-
-    RECT rc;
-    GetWindowRect(StemWin,&rc);
-    window_mouse_centre_x=rc.left+164+GetSystemMetrics(SM_CXFRAME);
-    window_mouse_centre_y=rc.top+104+MENUHEIGHT+GetSystemMetrics(SM_CYFRAME)+GetSystemMetrics(SM_CYCAPTION);
-    SetCursorPos(window_mouse_centre_x,window_mouse_centre_y);
+    if (no_set_cursor_pos){
+      SetCursor(LoadCursor(NULL,RCNUM(IDC_CROSS)));
+      POINT pt;
+      GetCursorPos(&pt);
+      window_mouse_centre_x=pt.x;
+      window_mouse_centre_y=pt.y;
+    }else{
+      SetCursor(NULL);
+      RECT rc;
+      GetWindowRect(StemWin,&rc);
+      window_mouse_centre_x=rc.left+164+GetSystemMetrics(SM_CXFRAME);
+      window_mouse_centre_y=rc.top+104+MENUHEIGHT+GetSystemMetrics(SM_CYFRAME)+GetSystemMetrics(SM_CYCAPTION);
+      SetCursorPos(window_mouse_centre_x,window_mouse_centre_y);
+    }
 
 #ifndef _DEBUG_BUILD
     if (FullScreen){
       ClipCursor(NULL);
     }else{
+      RECT rc;
       POINT pt={0,0};
       GetClientRect(StemWin,&rc);
       rc.right-=6;
@@ -1102,7 +1183,7 @@ void SetStemMouseMode(int NewMM)
 #ifndef _DEBUG_BUILD
     ClipCursor(NULL);
 #endif
-    if (OldMousePos.x>=0){
+    if (OldMousePos.x>=0 && no_set_cursor_pos==0){
       SetCursorPos(OldMousePos.x,OldMousePos.y);
       OldMousePos.x=-1;
     }

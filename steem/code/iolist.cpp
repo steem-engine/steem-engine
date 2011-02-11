@@ -1,3 +1,11 @@
+/*---------------------------------------------------------------------------
+FILE: iolist.cpp
+MODULE: Steem
+CONDITION: _DEBUG_BUILD
+DESCRIPTION: A global list that stores information about various special
+addresses and how they should be displayed in the debugger.
+---------------------------------------------------------------------------*/
+
 void iolist_add_entry(MEM_ADDRESS ad,char*name,int bytes,char*bitmask,BYTE*ptr)
 {
   iolist_entry*p=iolist+iolist_length;

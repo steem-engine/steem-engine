@@ -1,3 +1,11 @@
+/*---------------------------------------------------------------------------
+FILE: hdimg.cpp
+MODULE: Steem
+NOTE: STUB
+DESCRIPTION: This file was going to house Steem's medium-level hard disk image
+emulation, but it hasn't been written yet (and probably won't be).
+---------------------------------------------------------------------------*/
+
 //---------------------------------------------------------------------------
 void hdimg_init_vectors()
 {

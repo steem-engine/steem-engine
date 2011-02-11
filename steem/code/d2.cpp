@@ -1,3 +1,14 @@
+/*---------------------------------------------------------------------------
+FILE: d2.cpp
+MODULE: Steem
+CONDITION: _DEBUG_BUILD
+DESCRIPTION: A Motorola 68000 disassembler. This is laid out exactly as
+cpu.cpp but rather than performing the operations it simply generates a
+disassembly. The only functions of interest to the outside program are
+disa_d2 (see bottom of file) to disassemble an instruction and
+d2_routines_init to initialise the debugger.
+---------------------------------------------------------------------------*/
+
 void (*d2_high_nibble_jump_table[16])();
 void (*d2_jump_line_0[64])();
 void (*d2_jump_line_4[64])();
