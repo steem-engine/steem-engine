@@ -133,16 +133,25 @@ bool MakeGUI()
   UNIX_get_fake_VKs();
   RunSteemAtom=XInternAtom(XD,"SteemRun",0);
   LoadSnapShotAtom=XInternAtom(XD,"SteemLoadSnapShot",0);
+#ifdef ALLOW_XALLOCID
   SteemWindowGroup=XAllocID(XD);
+#endif
 
   XSetWindowAttributes swa;
   swa.backing_store=NotUseful;
-	swa.colormap=colormap;
-  StemWin=XCreateWindow(XD,XDefaultRootWindow(XD),
-                         200,200,2+320+2,MENUHEIGHT+2+200+2,0,
-                         CopyFromParent,InputOutput,CopyFromParent,
-                         CWBackingStore | int(colormap ? CWColormap:0),
-                         &swa);
+  swa.colormap=colormap;
+  StemWin=XCreateWindow(XD,
+  				XDefaultRootWindow(XD),
+                200,
+                200,
+                2+320+2,
+                MENUHEIGHT+2+200+2,
+                0,
+                CopyFromParent,
+                InputOutput,
+                CopyFromParent, 
+                CWBackingStore | int(colormap ? CWColormap:0),
+                &swa);
   if (StemWin==0) return 0;
 
   hxc::load_res(XD);

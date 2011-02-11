@@ -14,7 +14,7 @@ CC=g++
 
 # Parameters given to the compiler
 STEEMFLAGS=-DUNIX -DLINUX
-CFLAGS=-I$(ROOT)/include -I$(ROOT)/steem/code -I$(ROOT)/3rdparty -Wall 
+CFLAGS=-I$(ROOT)/include -I$(ROOT)/steem/code -I$(ROOT)/3rdparty -Wall -w
 
 RELEASE_CFLAGS=-O
 
@@ -22,8 +22,24 @@ RELEASE_CFLAGS=-O
 OUTPUT="./output/steem"
 
 LIBS=-lX11 -lXext -lpthread -lXxf86vm \
-      $(ROOT)/3rdparty/zlib/libz.a  \
-      $(ROOT)/3rdparty/zlib/contrib/minizip/unzip.o  \
+      $(ROOT)/3rdparty/zlib/adler32.o  \
+      $(ROOT)/3rdparty/zlib/compress.o  \
+      $(ROOT)/3rdparty/zlib/crc32.o  \
+      $(ROOT)/3rdparty/zlib/deflate.o  \
+      $(ROOT)/3rdparty/zlib/gzclose.o  \
+      $(ROOT)/3rdparty/zlib/gzlib.o  \
+      $(ROOT)/3rdparty/zlib/gzread.o  \
+      $(ROOT)/3rdparty/zlib/gzwrite.o  \
+      $(ROOT)/3rdparty/zlib/infback.o  \
+      $(ROOT)/3rdparty/zlib/inffast.o  \
+      $(ROOT)/3rdparty/zlib/inflate.o  \
+      $(ROOT)/3rdparty/zlib/inftrees.o  \
+      $(ROOT)/3rdparty/zlib/trees.o  \
+      $(ROOT)/3rdparty/zlib/uncompr.o  \
+      $(ROOT)/3rdparty/zlib/zutil.o  \
+      $(ROOT)/3rdparty/zlib/contrib/minizip/unzip.o \
+      $(ROOT)/3rdparty/zlib/contrib/minizip/zip.o \
+      $(ROOT)/3rdparty/zlib/contrib/minizip/ioapi.o \
       $(ROOT)/3rdparty/urarlib/urarlib.o  \
 			\
       $(ROOT)/3rdparty/portaudio/pa_common/pa_lib.o \

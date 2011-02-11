@@ -306,7 +306,7 @@ Window StemWin=0;
 GC DispGC=0;
 Cursor EmptyCursor=0;
 Atom RunSteemAtom,LoadSnapShotAtom;
-XID SteemWindowGroup;
+XID SteemWindowGroup = 0;
 DWORD BlackCol=0,WhiteCol=0,BkCol=0,BorderLightCol,BorderDarkCol;
 hxc_alert alert;
 //XFontStruct *GUIFont=NULL,*SmallFont=NULL;
