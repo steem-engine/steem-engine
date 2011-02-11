@@ -1,8 +1,0 @@
-[Text]
-Description=This game works really badly on a real STE, here's a patch to stop it crashing on Steem.
-ApplyWhen=The game menu appears
-Version=Works on Steem v3.2
-PatchAuthor=Russell Hayward
-
-[Patch]
-070F5C=$4e71 $4e71

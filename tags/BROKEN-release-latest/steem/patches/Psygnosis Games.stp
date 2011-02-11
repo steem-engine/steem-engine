@@ -1,8 +1,0 @@
-[Text]
-Description=Some Psygnosis games use a mind-numbingly stupid way of turning on both the joystick and the mouse, they only work because of an undocumented bug in the IKBD. As we haven't got round to finding how to emulate the bug accurately yet, here's a patch to fix them.
-ApplyWhen=The mouse won't move.
-Version=Works on Steem v3.2
-PatchAuthor=Russell Hayward
-
-[Patch]
-FFFC02=$08FF

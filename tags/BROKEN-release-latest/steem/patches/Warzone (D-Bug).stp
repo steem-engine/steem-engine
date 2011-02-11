@@ -1,8 +1,0 @@
-[Text]
-Description=This patch is only necessary for old versions of D-Bug 21, to get the new fixed version go to http://dbug.atari.org/. 
-ApplyWhen=The Core Design logo disappears (be quick)
-Version=Works on Steem v3.2
-PatchAuthor=Kimmo Hakala
-
-[Patch]
-015A2A=$fffffffc

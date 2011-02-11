@@ -1,8 +1,0 @@
-[Text]
-Description=Due to a bug in the most common version of the Cuddly demo this screen freezes up when loading. Use this patch to see it in all its glory.
-ApplyWhen="Blipps to go" gets to 0.
-Version=Works on Steem v3.2
-PatchAuthor=Russell Hayward
-
-[Patch]
-000E20=$4e71 $4e71
