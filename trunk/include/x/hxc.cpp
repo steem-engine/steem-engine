@@ -394,7 +394,7 @@ hxc::hxc()
 
   if (font_sl.NumStrings==0){
     font_sl.Sort=eslNoSort;
-	font_sl.Add("-adobe-helvetica-bold-r-normal-*-12-*-*-*-*-*-iso8859-1");
+    font_sl.Add("-adobe-helvetica-bold-r-normal-*-14-100-*-*-*-*-iso8859-1");
     font_sl.Add("-b&h-lucida-medium-r-normal-*-*-120-*-*-p-*-iso8859-1");
     font_sl.Add("-urw-palatino-medium-r-normal-*-*-140-*-*-p-*-iso8859-1");
     font_sl.Add("-mdk-helvetica-medium-r-normal-*-*-130-*-*-p-*-tcvn-5712"); // not iso8859-1, accents mangled!

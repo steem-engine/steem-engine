@@ -94,7 +94,7 @@ TPatchesBox PatchesBox;
 #include "palette.cpp"
 #include "archive.cpp"
 #include "macros.cpp"
-#include <WordWrapper.cpp>
+#include <wordwrapper.cpp>
 #include "screen_saver.cpp"
 
 #ifdef ONEGAME
