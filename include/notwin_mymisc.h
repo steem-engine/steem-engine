@@ -8,6 +8,13 @@
 #define MAX_PATH 5000
 #endif
 
+#ifndef DWORD
+typedef unsigned long DWORD;
+typedef unsigned short WORD;
+typedef unsigned char BYTE;
+typedef unsigned int UINT;
+#endif
+
 #else
 
 #ifndef SLASH

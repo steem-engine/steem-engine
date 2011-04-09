@@ -8,7 +8,9 @@ bool enable_zip=false;
 #define WM_MOUSEWHEEL 0x020A
 #endif
 //---------------------------------------------------------------------------
-WIN_ONLY( HINSTANCE Inst; )
+#ifdef WIN32
+HINSTANCE Inst;
+#endif
 #define HInstance Inst
 //---------------------------------------------------------------------------
 #include <easystr.h>
@@ -32,7 +34,7 @@ WIN_ONLY( HINSTANCE Inst; )
 #include <portaudio/portaudio_dll.cpp>
 #endif
 #else
-#include <portaudio/pa_common/portaudio.h>
+#include <portaudio.h>
 #endif
 #endif
 
@@ -40,7 +42,7 @@ WIN_ONLY( HINSTANCE Inst; )
 
 #ifndef NO_RTAUDIO
 #ifdef UNIX
-#include <rtaudio/RtAudio.h>
+#include <RtAudio.h>
 using namespace std;
 #endif
 #endif

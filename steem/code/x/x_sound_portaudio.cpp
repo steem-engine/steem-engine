@@ -1,9 +1,16 @@
+#define PortAudioStream PaStream
+#define PaTimestamp PaTime
+#define Pa_StreamTime Pa_GetStreamTime
+#define PaDeviceID PaDeviceIndex
+#define Pa_GetDefaultOutputDeviceID Pa_GetDefaultOutputDevice
+#define Pa_CountDevices Pa_GetDeviceCount
+
 PortAudioStream *pa_out=NULL;
 PaTimestamp pa_start_time;
 bool pa_init=0;
 
 void PA_FreeBuffer(bool);
-int PA_Callback(void*,void*,unsigned long,PaTimestamp,void*);
+int PA_Callback(const void*,void*,unsigned long,const PaStreamCallbackTimeInfo*,PaStreamCallbackFlags,void*);
 //---------------------------------------------------------------------------
 HRESULT PA_Init()
 {
@@ -14,7 +21,7 @@ HRESULT PA_Init()
       pa_init=true;
 #ifdef UNIX
       if(sound_device_name.IsEmpty()){
-        sound_device_name=Pa_GetDeviceInfo(Pa_GetDefaultOutputDeviceID())->name;
+        sound_device_name=Pa_GetDeviceInfo(Pa_GetDefaultOutputDevice())->name;
       }
 #endif
       UseSound=XS_PA;
@@ -73,6 +80,11 @@ HRESULT PA_StartBuffer(int flatlevel1,int flatlevel2)
   }
 #endif
   const PaDeviceInfo *pdev=Pa_GetDeviceInfo(out_dev);
+
+  sound_freq=sound_chosen_freq;
+
+/* Commented due to changes in PortAudio - see http://www.portaudio.com/docs/proposals/002-ImproveDeviceFormatsQueryInterface.html
+
   if (pdev->numSampleRates==-1){
     // Range, make sure we fit inside
     sound_freq=sound_chosen_freq;
@@ -88,9 +100,18 @@ HRESULT PA_StartBuffer(int flatlevel1,int flatlevel2)
       }
     }
     if (sound_freq<=0) sound_freq=sound_chosen_freq;
-  }
-  PaError err=Pa_OpenStream(&pa_out,paNoDevice,0,0,NULL,out_dev,sound_num_channels,
-                pa_format,NULL,sound_freq,pa_output_buffer_size,0,
+  } */
+
+  PaStreamParameters outStreamParams;
+  outStreamParams.device = out_dev;
+  outStreamParams.channelCount = sound_num_channels;
+  outStreamParams.sampleFormat = pa_format;
+
+
+  PaError err=Pa_OpenStream(&pa_out,
+		NULL,
+		&outStreamParams,
+		sound_freq,pa_output_buffer_size,
                 paDitherOff | paClipOff,PA_Callback,NULL);
   if (pa_out==NULL){
     printf("Pa_OpenStream Error: %s\n",Pa_GetErrorText(err));
@@ -117,11 +138,11 @@ HRESULT PA_StartBuffer(int flatlevel1,int flatlevel2)
 //---------------------------------------------------------------------------
 bool PA_IsPlaying(){ return pa_out!=NULL; }
 //---------------------------------------------------------------------------
-int PA_Callback(void*,void *pOutBuf,unsigned long Samples,PaTimestamp OutTime,void*)
+int PA_Callback(const void*,void *pOutBuf,unsigned long Samples,const PaStreamCallbackTimeInfo* OutTime,PaStreamCallbackFlags, void*)
 {
   if (pOutBuf==NULL || Samples==0) return 0;
 
-  DWORD buf_idx=DWORD(OutTime-pa_start_time);
+  DWORD buf_idx=DWORD((OutTime->currentTime)-pa_start_time);
   DWORD buflen_bytes=X_SOUND_BUF_LEN_BYTES;
   DWORD bytes=Samples*sound_bytes_per_sample,bytes2=0;
 

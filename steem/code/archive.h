@@ -1,9 +1,9 @@
 #ifdef UNIX
-#include <zlib/contrib/minizip/unzip.h>
+#include <unzip.h>
 #endif
 
 #ifdef WIN32
-#include "unzip.h"
+#include "unzip_win32.h"
 #endif
 
 #ifndef NO_RAR_SUPPORT
@@ -12,7 +12,7 @@
 
 #ifdef RAR_SUPPORT
 
-#include <urarlib/urarlib.h>
+#include <unrarlib.h>
 
 #endif
 
