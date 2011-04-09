@@ -1,6 +1,8 @@
 #ifndef EASYSTR_H
 #define EASYSTR_H
 
+#include <stddef.h>
+
 #ifndef EASYSTR_BASE
 #define EASYSTR_BASE 0
 #endif

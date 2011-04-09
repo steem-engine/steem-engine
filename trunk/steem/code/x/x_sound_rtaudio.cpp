@@ -15,12 +15,12 @@ HRESULT Rt_Init()
 
   {
     if(sound_device_name.IsEmpty()){
-      RtAudioDeviceInfo radi;
+      RtAudio::DeviceInfo radi;
       int c=rt_audio->getDeviceCount();
       for (int i=1;i<=c;i++){
         radi=rt_audio->getDeviceInfo(i);
         if (radi.outputChannels>0){
-          if (radi.isDefault){
+          if (radi.isDefaultOutput){
             sound_device_name=radi.name.c_str();
           }
         }
@@ -42,8 +42,9 @@ void Rt_Release()
   rt_audio=NULL;
 }
 //---------------------------------------------------------------------------
-int Rt_Callback(char *buffer,int bufferSize,void*)
+int Rt_Callback(void *bufferP, void*, unsigned int bufferSize, double, RtAudioStreamStatus, void*)
 {
+  char *buffer = (char*) bufferP;
   int pointer_byte=rt_sound_buf_pointer;
   pointer_byte%=sound_buffer_length; // Get sample count within buffer
   pointer_byte*=sound_bytes_per_sample; // Convert to bytes
@@ -73,12 +74,12 @@ int Rt_Callback(char *buffer,int bufferSize,void*)
 //---------------------------------------------------------------------------
 HRESULT Rt_StartBuffer(int flatlevel1,int flatlevel2)
 {
-  RtAudioDeviceInfo radi;
+  RtAudio::DeviceInfo radi;
   if (rt_audio==NULL) return DSERR_GENERIC;
 
   Rt_FreeBuffer(true);
 
-  int bufferSize=rt_buffer_size;  // 256 sample frames
+  unsigned int bufferSize=rt_buffer_size;  // 256 sample frames
   int device=0;        // 0 indicates the default or first available device
 
   RtAudioFormat format=RTAUDIO_SINT8;
@@ -109,7 +110,10 @@ HRESULT Rt_StartBuffer(int flatlevel1,int flatlevel2)
   }
   
   try{
-    rt_audio->openStream(device,sound_num_channels,0,0,format,sound_freq,&bufferSize,rt_buffer_num);
+    RtAudio::StreamParameters outParams;
+    outParams.deviceId = device;
+    outParams.nChannels = sound_num_channels;
+    rt_audio->openStream(&outParams,NULL,format,sound_freq,&bufferSize, Rt_Callback);
   }catch (RtError &error){
     try{
       rt_audio->closeStream();
@@ -122,7 +126,6 @@ HRESULT Rt_StartBuffer(int flatlevel1,int flatlevel2)
   XSoundInitBuffer(flatlevel1,flatlevel2);
   rt_sound_buf_pointer=0;
   try{
-    rt_audio->setStreamCallback(Rt_Callback,0);
     rt_audio->startStream();
   }catch (RtError &error){
     try{

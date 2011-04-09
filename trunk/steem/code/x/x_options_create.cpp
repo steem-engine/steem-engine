@@ -642,8 +642,8 @@ void TOptionBox::FillSoundDevicesDD()
   dd->make_empty();
 #ifndef NO_PORTAUDIO
   if (UseSound==XS_PA){
-    int c=Pa_CountDevices(),isel=Pa_GetDefaultOutputDeviceID();
-    for (PaDeviceID i=0;i<c;i++){
+    int c=Pa_GetDeviceCount(),isel=Pa_GetDefaultOutputDevice();
+    for (PaDeviceIndex i=0;i<c;i++){
       const PaDeviceInfo *pdev=Pa_GetDeviceInfo(i);
       if (pdev->maxOutputChannels>0){
         dd->additem((char*)(pdev->name),i);
@@ -656,13 +656,13 @@ void TOptionBox::FillSoundDevicesDD()
 #endif
 #ifndef NO_RTAUDIO
   if (UseSound==XS_RT){
-    RtAudioDeviceInfo radi;
+    RtAudio::DeviceInfo radi;
     int c=rt_audio->getDeviceCount(),isel=0; //isel=default device, find while walking through list
     for (int i=1;i<=c;i++){
       radi=rt_audio->getDeviceInfo(i);
       if (radi.outputChannels>0){
         dd->additem((char*)(radi.name.c_str()),i);
-        if (radi.isDefault) isel=i;
+        if (radi.isDefaultOutput) isel=i;
       }
     }
     for (int i=1;i<=c;i++){
