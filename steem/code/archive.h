@@ -12,7 +12,7 @@
 
 #ifdef RAR_SUPPORT
 
-#include <unrarlib.h>
+#include <unrarlib/unrarlib.h>
 
 #endif
 
