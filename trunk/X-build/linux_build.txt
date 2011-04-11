@@ -24,7 +24,7 @@ Download portaudio pa_stable.tgz from http://www.portaudio.com/download.html
 and extract to 3rdparty, creating folder 3rdparty/portaudio
 
 Download rtaudio*.tar.gz from http://www.music.mcgill.ca/~gary/rtaudio/release/ and extract
-to 3rdparty, creating folder 3rdparty/rtaudio-someversion.  Create symlink from 3rdprty/rtaudios
+to 3rdparty, creating folder 3rdparty/rtaudio-someversion.  Create symlink from 3rdparty/rtaudios
 
 
 Run:

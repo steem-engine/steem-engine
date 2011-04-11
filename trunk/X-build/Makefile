@@ -112,7 +112,7 @@ link_static:
 3rdparty:	zlib unrarlib portaudio rtaudio
 
 unrarlib:
-	gcc -c $(ROOT)/3rdparty/unrarlib/unrarlib.c $(CFLAGS) -o$(ROOT)/3rdparty/unrarlib/unrarlib.o
+	gcc -c $(ROOT)/3rdparty/unrarlib/unrarlib/unrarlib.c $(CFLAGS) -o$(ROOT)/3rdparty/unrarlib/unrarlib.o
 
 zlib:
 	cd $(ROOT)/3rdparty/zlib; sh configure; make test
