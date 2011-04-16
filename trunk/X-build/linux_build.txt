@@ -5,26 +5,29 @@ sh configure
 make
 make install
 
-Install debian packages
+Install debian packages (or equivalents for other systems)
 
 g++
-
 libx11-dev package
 libxxf86vm-dev package
 libxext-dev package
 
 
-Download zlib from http://www.zlib.net/ to 3rdparty and unzip
+Download zlib from http://www.zlib.net/ and unzip to 3rdparty
 create a symbolic link ln -s zlib-* zlib
 
-Download unrarlib from http://www.unrarlib.org/download.html and copy
-folder "unrarlib" to 3rdparty
+Download unrarlib from http://www.unrarlib.org/download.html extract to 3rdparty.
+Create a symbolic link ln -s unrarlib-* unrarlib
 
 Download portaudio pa_stable.tgz from http://www.portaudio.com/download.html
 and extract to 3rdparty, creating folder 3rdparty/portaudio
 
 Download rtaudio*.tar.gz from http://www.music.mcgill.ca/~gary/rtaudio/release/ and extract
+<<<<<<< .mine
+to 3rdparty, creating folder 3rdparty/rtaudio-someversion.  Create symlink ln -s rtaudio-* rtaudio
+=======
 to 3rdparty, creating folder 3rdparty/rtaudio-someversion.  Create symlink from 3rdparty/rtaudios
+>>>>>>> .r56
 
 
 Run:
