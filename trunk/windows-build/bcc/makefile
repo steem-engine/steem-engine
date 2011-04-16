@@ -5,9 +5,9 @@ INCDIR = ..\..\include
 ASMOBJDIR = obj
 3RDPARTYROOT = ..\..\3rdparty
 
-3RDPARTYOBJS = $(3RDPARTYROOT)\urarlib\urarlib.obj
+3RDPARTYOBJS = $(3RDPARTYROOT)\unrarlib\unrarlib\unrarlib.obj
 
-INCLUDEPATHS = $(STEEMROOT)\code;$(BCCROOT)\Include;$(INCDIR);$(3RDPARTYROOT)
+INCLUDEPATHS = $(STEEMROOT)\code;$(BCCROOT)\Include;$(INCDIR);$(3RDPARTYROOT);$(3RDPARTYROOT)\unrarlib
 
 ALLOBJS = $(ASMOBJDIR)\asm_draw.obj obj\emu.obj c0w32.obj obj\Steem.obj $(ASMOBJS) obj\helper.obj
 ALLOBJS = $(ALLOBJS) $(ASMOBJDIR)\asm_osd_draw.obj $(ASMINCOBJDIR)\asm_portio.obj
@@ -109,3 +109,8 @@ emu.obj:
 
 $(NAME).exe:
            $(LINKER) $(LINKOPTS) $(ALLOBJS), "$(OUTPUTDIR)\$(NAME).exe", ,import32.lib cw32mt.lib, ,obj\Steem.res
+
+3rdparty:	unrarlib
+
+unrarlib:
+	$(CPP) $(CPPFLAGS) -DWIN32 -c -o$(3RDPARTYROOT)\unrarlib\unrarlib\unrarlib.obj $(3RDPARTYROOT)\unrarlib\unrarlib\unrarlib.c $(CFLAGS) 

@@ -1,0 +1,10 @@
+
+Download unrarlib from http://www.unrarlib.org/download.html and extract to 3rdparty.
+Rename folder unrarlib040 to unrarlib
+
+Run:
+build_user.bat
+
+
+
+
