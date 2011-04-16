@@ -40,7 +40,7 @@ LIBS=-lX11 -lXext -lpthread -lXxf86vm \
       $(ROOT)/3rdparty/zlib/contrib/minizip/unzip.o \
       $(ROOT)/3rdparty/zlib/contrib/minizip/ioapi.o \
        \
-      $(ROOT)/3rdparty/unrarlib/unrarlib.o \
+      $(ROOT)/3rdparty/unrarlib/unrarlib/unrarlib.o \
 			\
       $(ROOT)/3rdparty/portaudio/lib/libportaudio.la \
        \
@@ -112,7 +112,11 @@ link_static:
 3rdparty:	zlib unrarlib portaudio rtaudio
 
 unrarlib:
+<<<<<<< .mine
+	gcc -c $(ROOT)/3rdparty/unrarlib/unrarlib/unrarlib.c $(CFLAGS) -o$(ROOT)/3rdparty/unrarlib/unrarlib/unrarlib.o
+=======
 	gcc -c $(ROOT)/3rdparty/unrarlib/unrarlib/unrarlib.c $(CFLAGS) -o$(ROOT)/3rdparty/unrarlib/unrarlib.o
+>>>>>>> .r56
 
 zlib:
 	cd $(ROOT)/3rdparty/zlib; sh configure; make test
