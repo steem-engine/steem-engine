@@ -38,6 +38,7 @@ mkdir obj
 "%NASMPATH%nasm" -o obj\asm_osd_draw.obj -fobj -dWIN32 -w+macro-params -w+macro-selfref -w+orphan-labels -i%ROOT%\steem\asm\ %ROOT%\steem\asm\asm_osd_draw.asm
 "%NASMPATH%nasm" -o obj\asm_portio.obj -fobj -dWIN32 %ROOT%\include\asm\asm_portio.asm
 
+"%BCCPATH%make.exe" 3rdparty
 "%BCCPATH%make.exe" -B -D_FORCE_DEBUG_BUILD -D_BCC_BUILD
 
 del "%OUT%\*.tds"
