@@ -46,8 +46,6 @@ LIBS=-lX11 -lXext -lpthread -lXxf86vm \
        \
       $(ROOT)/3rdparty/rtaudio/tests/Release/RtAudio.o
 
-LIBTOOL=$(ROOT)/3rdparty/portaudio/libtool
-
 # Objects
 OBJS=./obj/asm_draw.o ./obj/emu.o ./obj/asm_osd.o ./obj/main.o ./obj/helper.o ./obj/resource.o
 # OBJS=./code/draw_c/draw_c.o emu.o main.o urarlib.o helper.o resource.o
@@ -103,7 +101,7 @@ res:
 	nasm -felf -o./obj/resource.o -i$(ROOT)/steem/ $(ROOT)/steem/rc/resource.asm
 
 link: 
-	$(LIBTOOL) --mode=link $(CC) -o $(OUTPUT) $(CFLAGS) $(OBJS) $(LIBS)
+	$(CC) -o $(OUTPUT) $(CFLAGS) $(OBJS) $(LIBS)
 
 link_static:
 	$(CC) -o $(OUTPUT) $(CFLAGS) $(OBJS) $(LIBS) -static
@@ -112,18 +110,17 @@ link_static:
 3rdparty:	zlib unrarlib portaudio rtaudio
 
 unrarlib:
-<<<<<<< .mine
 	gcc -c $(ROOT)/3rdparty/unrarlib/unrarlib/unrarlib.c $(CFLAGS) -o$(ROOT)/3rdparty/unrarlib/unrarlib/unrarlib.o
-=======
-	gcc -c $(ROOT)/3rdparty/unrarlib/unrarlib/unrarlib.c $(CFLAGS) -o$(ROOT)/3rdparty/unrarlib/unrarlib.o
->>>>>>> .r56
 
 zlib:
 	cd $(ROOT)/3rdparty/zlib; sh configure; make test
 	cd $(ROOT)/3rdparty/zlib/contrib/minizip; make all
 
 portaudio:
-	cd $(ROOT)/3rdparty/portaudio; sh configure; make
+	cd $(ROOT)/3rdparty/portaudio; 
+	sh configure; 
+	make
+	sh libtool --mode=link g++ -all-static -o lib/libportaudio.a lib/libportaudio.la
 
 rtaudio:
 	cd $(ROOT)/3rdparty/rtaudio; sh configure --with-oss; cd tests; make
