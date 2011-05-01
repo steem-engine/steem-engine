@@ -5,14 +5,19 @@ sh configure
 make
 make install
 
+DEBIAN
 Install debian packages (or equivalents for other systems)
-
 g++
-
 libx11-dev package
 libxxf86vm-dev package
 libxext-dev package
 
+FEDORA
+gcc-g++
+nasm
+libX11-devel
+libXext-devel
+libXxf86vm-devel
 
 Download zlib from http://www.zlib.net/ and unzip to 3rdparty
 create a symbolic link ln -s zlib-* zlib
