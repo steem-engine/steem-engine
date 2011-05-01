@@ -17,6 +17,7 @@ STEEMFLAGS=-DUNIX -DLINUX
 CFLAGS=-I$(ROOT)/include -I$(ROOT)/steem/code \
 -I$(ROOT)/3rdparty/unrarlib \
 -I$(ROOT)/3rdparty/zlib/contrib/minizip \
+-I$(ROOT)/3rdparty/zlib \
 -I$(ROOT)/3rdparty/portaudio/src/common \
 -I$(ROOT)/3rdparty/portaudio/include \
 -I$(ROOT)/3rdparty/rtaudio \
