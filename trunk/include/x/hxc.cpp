@@ -147,14 +147,19 @@ void hxc::load_res(Display*XD)
     gc=XCreateGC(XD,XDefaultRootWindow(XD),0,NULL);
 
     font=NULL;
-	for (int f=0;f<font_sl.NumStrings;f++){
-	  font=XLoadQueryFont(XD,font_sl[f].String);
-	  if (font) break;
-	}
-    if (font==NULL) font=XLoadQueryFont(XD,"8x13");
-    if (font) XSetFont(XD,gc,font->fid);
+    for (int f=0;f<font_sl.NumStrings;f++){
+      font=XLoadQueryFont(XD,font_sl[f].String);
+      if (font) break;
+    }
+    if (font==NULL) {
+      printf("WARNING: Could not load any pre-configured font - choosing a random font\n");
+      int fontCount = 0;
+      char** fontList = XListFonts(XD, "*", 1, &fontCount);
+      font = XLoadQueryFont(XD,fontList[0]);
+    }
+    XSetFont(XD,gc,font->fid);
     cModal=XUniqueContext();
-  	arrow_cursor=XCreateFontCursor(XD,XC_arrow);
+    arrow_cursor=XCreateFontCursor(XD,XC_arrow);
     XA_WM_PROTOCOLS=XInternAtom(XD,"WM_PROTOCOLS",0);
     XA_WM_DELETE_WINDOW=XInternAtom(XD,"WM_DELETE_WINDOW",0);
   }
@@ -398,6 +403,8 @@ hxc::hxc()
     font_sl.Add("-b&h-lucida-medium-r-normal-*-*-120-*-*-p-*-iso8859-1");
     font_sl.Add("-urw-palatino-medium-r-normal-*-*-140-*-*-p-*-iso8859-1");
     font_sl.Add("-mdk-helvetica-medium-r-normal-*-*-130-*-*-p-*-tcvn-5712"); // not iso8859-1, accents mangled!
+    font_sl.Add("*sans l-medium-r-normal-*-iso8859-1");
+    font_sl.Add("8x13");
   }
 }
 
