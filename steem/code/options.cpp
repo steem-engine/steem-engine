@@ -183,7 +183,7 @@ int TOptionBox::TOSLangToFlagIdx(int Lang)
     case 3: return 4;  //German
     case 11: return 5; //Italian
     case 13: return 6; //Swedish
-    case 14: return 9; //Russian
+    case 39: return 9; //Russian-corrected
     case 17: return 7; //Swiss German
     case 27: return 8; //Dutch
   }
