@@ -1,0 +1,8 @@
+[Text]
+Description=This game wouldn't work on a real STE but you can play it on Steem using this patch.
+ApplyWhen=A big flickering mess appears on the screen.
+Version=Works on Steem v3.2
+PatchAuthor=Russell Hayward
+
+[Patch]
+06437C=$4e71 $4e71 $4e71 $4e71

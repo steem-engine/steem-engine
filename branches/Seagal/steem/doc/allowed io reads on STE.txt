@@ -1,0 +1,32 @@
+Allowed addresses
+
+000000 - 3FFFFF   RAM
+
+D00000 - D7FFFF
+E00000 - E3FFFF   TOS
+E40000 - EBFFFF
+
+FA0000 - FBFFFF   Cart
+
+FE0000 - FE1FFF
+
+FF8000 - FF800F   MMU
+FF8200 - FF820F   SHIFTER
+FF8240 - FF827F   pallette, res
+FF8608 - FF860F   FDC
+FF8800 - FF88FF   sound chip
+FF8900 - FF893F   DMA sound, microwire
+FF8A00 - FF8A3F   blitter
+FF9000 - FF9001   
+FF9201, FF9202, FF9203           paddles
+FF9211, FF9213, FF9215, FF9217   paddles
+FFFA01, odd addresses up to FFFA3F   MFP
+FFFC00 - FFFDFF   ACIA, realtime clock
+
+Word differences:
+
+FF8604 - FF860F   FDC
+FF9200, FF9202                   paddles
+FF9210, FF9212, FF9214, FF9216   paddles
+FF9220, FF9222                   paddles
+FFFA00 - FFFA3F   MFP
