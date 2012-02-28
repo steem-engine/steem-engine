@@ -471,12 +471,13 @@ LRESULT PASCAL WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lPar)
           int res=int(mixed_output ? 1:screen_res);
           int Idx=WinSizeForRes[res];
           if (border & 1){
-            ratio=double(WinSizeBorder[res][Idx].x)/double(WinSizeBorder[res][Idx].y);
+            ratio=(double)(WinSizeBorder[res][Idx].x)/(double)(WinSizeBorder[res][Idx].y);
           }else{
-            ratio=double(WinSize[res][Idx].x)/double(WinSize[res][Idx].y);
+            ratio=(double)(WinSize[res][Idx].x)/(double)(WinSize[res][Idx].y);
           }
-          double sz=(double(rc.right-4)/ratio + double(rc.bottom-(MENUHEIGHT+4)))/2.0;
-          SetStemWinSize(int(sz*ratio + 0.5),int(sz + 0.5));
+          double sz=( (double)(rc.right-4)/ratio + (double)(rc.bottom-(MENUHEIGHT+4)))/2.0;
+          //TRACE("sz: %f ratio:%f\n",sz,ratio);
+          SetStemWinSize((int)(sz*ratio + 0.5),(int)(sz + 0.5));
 
           return 0;
         }
@@ -545,12 +546,27 @@ LRESULT PASCAL WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lPar)
     case WM_KEYDOWN:
     case WM_KEYUP:
     case WM_SYSKEYDOWN:case WM_SYSKEYUP:
+		//TRACE("Key %X",wPar);
       if (bAppActive==0) return 0;
       if (wPar==VK_SHIFT || wPar==VK_CONTROL || wPar==VK_MENU) return 0;
 #ifndef ONEGAME
       if (TaskSwitchDisabled){
         int n=0;
         while (TaskSwitchVKList[n]) if (LOBYTE(wPar)==TaskSwitchVKList[n++]) return 0;
+      }
+#endif
+      
+#if defined(STEVEN_SEAGAL) && defined(SS_VAR_F12)
+      // Adding F12 as emulator start/stop.
+      if(wPar==VK_F12)
+      {
+        if (Mess==WM_KEYUP || Mess==WM_SYSKEYUP)
+        {
+          if(runstate==RUNSTATE_STOPPED)
+          { PostRunMessage();} // it's a macro
+          else
+            runstate=RUNSTATE_STOPPING;
+        }
       }
 #endif
 
@@ -729,11 +745,27 @@ LRESULT PASCAL WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lPar)
       if (draw_grille_black<4) draw_grille_black=4;
       if (FullScreen){
         CanUse_400=true;
-      }else if (border & 1){
+
+#if defined(STEVEN_SEAGAL) && defined(SS_VID_BORDERS)
+      }
+      else if (border & 1)
+      {
+        // Finally found the bug that made a blurry display
+        // with larger window.
+        CanUse_400=(cw==(4+640+ 4* SideBorderSize) 
+          && ch==(MENUHEIGHT+4+400 + 2*(BORDER_TOP+BottomBorderSize)));
+      }else{
+        CanUse_400=(cw==644 && ch==404+MENUHEIGHT);
+      }
+#else
+    }else if (border & 1){
         CanUse_400=(cw==(4+640+16*4*2) && ch==(MENUHEIGHT+4+400 + 2*(BORDER_TOP+BORDER_BOTTOM)));
       }else{
         CanUse_400=(cw==644 && ch==404+MENUHEIGHT);
       }
+
+#endif
+
       switch (wPar){
         case SIZE_MAXIMIZED: bAppMaximized=true; break;
         case SIZE_MINIMIZED: bAppMinimized=true; break;
@@ -896,7 +928,12 @@ void HandleButtonMessage(UINT Id,HWND hBut)
 
         if (GetForegroundWindow()==StemWin && GetCapture()==NULL && IsIconic(StemWin)==0 &&
             fast_forward!=RUNSTATE_STOPPED+1 && slow_motion!=RUNSTATE_STOPPED+1){
+#if defined(STEVEN_SEAGAL) && defined(SS_VAR_MOUSE_CAPTURE)
+          if(CaptureMouse)
+            SetStemMouseMode(STEM_MOUSEMODE_WINDOW);
+#else
           SetStemMouseMode(STEM_MOUSEMODE_WINDOW);
+#endif
         }
 
         SendMessage(hBut,BM_SETCHECK,1,0);
@@ -1026,6 +1063,7 @@ void HandleButtonMessage(UINT Id,HWND hBut)
 //---------------------------------------------------------------------------
 void SetStemWinSize(int w,int h,int xo,int yo)
 {
+  //TRACE("SetStemWinSize %d, %d, %d, %d\n",w,h,xo,yo);
   if (FullScreen){
     rcPreFS.left=max(rcPreFS.left+xo,0l);
     rcPreFS.top=max(int(rcPreFS.top+yo),-GetSystemMetrics(SM_CYCAPTION));
@@ -1035,7 +1073,9 @@ void SetStemWinSize(int w,int h,int xo,int yo)
     if (bAppMaximized==0 && bAppMinimized==0){
       RECT rc;
       GetWindowRect(StemWin,&rc);
-      SetWindowPos(StemWin,0,max(rc.left+xo,0l),max(int(rc.top+yo),-GetSystemMetrics(SM_CYCAPTION)),
+      //TRACE("cx: %d ",w+4+GetSystemMetrics(SM_CXFRAME)*2);
+      //TRACE("cy: %d\n",h+MENUHEIGHT+4+GetSystemMetrics(SM_CYFRAME)*2+GetSystemMetrics(SM_CYCAPTION));
+      SetWindowPos(StemWin,0,max(rc.left+xo,0l),max((int)(rc.top+yo),-GetSystemMetrics(SM_CYCAPTION)),
                     w+4+GetSystemMetrics(SM_CXFRAME)*2,
                     h+MENUHEIGHT+4+GetSystemMetrics(SM_CYFRAME)*2+GetSystemMetrics(SM_CYCAPTION),
                     SWP_NOZORDER | SWP_NOACTIVATE);

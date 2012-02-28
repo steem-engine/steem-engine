@@ -498,9 +498,12 @@ void InitKeyTable()
           Key #221 = ASCII å (#-27) = ST keycode 0x1a
           Key #222 = ASCII æ (#-26) = ST keycode 0x27
         */
-        char char_list[]=  {168, 43, 39,  248, 229, 230,   0};
+#if defined(STEVEN_SEAGAL) // stops a warning L2
+        char char_list[]= {(char)168,43,39,(char)248,(char)229,(char)230,0};
+#else
+        char char_list[]= {168,43,39,248,229,230,0};        
+#endif
         SetSTKeys(char_list,0x1b,0xc,0x29,0x28,0x1a,0x27);
-
       }
       break;
   }

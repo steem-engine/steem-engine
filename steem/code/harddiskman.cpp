@@ -263,7 +263,6 @@ void THardDiskManager::Hide()
     ApplyChanges=0;
 
     GetDriveInfo();
-
     for (int i=0;i<nDrives;i++){
       if (Drive[i].Path.IsEmpty()){
         Alert(T("One of the mounted paths is empty!"),T("Empty Path"),MB_ICONEXCLAMATION);

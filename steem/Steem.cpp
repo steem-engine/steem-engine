@@ -36,8 +36,12 @@ Windows BCC - import32.lib  cw32mt.lib  c0w32.obj
 Windows MinGW - winmm  uuid  comctl32  ole32
 Unix - X11  Xext  pthread
 */
+
+
 //---------------------------------------------------------------------------
-#if !defined(_BCB_BUILD)
+// SS: Except in the old BCBuilder, the macros USE... will do NOTHING at all!
+// the includes are in main (last lines of this file)
+#ifndef _BCB_BUILD	
 #define USEUNIT(ModName)
 #define USEOBJ(FileName)
 #define USERC(FileName)
@@ -49,7 +53,8 @@ Unix - X11  Xext  pthread
 #define USEFILE(FileName)
 #define USEIDL(FileName)
 #else
-#include <condefs.h>
+#pragma message("Build for Borland C++ Builder...")
+#include <condefs.h> 
 #endif
 
 USELIB("asm\asm_draw.obj");
@@ -59,6 +64,7 @@ USELIB("..\..\3rdparty\urarlib\urarlib.obj");
 
 
 //USEUNIT("..\..\3rdparty\mmgr\mmgr.cpp");
+
 
 
 USEFILE("pch.h");
@@ -196,6 +202,15 @@ USERC("rc\resource.rc");
 
 #include "conditions.h"
 
+
+
+// SS: VC++ 6.0 (and below) scoping bugfix
+#ifdef _VC_BUILD
+#if defined(_MSC_VER) && _MSC_VER <= 1200
+#define for if(0); else for
+#endif
+#endif
+
 #include "main.cpp"
 
 #ifdef DUMMY_PROCEDURE_FOR_BCB_IDE
@@ -203,9 +218,5 @@ int main()
 {
 }
 #endif
-
-
-
-
 
 

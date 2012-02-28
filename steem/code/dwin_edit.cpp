@@ -5,6 +5,7 @@ CONDITION: _DEBUG_BUILD
 DESCRIPTION: The edit box that is used to change values in the debugger.
 ---------------------------------------------------------------------------*/
 
+
 long __stdcall DWin_edit_WndProc(HWND,unsigned int,unsigned int,long);
 WNDPROC Old_edit_WndProc;
 
@@ -139,7 +140,7 @@ void set_DWin_edit(int type,void*subject,int n,int col)
     int w=SendMessage(mb->handle,LVM_GETCOLUMNWIDTH,col,0);
     //adjust rc.left and rc.right by column index
     int cx=0;
-    for (int c=0;c<col;c++) cx+=SendMessage(mb->handle,LVM_GETCOLUMNWIDTH,c,0);
+    for ( c=0;c<col;c++) cx+=SendMessage(mb->handle,LVM_GETCOLUMNWIDTH,c,0);
     rc.left+=cx;rc.right+=cx;
     pt.x=rc.left;pt.y=rc.top;
     ClientToScreen(mb->handle,&pt);

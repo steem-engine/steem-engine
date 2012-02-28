@@ -1,4 +1,8 @@
+#ifdef STEVEN_SEAGAL
+#define SNAPSHOT_VERSION 41 // 3.3b
+#else
 #define SNAPSHOT_VERSION 40
+#endif
 
 #define LS_LOAD 0
 #define LS_SAVE 1

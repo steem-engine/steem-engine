@@ -12,7 +12,8 @@
 
 #ifdef RAR_SUPPORT
 
-#include <unrarlib/unrarlib.h>
+//#include <unrarlib/unrarlib/unrarlib.h>	//SS
+#include "../../3rdparty/unrarlib/unrarlib/unrarlib.h"
 
 #endif
 

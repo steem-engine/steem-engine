@@ -417,3 +417,5 @@ void trace_window_init()
 
   SetWindowAndChildrensFont(trace_window_handle,fnt);
 }
+
+

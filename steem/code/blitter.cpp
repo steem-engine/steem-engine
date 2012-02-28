@@ -269,7 +269,13 @@ void Blitter_Draw()
 
 #undef LOGSECTION
 #define LOGSECTION LOGSECTION_CPU
+        
+#if defined(STEVEN_SEAGAL) && defined(SS_CPU)
+        m68k_Process(); // call inline function
+#else
         m68k_PROCESS
+#endif
+
 #undef LOGSECTION
 #define LOGSECTION LOGSECTION_BLITTER
 
@@ -328,8 +334,22 @@ BYTE Blitter_IO_ReadB(MEM_ADDRESS Adr)
   exception(BOMBS_BUS_ERROR,EA_READ,Adr);
   return 0;
 #else
+	
+#if defined(STEVEN_SEAGAL) && defined(ST_STF)
+/* When TOS1.02 resets, it tests for Blitter.
+   There was a blitter on (some!) Mega STF, but we
+   don't bother.
+*/
+ if(ST_type==STF)
+  {
+    TRACE("STF: no blitter exception\n");
+    exception(BOMBS_BUS_ERROR,EA_READ,Adr);
+    return 0;
+  }
+#endif
+	
   MEM_ADDRESS Offset=Adr-0xFF8A00;
-
+	
   if (Offset<0x20){
     int nWord=(Offset/2);
     if (Offset & 1){  // Low byte
@@ -388,6 +408,16 @@ void Blitter_IO_WriteB(MEM_ADDRESS Adr,BYTE Val)
   exception(BOMBS_BUS_ERROR,EA_WRITE,Adr);
   return;
 #else
+
+#if defined(STEVEN_SEAGAL) && defined(ST_STF)
+  if(ST_type==STF)
+  {
+    TRACE("No blitter\n"); 
+    exception(BOMBS_BUS_ERROR,EA_READ,Adr);
+    return ;
+  }
+#endif
+
   MEM_ADDRESS Offset=Adr-0xFF8A00;
   if (Offset<0x3A && io_word_access==0){
     return;

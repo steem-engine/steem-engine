@@ -100,9 +100,11 @@ void SaveAllDialogData(bool FinalSave,Str INIFile,ConfigStoreFile *pCSF)
   if (border==3 && ResChangeResize){  //Auto border on and border on
     int xmult=WinSize[screen_res][WinSizeForRes[screen_res]].x/WinSize[screen_res][0].x;
     int ymult=WinSize[screen_res][WinSizeForRes[screen_res]].y/WinSize[screen_res][0].y;
+
     wpd.Left+=BORDER_SIDE*xmult;
-    wpd.Top+=BORDER_TOP*ymult;
     wpd.Width-=BORDER_SIDE*xmult*2;
+
+    wpd.Top+=BORDER_TOP*ymult;
     wpd.Height-=BORDER_BOTTOM*ymult + BORDER_TOP*ymult;
   }
   pCSF->SetStr("Main","Left",EasyStr(wpd.Left));
@@ -586,7 +588,11 @@ bool TJoystickConfig::SaveData(bool FinalSave,ConfigStoreFile *pCSF)
 bool TOptionBox::LoadData(bool FirstLoad,GoodConfigStoreFile *pCSF,bool *SecDisabled)
 {
   SEC(PSEC_MACHINETOS){
+#if defined(STEVEN_SEAGAL) && defined(SS_MFP_RATIO)
+    n_cpu_cycles_per_second=max(min(pCSF->GetInt("Options","CPUBoost",n_cpu_cycles_per_second),128000000),(int)CpuNormalHz);
+#else
     n_cpu_cycles_per_second=max(min(pCSF->GetInt("Options","CPUBoost",n_cpu_cycles_per_second),128000000),8000000);
+#endif
     prepare_cpu_boosted_event_plans();
     ShowTips=(bool)pCSF->GetInt("Options","ShowToolTips",ShowTips);
     TOSBrowseDir=pCSF->GetStr("Machine","ROM_Add_Dir",RunDir);
@@ -627,8 +633,15 @@ bool TOptionBox::LoadData(bool FirstLoad,GoodConfigStoreFile *pCSF,bool *SecDisa
     }
     KeyboardLangID=(LANGID)pCSF->GetInt("Machine","KeyboardLanguage",KeyboardLangID);
     InitKeyTable();
-
+	
     if (FirstLoad) CheckResetIcon();
+
+#if defined(STEVEN_SEAGAL) && defined(SS_STF)
+    OptionBox.Hide(); // hack
+    ST_type=(EST_type)min(pCSF->GetInt("Machine","STType",ST_type),1);
+    SwitchSTType(ST_type); // settings for STF or STE
+#endif
+
   }
 
   SEC(PSEC_GENERAL){
@@ -648,6 +661,25 @@ bool TOptionBox::LoadData(bool FirstLoad,GoodConfigStoreFile *pCSF,bool *SecDisa
   }
 
   SEC(PSEC_DISPFULL){
+
+#if defined(STEVEN_SEAGAL) 
+
+#if defined(SS_VARIOUS)
+    SpecificHacks=pCSF->GetInt("Options","SpecificHacks",SpecificHacks);
+#endif
+
+#if defined(SS_VAR_MOUSE_CAPTURE)
+    CaptureMouse=pCSF->GetInt("Options","CaptureMouse",CaptureMouse);
+#endif
+    // Adjustments
+#if defined(SS_VID_BORDERS)
+    BorderSize=pCSF->GetInt("Display","BorderSize",BorderSize);
+    if(BorderSize<0||BorderSize>2)
+      BorderSize=0;
+    ChangeBorderSize(BorderSize);
+#endif
+#endif // SS
+
     frameskip=pCSF->GetInt("Options","FrameSkip",frameskip);
 //    osd_on=(bool)pCSF->GetInt("Options","OSD",osd_on);
     draw_fs_blit_mode=pCSF->GetInt("Options","DrawFSMode",draw_fs_blit_mode);
@@ -675,9 +707,13 @@ bool TOptionBox::LoadData(bool FirstLoad,GoodConfigStoreFile *pCSF,bool *SecDisa
     // by going to windowed mode). Only used first load of v2.06.
     border=min(pCSF->GetInt("Display","Border",border),2);
     border_last_chosen=min(pCSF->GetInt("Display","BorderLastChosen",border),2);
-    if (Disp.BorderPossible()==0){
-      border=0;EnableBorderOptions(false);
-    }else{
+
+    if (!Disp.BorderPossible())
+    {
+      border=0;
+      EnableBorderOptions(false);
+    }else
+    {
       border=border_last_chosen;
     }
     display_option_8_bit_fs=pCSF->GetInt("Display","EightBitInFS",display_option_8_bit_fs);
@@ -764,9 +800,10 @@ bool TOptionBox::LoadData(bool FirstLoad,GoodConfigStoreFile *pCSF,bool *SecDisa
         InitSound();
         Sound_Start();
       }
-    #endif
+    #endif//UNIX
 
     sound_internal_speaker=pCSF->GetInt("Sound","InternalSpeaker",sound_internal_speaker);
+
     // Trying to write to ports on WINNT causes the program to be killed!
     WIN_ONLY( if (WinNT) sound_internal_speaker=0; )
   }
@@ -790,7 +827,6 @@ bool TOptionBox::LoadData(bool FirstLoad,GoodConfigStoreFile *pCSF,bool *SecDisa
       MidiInList.Add(mic.szPname);
     }
 #endif
-
     for (int p=0;p<3;p++){
       EasyStr PNam=EasyStr("Port_")+p+"_";
       STPort[p].Type=pCSF->GetInt("MIDI",PNam+"Type",STPort[p].Type);
@@ -951,6 +987,18 @@ bool TOptionBox::SaveData(bool FinalSave,ConfigStoreFile *pCSF)
 
   pCSF->SetStr("Options","ShowToolTips",EasyStr(ShowTips));
 
+#if defined(STEVEN_SEAGAL)
+#if defined(SS_VARIOUS)
+  pCSF->SetStr("Options","SpecificHacks",EasyStr(SpecificHacks));
+#endif
+#if defined(SS_VAR_MOUSE_CAPTURE)
+  pCSF->SetStr("Options","CaptureMouse",EasyStr(CaptureMouse));
+#endif
+#if defined(SS_VID_BORDERS)
+  pCSF->SetStr("Display","BorderSize",EasyStr(BorderSize));  
+#endif
+#endif
+
   pCSF->SetStr("Display","ResChangeResize",EasyStr(ResChangeResize));
   pCSF->SetStr("Display","WinSizeLowRes",EasyStr(WinSizeForRes[0]));
   pCSF->SetStr("Display","WinSizeMedRes",EasyStr(WinSizeForRes[1]));
@@ -961,9 +1009,11 @@ bool TOptionBox::SaveData(bool FinalSave,ConfigStoreFile *pCSF)
 #endif
 
   pCSF->SetStr("Display","BorderLastChosen",EasyStr(border_last_chosen));
+
   pCSF->SetStr("Display","EightBitInFS",EasyStr(display_option_8_bit_fs));
 
   pCSF->SetStr("Options","Brightness",EasyStr(brightness));
+
   pCSF->SetStr("Options","Contrast",EasyStr(contrast));
 
   pCSF->SetStr("Options","SlowMotionSpeed",EasyStr(slow_motion_speed));
@@ -1059,6 +1109,10 @@ bool TOptionBox::SaveData(bool FinalSave,ConfigStoreFile *pCSF)
   pCSF->SetInt("Options","ScreenShotFormatOpts",Disp.ScreenShotFormatOpts);
 #endif
   pCSF->SetInt("Options","ScreenShotMinSize",Disp.ScreenShotMinSize);
+
+#if defined(STEVEN_SEAGAL) && defined(SS_STF)
+  pCSF->SetStr("Machine","STType",EasyStr(ST_type));
+#endif
 
   pCSF->SetStr("Machine","ROM_File",ROMFile);
   pCSF->SetStr("Machine","ROM_Add_Dir",TOSBrowseDir);

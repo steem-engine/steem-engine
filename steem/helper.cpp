@@ -12,6 +12,15 @@ used by Steem. Basically includes all the files that are in the object.
 
 #include "conditions.h"
 
+
+// SS: VC++ 6.0 (and below) scoping bugfix
+#ifdef _VC_BUILD
+#if defined(_MSC_VER) && _MSC_VER <= 1200
+#define for if(0); else for
+#endif
+#endif
+
+
 #include <easystr.cpp>
 #include <mymisc.cpp>
 #include <easycompress.cpp>

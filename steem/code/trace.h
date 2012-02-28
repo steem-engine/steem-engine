@@ -43,3 +43,5 @@ const char*bombs_name[12]={"SSP after reset","PC after reset","bus error","addre
                       "TRAPV instruction","Privilege violation","Trace","Line-A","Line-F"};
 
 const char*exception_action_name[4]={"read from","write to","fetch from","instruction execution"};
+
+

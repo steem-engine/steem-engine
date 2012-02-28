@@ -7,9 +7,8 @@ TOptionBox::TOptionBox()
 	Page=9; // Default to machine
   NewMemConf0=-1,NewMemConf1=-1,NewMonitorSel=-1;
   RecordWarnOverwrite=true;
-
   eslTOS_Sort=eslSortByData0;
-  eslTOS_Descend=0;
+  eslTOS_Descend=0; 
 }
 //---------------------------------------------------------------------------
 void TOptionBox::UpdateMacroRecordAndPlay(Str Sel,int Type)
@@ -280,7 +279,22 @@ int TOptionBox::button_notify_proc(hxc_button*b,int mess,int* ip)
       floppy_access_ff=b->checked;
     }else if (b->id==140){
       StartEmuOnClick=b->checked;
+
+#if defined(STEVEN_SEAGAL) && defined(SS_VARIOUS)
+    }
+    else if(b->id==160)
+    {
+      SpecificHacks=b->checked;
+#endif
+
+#if defined(STEVEN_SEAGAL) && defined(SS_VID_BORDERS)
+    }
+    else if(b->id==170)
+    {
+      SideBorderSize==(b->checked)?LARGE_BORDER_SIDE:ORIGINAL_BORDER_SIDE;
+#endif
     }else if (b->id==210){
+
       draw_fs_fx=(b->checked ? DFSFX_GRILLE:DFSFX_NONE);
       if (draw_grille_black<4) draw_grille_black=4;
       if (runstate!=RUNSTATE_RUNNING) draw(false);
@@ -332,6 +346,22 @@ int TOptionBox::button_notify_proc(hxc_button*b,int mess,int* ip)
 
       sound_internal_speaker=!sound_internal_speaker;
       b->set_check(sound_internal_speaker);
+#if defined(STEVEN_SEAGAL) && defined(SS_VARIOUS)
+    }
+    // Keyboard click on/off
+    else if(b->id==5301)
+    {
+      BOOL keyboard_click=( PEEK(0x484)&1 ); // current bit
+      keyboard_click=!keyboard_click; // reverse bit
+      if(keyboard_click) // pathetic, there must be a better way
+      {
+        PEEK(0x484)|=0x0001;
+      }
+      else
+      {
+        PEEK(0x484)&=0xFFFE;
+      }
+#endif
     }else if (b->id==737){ // Choose cart
     	b->set_check(true);
       Str LastCartFol=This->LastCartFile;
@@ -651,6 +681,25 @@ int TOptionBox::dd_notify_proc(hxc_dropdown*dd,int mess,int i)
       dd->lv.changesel(min(oldborder,2));dd->lv.draw(true,true);
       border=oldborder;
     }
+#if defined(STEVEN_SEAGAL)
+#if defined(SS_STF)
+  }
+  // switch STF/STE
+  else if(dd==&(This->st_type_dd))
+  {
+    int newtype=dd->sel;
+    SwitchSTType((EST_type)newtype);
+#endif
+#if defined(SS_VID_BORDERS)
+  }
+  // border size
+  else if(dd==&(This->border_size_dd))
+  {
+    int new_border_size=dd->sel;
+    ChangeBorderSize(new_border_size);
+#endif
+#endif
+
   }else if (dd->id==910){
     This->NewMemConf0=dd->lv.sl[dd->sel].Data[0];
     This->NewMemConf1=dd->lv.sl[dd->sel].Data[1];

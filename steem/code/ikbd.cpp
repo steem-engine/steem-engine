@@ -4,8 +4,19 @@ MODULE: emu
 DESCRIPTION: The code to emulate the ST's Intellegent Keyboard Controller
 (Motorola 6301) that encompasses mouse, keyboard and joystick input.
 Note that this is functional rather than hardware-level emulation.
-Reprogramming is not implemented.
+Reprogramming is not implemented. (SS: Hatari hacks integrated)
 ---------------------------------------------------------------------------*/
+
+#if defined(STEVEN_SEAGAL) && defined(SS_IKBD)
+#if defined(SS_IKBD_TIGHTER)
+BOOL trigger_ACIA_irq=FALSE;
+#endif
+#if defined(SS_IKBD_HATARI) // we compile Hatari ikbd only for custom programs
+#include "..\..\3rdparty\hatari\utils.c"
+#include "..\..\3rdparty\hatari\ikbd.c"
+#endif
+#endif
+
 
 #define LOGSECTION LOGSECTION_IKBD
 //---------------------------------------------------------------------------
@@ -83,6 +94,17 @@ void IKBD_VBL()
     if (IsJoyActive(N_JOY_PARALLEL_0)) stick[N_JOY_PARALLEL_0]|=BIT_4;
     if (IsJoyActive(N_JOY_PARALLEL_1)) stick[N_JOY_PARALLEL_1]|=BIT_4;
   }
+
+#if defined(STEVEN_SEAGAL) && defined(SS_IKBD_HATARI)
+/*
+  For custom keyboard programs that may poll mouse/keys/joysticks,
+  the mouse input isn't used if we go a second time to the handler
+  (through keyboard_buffer_write)
+*/
+  if(IKBD_ExeMode && pIKBD_CustomCodeHandler_Read && ikbd.mouse_change)
+      keyboard_buffer_write(1); 
+#endif
+
 
   switch (ikbd.joy_mode){
     case IKBD_JOY_MODE_DURATION:
@@ -179,6 +201,13 @@ void IKBD_VBL()
     if (stick[0] & 128) mousek|=BIT_LMB;
     if (stick[1] & 128) mousek|=BIT_RMB;
 
+#if defined(STEVEN_SEAGAL) && defined(SS_IKBD_HATARI)
+    // update Hatari variables - note it's only for custom
+    Keyboard.bLButtonDown=0;
+    if (stick[0] & 128) Keyboard.bLButtonDown|=BUTTON_MOUSE;
+    if (stick[1] & 128) Keyboard.bRButtonDown|=BUTTON_MOUSE;
+#endif
+
     if (stem_mousemode==STEM_MOUSEMODE_WINDOW){
       POINT pt;
       GetCursorPos(&pt);
@@ -263,10 +292,15 @@ void IKBD_VBL()
     }
 
     if (mouse_change_since_last_interrupt){
-      int max_mouse_move=IKBD_DEFAULT_MOUSE_MOVE_MAX;
+      int max_mouse_move=IKBD_DEFAULT_MOUSE_MOVE_MAX; //15
       if (macro_play_has_mouse) max_mouse_move=macro_play_max_mouse_speed;
       ikbd_mouse_move(mouse_move_since_last_interrupt_x,mouse_move_since_last_interrupt_y,mousek,max_mouse_move);
       mouse_change_since_last_interrupt=false;
+
+#if defined(STEVEN_SEAGAL) && defined(SS_IKBD_HATARI)
+      ikbd.mouse_change=TRUE;
+#endif
+
       mouse_move_since_last_interrupt_x=0;
       mouse_move_since_last_interrupt_y=0;
     }
@@ -341,6 +375,10 @@ void IKBD_VBL()
 
   macro_advance();
   if (disable_input_vbl_count) disable_input_vbl_count--;
+#if defined(STEVEN_SEAGAL) && defined(SS_IKBD_HATARI)
+  if(!disable_input_vbl_count)
+    KeyboardProcessor.bReset = true;
+#endif
 }
 //---------------------------------------------------------------------------
 void ikbd_inc_hack(int &hack_val,int inc_val)
@@ -357,7 +395,17 @@ void agenda_ikbd_process(int src)    //intelligent keyboard handle byte
 {
   log(EasyStr("IKBD: At ")+hbl_count+" receives $"+HEXSl(src,2));
 
+#if defined(STEVEN_SEAGAL) && defined(SS_IKBD_HATARI)
+  /* If IKBD is executing custom code, send the byte to the function handling this code */
+  if (IKBD_ExeMode && pIKBD_CustomCodeHandler_Write)
+  {
+    (*pIKBD_CustomCodeHandler_Write) ( src ); // Hatari
+    return;
+  }
+#endif
+
   ikbd.send_nothing=0;  // This should only happen if valid command is received!
+  // SS while ikbd.command_read_count is TRUE we execute the command
   if (ikbd.command_read_count){
     if (ikbd.command!=0x50){ //load memory rubbish
       ikbd.command_param[ikbd.command_parameter_counter++]=(BYTE)src;
@@ -367,6 +415,9 @@ void agenda_ikbd_process(int src)    //intelligent keyboard handle byte
         ikbd.ram[ikbd.load_memory_address-0x80]=(BYTE)src;
       }
       ikbd.load_memory_address++;
+#if defined(STEVEN_SEAGAL) && defined(SS_IKBD_HATARI)
+      IKBD_LoadMemoryByte ( src ); // Hatari
+#endif
     }
     ikbd.command_read_count--;
     if (ikbd.command_read_count<=0){
@@ -376,18 +427,36 @@ void agenda_ikbd_process(int src)    //intelligent keyboard handle byte
         break;
       case 0x9: // Absolute mouse mode
         ikbd.mouse_mode=IKBD_MOUSE_MODE_ABSOLUTE;
+#if defined(SS_IKBD_TRACE)
+        TRACE("IKBD_MOUSE_MODE_ABSOLUTE\n");
+#endif
         ikbd.abs_mouse_max_x=MAKEWORD(ikbd.command_param[1],ikbd.command_param[0]);
         ikbd.abs_mouse_max_y=MAKEWORD(ikbd.command_param[3],ikbd.command_param[2]);
+#if defined(SS_IKBD_TRACE)
+        TRACE("abs_mouse_max_x, y: %d, %d\n",ikbd.abs_mouse_max_x,ikbd.abs_mouse_max_y);
+#endif
+#if defined(STEVEN_SEAGAL) && defined(SS_IKBD_SENTINEL)
+        // Sentinel:
+        // gonna be alright  10  0 13 12
+        // gonna be shitty   10 13  0 12
+        if(SpecificHacks && ikbd.abs_mouse_max_y<20)
+        {
+          ikbd.abs_mouse_max_y=1670*2;
+          TRACE("Hacked IKBD parameter for Sentinel... It is Sentinel, right?\n");
+        }
+#endif
         ikbd.abs_mouse_x=ikbd.abs_mouse_max_x/2;
         ikbd.abs_mouse_y=ikbd.abs_mouse_max_y/2;
         ikbd.port_0_joy=false;
-
         ikbd.abs_mousek_flags=0;
         if (RMB_DOWN(mousek)) ikbd.abs_mousek_flags|=BIT_0;
         if (LMB_DOWN(mousek)) ikbd.abs_mousek_flags|=BIT_2;
         break;
       case 0xa: // Return mouse movements as cursor keys
         ikbd.mouse_mode=IKBD_MOUSE_MODE_CURSOR_KEYS;
+#if defined(SS_IKBD_TRACE)
+        TRACE("IKBD_MOUSE_MODE_CURSOR_KEYS\n");
+#endif
         ikbd.cursor_key_mouse_pulse_count_x=max(int(ikbd.command_param[0]),1);
         ikbd.cursor_key_mouse_pulse_count_y=max(int(ikbd.command_param[1]),1);
         ikbd.port_0_joy=false;
@@ -409,9 +478,11 @@ void agenda_ikbd_process(int src)    //intelligent keyboard handle byte
       case 0x17://joystick duration
         log("IKBD: Joysticks set to duration mode");
         ikbd.joy_mode=IKBD_JOY_MODE_DURATION;
-
         ikbd.duration=ikbd.command_param[0]*10; //in 1000ths of a second
         ikbd.mouse_mode=IKBD_MOUSE_MODE_OFF;  //disable mouse
+#if defined(SS_IKBD_TRACE)        
+        TRACE("IKBD_MOUSE_MODE_OFF\n");
+#endif
         ikbd.port_0_joy=true;
         agenda_delete(ikbd_send_joystick_message); // just in case sending other type of packet
         agenda_delete(ikbd_report_abs_mouse);
@@ -461,6 +532,10 @@ void agenda_ikbd_process(int src)    //intelligent keyboard handle byte
         ikbd.command_read_count=ikbd.command_param[2]; //how many bytes to load
         log(Str("IKBD: Loading next ")+ikbd.command_read_count+" bytes into IKBD memory address "+
               HEXSl(ikbd.load_memory_address,4));
+#if defined(STEVEN_SEAGAL) && defined(SS_IKBD_HATARI)
+        Keyboard.InputBuffer[3]=ikbd.command_param[2]; 
+        IKBD_Cmd_LoadMemory(); // Hatari
+#endif
         break;
       case 0x50:
         log("IKBD: Finished loading memory");
@@ -478,8 +553,12 @@ void agenda_ikbd_process(int src)    //intelligent keyboard handle byte
         break;
       }
       case 0x22:  //execute routine
+#if defined(STEVEN_SEAGAL) && defined(SS_IKBD_HATARI)
+        IKBD_Cmd_Execute(); // Hatari
+#else // Blimey!
         log(Str("IKBD: Blimey! Executing IKBD routine at ")+
               HEXSl(MAKEWORD(ikbd.command_param[1],ikbd.command_param[0]),4));
+#endif
         break;    //it worked!
       case 0x80:  //reset
         if (src==0x01) ikbd_reset(0);
@@ -487,7 +566,17 @@ void agenda_ikbd_process(int src)    //intelligent keyboard handle byte
       }
     }
   }else{ //new command
+#if defined(STEVEN_SEAGAL) && defined(SS_IKBD)
+    if(ikbd.joy_mode==IKBD_JOY_MODE_FIRE_BUTTON_DURATION) 
+    {
+      ikbd.joy_mode=IKBD_JOY_MODE_OFF;
+#if defined(SS_IKBD_TRACE)      
+      TRACE("IKIKBD_JOY_MODE_OFF\n");
+#endif
+    }
+#else
     if (ikbd.joy_mode==IKBD_JOY_MODE_FIRE_BUTTON_DURATION) ikbd.joy_mode=IKBD_JOY_MODE_OFF;
+#endif
     if (ikbd.resetting && src!=0x08 && src!=0x14) ikbd.reset_0814_hack=-1;
     if (ikbd.resetting && src!=0x12 && src!=0x14) ikbd.reset_1214_hack=-1;
     if (ikbd.resetting && src!=0x08 && src!=0x0B && src!=0x14) ikbd.psyg_hack_stage=-1;
@@ -497,6 +586,9 @@ void agenda_ikbd_process(int src)    //intelligent keyboard handle byte
       case 0x7:case 0x17:case 0x80:ikbd.command_read_count=1;break;
       case 0x8: //return relative mouse position from now on
         ikbd.mouse_mode=IKBD_MOUSE_MODE_RELATIVE;
+#if defined(SS_IKBD_TRACE)
+        TRACE("IKBD_MOUSE_MODE_RELATIVE\n");
+#endif
         ikbd.port_0_joy=false;
         ikbd_inc_hack(ikbd.psyg_hack_stage,0);
         ikbd_inc_hack(ikbd.reset_0814_hack,0);
@@ -515,16 +607,31 @@ void agenda_ikbd_process(int src)    //intelligent keyboard handle byte
       case 0xe:ikbd.command_read_count=5;break;
       case 0xf: //mouse goes upside down
         ikbd.mouse_upside_down=true;
+#if defined(SS_IKBD_TRACE)
+        TRACE("ikbd.mouse_upside_down=true\n");
+#endif
+#if defined(STEVEN_SEAGAL) && defined(SS_IKBD_SENTINEL)
+        // Trying to detect Sentinel, but what else?
+        // We will accelerate the mouse.
+        if(ikbd.mouse_mode==IKBD_MOUSE_MODE_ABSOLUTE)
+          SetProgram(SENTINEL); // TODO set relative instead?
+#endif
         break;
       case 0x10: //mouse goes right way up
         ikbd.mouse_upside_down=false;
         break;
       case 0x11: //okay to send!
         log("IKBD turned on");
+#if defined(SS_IKBD_TRACE)
+        TRACE("IKBD turned on\n");
+#endif
         ikbd.send_nothing=false;
         break;
       case 0x12: //turn mouse off
         log("IKBD: Mouse turned off");
+#if defined(SS_IKBD_TRACE)        
+        TRACE("IKBD: Mouse turned off\n");
+#endif
         ikbd.mouse_mode=IKBD_MOUSE_MODE_OFF;
         ikbd.port_0_joy=true;
         ikbd_inc_hack(ikbd.reset_1214_hack,0);
@@ -533,19 +640,23 @@ void agenda_ikbd_process(int src)    //intelligent keyboard handle byte
         break;
       case 0x13: //stop data transfer to main processor
         log("IKBD turned off");
+#if defined(SS_IKBD_TRACE)
+        TRACE("IKBD turned off\n");
+#endif
         ikbd.send_nothing=true;
         break;
       case 0x14: //return joystick movements
         log("IKBD: Changed joystick mode to change notification");
+#if defined(SS_IKBD_TRACE)
+        TRACE("IKBD: Changed joystick mode to change notification\n");
+#endif
         ikbd.port_0_joy=true;
         ikbd.mouse_mode=IKBD_MOUSE_MODE_OFF;  //disable mouse
         agenda_delete(ikbd_report_abs_mouse);
-
         if (ikbd.joy_mode!=IKBD_JOY_MODE_AUTO_NOTIFY){
           agenda_delete(ikbd_send_joystick_message); // just in case sending other type of packet
           ikbd.joy_mode=IKBD_JOY_MODE_AUTO_NOTIFY;
         }
-
         // In the IKBD this resets old_stick to 0
         for (int j=0;j<2;j++){
           if (stick[j]) ikbd_send_joystick_message(j);
@@ -556,6 +667,9 @@ void agenda_ikbd_process(int src)    //intelligent keyboard handle byte
         break;
       case 0x15: //don't return joystick movements
         log("IKBD: Joysticks set to only report when asked");
+#if defined(SS_IKBD_TRACE)
+        TRACE("IKBD: Joysticks set to only report when asked\n");
+#endif
         ikbd.port_0_joy=true;
         ikbd.mouse_mode=IKBD_MOUSE_MODE_OFF;  //disable mouse
         agenda_delete(ikbd_report_abs_mouse);
@@ -573,6 +687,9 @@ void agenda_ikbd_process(int src)    //intelligent keyboard handle byte
         break;
       case 0x18: //fire button duration, constant high speed joystick button test
         log("IKBD: Joysticks set to fire button duration mode!");
+#if defined(SS_IKBD_TRACE)
+        TRACE("IKBD: Joysticks set to fire button duration mode!\n");
+#endif
         ikbd.joy_mode=IKBD_JOY_MODE_FIRE_BUTTON_DURATION;
         ikbd.mouse_mode=IKBD_MOUSE_MODE_OFF;  //disable mouse
         agenda_delete(ikbd_report_abs_mouse);
@@ -582,7 +699,10 @@ void agenda_ikbd_process(int src)    //intelligent keyboard handle byte
       //    case 0x19: //cursor key mode for joystick 0 (=mouse)
       case 0x1a: //turn off joysticks
         log("IKBD: Joysticks turned off");
-//        ikbd.mouse_mode=IKBD_MOUSE_MODE_OFF;  //disable mouse
+#if defined(SS_IKBD_TRACE)
+        TRACE("IKBD: Joysticks turned off\n");
+#endif
+//        ikbd.mouse_mode=IKBD_MOUSE_MODE_OFF;  //disable mouse // already so in Steem 3.2
         ikbd.port_0_joy=0;
         ikbd.joy_mode=IKBD_JOY_MODE_OFF;
         stick[0]=0;stick[1]=0;
@@ -680,6 +800,25 @@ void agenda_ikbd_process(int src)    //intelligent keyboard handle byte
   }
 }
 //---------------------------------------------------------------------------
+
+#if defined(STEVEN_SEAGAL) && defined(SS_IKBD_TIGHTER)
+/*
+  The pointer to this function is used, so don't make it a class...
+  The agenda is checked at the end of each scanline.
+  When you press a key, Steem places it in the agenda some scanlines further,
+  which apparently takes care of the delay 6301 -> ACIA, but not precisely.
+  This function was called after 20 hbl, which is too late (10K+ cycles as 
+  opposed to 7200 cycles according to WinSTon/Hatari).
+  Now it's 13HBL < 7000, adjustment in run.cpp. It helps V8MS demo but not
+  much else!
+*/
+void agenda_keyboard_replace(int) {
+  if(keyboard_buffer_length)
+    trigger_ACIA_irq=TRUE; // actual work done later
+}
+
+#else // Steem 3.2
+
 void agenda_keyboard_replace(int)
 {
   log(EasyStr("IKBD: agenda_keyboard_replace at time=")+hbl_count+" with keyboard_buffer_length="+keyboard_buffer_length);
@@ -708,12 +847,69 @@ void agenda_keyboard_replace(int)
   }
   if (macro_start_after_ikbd_read_count) macro_start_after_ikbd_read_count--;
 }
+#endif
 
 void keyboard_buffer_write_n_record(BYTE src)
 {
   keyboard_buffer_write(src);
   if (macro_record) macro_record_key(src);
 }
+
+
+#if defined(STEVEN_SEAGAL) && defined(SS_IKBD) 
+
+void keyboard_buffer_write(BYTE src) {
+  // All keyboard, mouse & joystick action come here.
+#if defined(SS_IKBD_TIGHTER)
+  ikbd.timer_when_keyboard_info=ABSOLUTE_CPU_TIME; // record exact timing
+#endif
+#if defined(SS_IKBD_HATARI)
+  if(IKBD_ExeMode && pIKBD_CustomCodeHandler_Read)
+  {
+    // We don't update the buffer, we call the custom handler
+    (*pIKBD_CustomCodeHandler_Read)() ; // Hatari
+    return;
+  }
+#endif
+
+  if(keyboard_buffer_length<MAX_KEYBOARD_BUFFER_SIZE)
+  {
+    // If there's already info in the buffer, an agenda was already prepared
+    if(keyboard_buffer_length)
+    {
+      // shift by one byte
+      memmove(keyboard_buffer+1,keyboard_buffer,keyboard_buffer_length);
+    }
+    else
+    {
+      // Prepare agenda
+#if defined(SS_IKBD_TIGHTER)
+      if(!keyboard_buffer_length && screen_res!=2)
+        agenda_add(agenda_keyboard_replace,ACIA_DELAY_HBL,0);
+      else
+#endif
+        agenda_add(agenda_keyboard_replace,ACIAClockToHBLS(ACIA_IKBD.clock_divide),0);
+    }
+    // put info in buffer
+    keyboard_buffer_length++;
+    keyboard_buffer[0]=src;
+    
+    log(EasyStr("IKBD: Wrote $")+HEXSl(src,2)+" keyboard buffer length="+keyboard_buffer_length);
+    if(ikbd.joy_packet_pos>=0) 
+      ikbd.joy_packet_pos++;
+    if(ikbd.mouse_packet_pos>=0) 
+      ikbd.mouse_packet_pos++;
+  }
+  else
+  {
+    log("IKBD: Keyboard buffer overflow");
+#if defined(SS_IKBD_TRACE)
+    TRACE("IKBD: Keyboard buffer overflow\n");
+#endif
+  }
+}
+
+#else // Steem 3.2
 
 void keyboard_buffer_write(BYTE src)
 {
@@ -734,6 +930,8 @@ void keyboard_buffer_write(BYTE src)
   }
 }
 
+#endif
+
 void keyboard_buffer_write_string(int s1,...)
 {
   int *ptr;
@@ -745,8 +943,19 @@ void keyboard_buffer_write_string(int s1,...)
 void ikbd_mouse_move(int x,int y,int mousek,int max_mouse_move)
 {
 //  log(EasyStr("Mouse moves ")+x+","+y);
+
+#if defined(STEVEN_SEAGAL) && defined(SS_IKBD_HATARI)
+  KeyboardProcessor.Mouse.DeltaX=x;// Hatari variables
+  KeyboardProcessor.Mouse.DeltaY=y;
+#endif
+
   if (ikbd.joy_mode<100 || ikbd.port_0_joy==0) {  //not in duration mode or joystick mode
     if (ikbd.mouse_mode==IKBD_MOUSE_MODE_ABSOLUTE){
+#if defined(STEVEN_SEAGAL) && defined(SS_IKBD_SENTINEL)
+      // Hack for Sentinel: faster mouse.
+      if(Program==SENTINEL && SpecificHacks)
+        x*=4,y*=5; 
+#endif
       ikbd.abs_mouse_x+=x;
       if(ikbd.abs_mouse_x<0)ikbd.abs_mouse_x=0;
       else if(ikbd.abs_mouse_x>ikbd.abs_mouse_max_x)ikbd.abs_mouse_x=ikbd.abs_mouse_max_x;
@@ -791,6 +1000,15 @@ void ikbd_mouse_move(int x,int y,int mousek,int max_mouse_move)
       if(mousek&2)keyboard_buffer_write(0x74);else keyboard_buffer_write(0x74|MSB_B);
       if(mousek&1)keyboard_buffer_write(0x75);else keyboard_buffer_write(0x75|MSB_B);
     }
+#if defined(STEVEN_SEAGAL) && defined(SS_IKBD_HATARI)
+    else if(ikbd.mouse_mode==IKBD_MOUSE_MODE_OFF
+      && IKBD_ExeMode && pIKBD_CustomCodeHandler_Read)
+    {
+      // We need to visit keyboard_buffer_write() to trigger custom handler.
+      // Fixes Froggies over the Fence menu.
+      keyboard_buffer_write(1);
+    }
+#endif
   }
 }
 //---------------------------------------------------------------------------
@@ -833,6 +1051,19 @@ void ikbd_reset(bool Cold)
     ikbd.resetting=true;
     agenda_add(agenda_keyboard_reset,MILLISECONDS_TO_HBLS(50),true);
   }
+
+#if defined(STEVEN_SEAGAL) && defined(SS_IKBD) 
+#if defined(SS_IKBD_TIGHTER)
+  ikbd.timer_when_keyboard_info=0;
+#endif
+#if defined(SS_IKBD_HATARI) 
+#if defined(SS_IKBD_DRAGONNELS)
+    if(!(SpecificHacks&&Program==DRAGONNELS&&!IKBD_ExeMode))
+#endif
+      IKBD_Reset(Cold); // Hatari
+#endif
+#endif
+
 }
 //---------------------------------------------------------------------------
 void agenda_keyboard_reset(int SendF0)
@@ -874,12 +1105,20 @@ void agenda_keyboard_reset(int SendF0)
 
     if (ikbd.psyg_hack_stage==3 || ikbd.reset_0814_hack==2 || ikbd.reset_1214_hack==2){
       log("IKBD: HACK ACTIVATED - turning mouse on.");
+      TRACE("IKBD: HACK ACTIVATED - turning mouse on.\n");
       ikbd.mouse_mode=IKBD_MOUSE_MODE_RELATIVE;
+#if defined(SS_IKBD_TRACE)
+      TRACE("IKBD_MOUSE_MODE_RELATIVE\n");
+#endif
       ikbd.port_0_joy=false;
     }
     if (ikbd.reset_121A_hack==2){ // Turned both mouse and joystick off, but they should be on.
       log("IKBD: HACK ACTIVATED - turning mouse and joystick on.");
+      TRACE("IKBD: HACK ACTIVATED - turning mouse and joystick on.\n");
       ikbd.mouse_mode=IKBD_MOUSE_MODE_RELATIVE;
+#if defined(SS_IKBD_TRACE)
+      TRACE("IKBD_MOUSE_MODE_RELATIVE\n");
+#endif
       ikbd.joy_mode=IKBD_JOY_MODE_AUTO_NOTIFY;
       ikbd.port_0_joy=false;
     }
@@ -892,6 +1131,11 @@ void agenda_keyboard_reset(int SendF0)
     }
   }
   ikbd.resetting=0;
+
+#if defined(STEVEN_SEAGAL) && defined(SS_IKBD_TIGHTER)
+  ikbd.timer_when_keyboard_info=0;
+#endif
+
 }
 //---------------------------------------------------------------------------
 void ikbd_report_abs_mouse(int abs_mousek_flags)
@@ -934,6 +1178,3 @@ void ikbd_send_joystick_message(int jn)
 }
 //---------------------------------------------------------------------------
 #undef LOGSECTION
-
-
-

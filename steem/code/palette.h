@@ -1,8 +1,10 @@
+
 #ifdef IN_MAIN
 #define EXT
 #else
 #define EXT extern
 #endif
+
 
 EXT void palette_copy();
 EXT void palette_flip();

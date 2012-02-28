@@ -6,6 +6,12 @@
 #define INIT(s)
 #endif
 
+
+
+
+
+
+
 #ifdef ENABLE_LOGFILE
 
   #define log(s)  \
@@ -30,7 +36,11 @@
   #define log_to_section(section,s) if (logsection_enabled[section] && logging_suspended==0) log_write(s);
   #define log_to(section,s)  if (logsection_enabled[section] && logging_suspended==0) log_write(s);
   EXT void log_write_stack();
+#if defined(STEVEN_SEAGAL) && defined(SS_VARIOUS)
+  EXT bool logging_suspended INIT(TRUE);
+#else
   EXT bool logging_suspended INIT(false);
+#endif
   EXT bool logsection_enabled[100];
   EXT void log_io_write(MEM_ADDRESS,BYTE);
 

@@ -5,7 +5,17 @@ DESCRIPTION: The hub for the emu module that contains Steem's core emulation
 functions. Basically includes all the files that are in the object.
 ---------------------------------------------------------------------------*/
 
+
+// SS VC++ 6.0 (and below) scoping bugfix
+#ifdef _VC_BUILD
+#if defined(_MSC_VER) && _MSC_VER <= 1200
+#define for if(0); else for
+#endif
+#endif
+
+
 #include "pch.h"
+
 #pragma hdrstop
 
 #define IN_EMU
@@ -56,6 +66,9 @@ void internal_speaker_sound_by_period(int){}
 
 #endif
 
+
+#include "SSE.h"
+#include "reset.h"
 #include "display.h"
 #include "steemh.h"
 #include "cpu.h"
@@ -64,7 +77,6 @@ void internal_speaker_sound_by_period(int){}
 #include "debug_emu.h"
 #include "iolist.h"
 #endif
-#include "reset.h"
 #include "draw.h"
 #include "osd.h"
 #include "fdc.h"
@@ -83,9 +95,11 @@ void internal_speaker_sound_by_period(int){}
 #include "emulator.h"
 
 #include "cpu.cpp"
+
 #ifdef _DEBUG_BUILD
 #include "debug_emu.cpp"
 #endif
+
 #include "draw.cpp"
 #include "run.cpp"
 #include "ior.cpp"
@@ -103,15 +117,27 @@ void internal_speaker_sound_by_period(int){}
 #include "stemdos.cpp"
 #include "loadsave_emu.cpp"
 
+
+
+#if defined(STEVEN_SEAGAL) && defined(SS_CPU)
+
+//void set_pc(MEM_ADDRESS ad); // forward
+
+#else // Steem 3.2, confusing as there are 2 macros with the same name!
+
 void set_pc(MEM_ADDRESS ad)
 {
-  SET_PC(ad);
+  SET_PC(ad); 
 }
 
 void perform_rte()
 {
   M68K_PERFORM_RTE(;);
 }
+
+#endif
+
+
 
 #define LOGSECTION LOGSECTION_CPU
 void m68k_process()
@@ -123,23 +149,5 @@ void m68k_process()
 void m68k_poke_noinline(MEM_ADDRESS ad,BYTE x){ m68k_poke(ad,x); }
 void m68k_dpoke_noinline(MEM_ADDRESS ad,WORD x){ m68k_dpoke(ad,x); }
 void m68k_lpoke_noinline(MEM_ADDRESS ad,LONG x){ m68k_lpoke(ad,x); }
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 

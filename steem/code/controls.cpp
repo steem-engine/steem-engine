@@ -1085,7 +1085,7 @@ HWND CreateTextDisplay(HWND daddy,int x,int y,int w,int h,int id){
 */
 
 
-#endif
+#endif//WIN32
 
 #ifdef UNIX
 #include "x/x_controls.cpp"

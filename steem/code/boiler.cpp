@@ -11,10 +11,6 @@ void debug_trace_crash(m68k_exception &e)
 {
   SendMessage(trace_window_handle,WM_SETTEXT,0,(long)"Exception");
   trace_init();
-/*          d2_trace=true;
-  disa_d2(e.crash_address);
-  d2_trace=false;
-*/
   trace_pc=e.crash_address;
   trace_sr_before=e._sr;
 
@@ -137,7 +133,6 @@ void debug_update_bkmon()
   int *num[]={&debug_num_bk,&debug_num_mon_reads,&debug_num_mon_writes,&debug_num_mon_reads_io,&debug_num_mon_writes_io};
   MEM_ADDRESS *ad[]={debug_bk_ad,debug_mon_read_ad,debug_mon_write_ad,debug_mon_read_ad_io,debug_mon_write_ad_io};
   WORD *mask[]={NULL,debug_mon_read_mask,debug_mon_write_mask,debug_mon_read_mask_io,debug_mon_write_mask_io};
-
   for (int i=0;i<5;i++) *(num[i])=0;
   for (int i=0;i<debug_ads.NumItems;i++){
     int mode=debug_ads[i].mode;
@@ -417,7 +412,9 @@ long __stdcall sr_display_WndProc(HWND Win,UINT Mess,UINT wPar,long lPar)
 LRESULT __stdcall DWndProc(HWND Win,UINT Mess,UINT wPar,long lPar)
 {
 	if (Win==HiddenParent) return DefWindowProc(Win,Mess,wPar,lPar);
-
+	//if(Mess!=32 && Mess!=78)
+	//if(Mess==WM_CHAR || Mess==WM_SYSCHAR)
+		//TRACE(" %X",Mess); 
 	switch (Mess){
     case WM_SIZE:
       MoveWindow(DWin_trace_button,340,1,(LOWORD(lPar)-350)/4 - 5,27,true);
@@ -717,6 +714,7 @@ LRESULT __stdcall DWndProc(HWND Win,UINT Mess,UINT wPar,long lPar)
               // Trace any other instruction
               log_to(LOGSECTION_GUI,Str("GUI: Tracing"));
             }
+			// SS: notice no break
             case 1002:  //Trace into
               trace();
               break;
@@ -855,7 +853,23 @@ LRESULT __stdcall DWndProc(HWND Win,UINT Mess,UINT wPar,long lPar)
               CheckMenuItem(boiler_op_menu,1516,MF_BYCOMMAND | int(debug_uppercase_disa ? MF_CHECKED:MF_UNCHECKED));
               mem_browser_update_all();
               break;
-
+#if defined(STEVEN_SEAGAL) && defined(SS_DEBUG)
+              // Output TRACE to file
+            case 1517:
+              SSDebug.OutputTraceToFile=!SSDebug.OutputTraceToFile;
+              CheckMenuItem(boiler_op_menu,1517,
+                MF_BYCOMMAND|((int)(SSDebug.OutputTraceToFile)
+                ?MF_CHECKED:MF_UNCHECKED));
+              break;
+  
+                // Limit TRACE file size
+            case 1518:
+              SSDebug.TraceFileLimit=!SSDebug.TraceFileLimit;
+              CheckMenuItem(boiler_op_menu,1518,
+                MF_BYCOMMAND|((int)(SSDebug.TraceFileLimit)
+                ? MF_CHECKED : MF_UNCHECKED));
+              break;
+#endif
             case 1780: //turn screen red
             {
               MEM_ADDRESS ad=xbios2;
@@ -1107,8 +1121,9 @@ LRESULT __stdcall DWndProc(HWND Win,UINT Mess,UINT wPar,long lPar)
           }
         }
       }
-      break;
-    }
+	  break;
+	}
+
     case WM_INITMENUPOPUP:
       if ((HMENU)wPar==mem_browser_menu){
         int n=GetMenuItemCount(mem_browser_menu);
@@ -1354,7 +1369,10 @@ void DWin_init()
   AppendMenu(boiler_op_menu,MF_STRING | MF_CHECKED,1514,"Show trace window");
   AppendMenu(boiler_op_menu,MF_STRING,1515,"Monospaced disassembly");
   AppendMenu(boiler_op_menu,MF_STRING,1516,"Uppercase disassembly");
-
+#if defined(STEVEN_SEAGAL) && defined(SS_DEBUG)
+  AppendMenu(boiler_op_menu,MF_STRING,1517,"Output TRACE to file");
+  AppendMenu(boiler_op_menu,MF_STRING,1518,"Limit TRACE file size");
+#endif
 //  AppendMenu(boiler_op_menu,MF_STRING|MF_SEPARATOR,0,"-");
   AppendMenu(menu,MF_STRING|MF_POPUP,(UINT)boiler_op_menu,"&Options");
 

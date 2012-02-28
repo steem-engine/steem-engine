@@ -78,7 +78,11 @@ void RS232_CalculateBaud(bool Div16,BYTE cr,bool SetBaudNow)
       UpdateBaud=0;
     }
   }else{
+#if defined(STEVEN_SEAGAL) && defined(SS_MFP_RATIO)
+    rs232_hbls_per_word=CpuNormalHz;
+#else
     rs232_hbls_per_word=80000000;
+#endif
   }
 }
 //---------------------------------------------------------------------------

@@ -1,8 +1,8 @@
 #include "..\\code\\resnum.h"
-
+// EDIT in NOTEPAD, not the VC IDE!!!!!!!
 //Update "FileVersion" and "ProductVersion" too!
 #define STEEM_VER_MAJOR 3
-#define STEEM_VER_MINOR_1 2
+#define STEEM_VER_MINOR_1 3
 #define STEEM_VER_MINOR_2 0
 
 VS_VERSION_INFO VERSIONINFO
@@ -21,12 +21,12 @@ BEGIN
             VALUE "Comments", "Atari STE Emulator for all Windows systems\000"
             VALUE "CompanyName", "Anthony and Russell Hayward\000"
             VALUE "FileDescription", "Steem Engine (Atari STE Emulator)\000"
-            VALUE "FileVersion", "3.2\000"
+            VALUE "FileVersion", "3.3.0\000"
             VALUE "InternalName", "Steem\000"
             VALUE "LegalCopyright", "Copyright Anthony and Russell Hayward\000"
             VALUE "OriginalFilename", "Steem.exe\000"
             VALUE "ProductName", "The Steem Engine\000"
-            VALUE "ProductVersion", "3.2\000"
+            VALUE "ProductVersion", "3.3.0\000"
         END
     END
     BLOCK "VarFileInfo"
@@ -263,7 +263,8 @@ RC_ICO_PCFOLDER ICON "pc_folder.ico"
 #define REAL_DDERR_VIDEONOTACTIVE 695
 #define REAL_DDERR_DEVICEDOESNTOWNSURFACE 699
 #define REAL_DDERR_NOTINITIALIZED REAL_CO_E_NOTINITIALIZED
-//---------------------------------------------------------------------------
+
+//---------------------------------------------------------------------------
 STRINGTABLE
 {
 REAL_DD_OK,

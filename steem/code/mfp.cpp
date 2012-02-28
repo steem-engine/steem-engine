@@ -5,7 +5,7 @@ DESCRIPTION: The core of Steem's Multi Function Processor emulation
 (MFP 68901). This chip handles most of the interrupt and timing functions in
 the ST.
 ---------------------------------------------------------------------------*/
-
+// SS: like in IO, more comments & changes, MFP=major F. pain
 //---------------------------------------------------------------------------
 void mfp_gpip_set_bit(int bit,bool set)
 {
@@ -13,7 +13,6 @@ void mfp_gpip_set_bit(int bit,bool set)
   BYTE set_mask=BYTE(set ? mask:0);
   BYTE cur_val=(mfp_reg[MFPR_GPIP] & mask);
   if (cur_val==set_mask) return; //no change
-
   bool old_1_to_0_detector_input=(cur_val ^ (mfp_reg[MFPR_AER] & mask))==mask;
   mfp_reg[MFPR_GPIP]&=BYTE(~mask);
   mfp_reg[MFPR_GPIP]|=set_mask;
@@ -58,7 +57,8 @@ inline BYTE mfp_get_timer_control_register(int n)
 // Use this for single-bit transitions in the GPIP
 void mfp_gpip_transition(int bitnum,bool is_0_1_transition)
 {
-  bool edge=mfp_reg[MFPR_AER] & (1<<bitnum); // Zero for falling edge, 1 for rising edge
+  // Zero for falling edge, 1 for rising edge
+  bool edge=mfp_reg[MFPR_AER] & (1<<bitnum); 
   if(!(edge^is_0_1_transition)){
     int irq=mfp_gpip_irq[bitnum]; // Store for faster macro
     mfp_interrupt(irq,ABSOLUTE_CPU_TIME);
@@ -67,24 +67,20 @@ void mfp_gpip_transition(int bitnum,bool is_0_1_transition)
 
 inline bool mfp_set_pending(int irq,int when_set)
 {
-  if (abs_quick(when_set-mfp_time_of_start_of_last_interrupt[irq])>=CYCLES_FROM_START_OF_MFP_IRQ_TO_WHEN_PEND_IS_CLEARED){
-    mfp_reg[MFPR_IPRA+mfp_interrupt_i_ab(irq)]|=mfp_interrupt_i_bit(irq); // Set pending
+//  ASSERT( abs_quick(when_set-mfp_time_of_start_of_last_interrupt[irq])>=CYCLES_FROM_START_OF_MFP_IRQ_TO_WHEN_PEND_IS_CLEARED);
+  if(abs_quick(when_set-mfp_time_of_start_of_last_interrupt[irq])
+#if defined(STEVEN_SEAGAL) && defined(SS_MFP_PENDING) // fixes Final Conflict
+    >=CYCLES_FROM_START_OF_MFP_IRQ_TO_WHEN_PEND_IS_CLEARED + MFP_CYCLES-8)
+#else
+    >=CYCLES_FROM_START_OF_MFP_IRQ_TO_WHEN_PEND_IS_CLEARED)
+#endif
+  {
+    // Set pending
+    mfp_reg[MFPR_IPRA+mfp_interrupt_i_ab(irq)]|=mfp_interrupt_i_bit(irq); 
     return true;
   }
-  return (mfp_reg[MFPR_IPRA+mfp_interrupt_i_ab(irq)] & mfp_interrupt_i_bit(irq))!=0;
-}
-
-// NOTE: This isn't used anywhere
-void mfp_check_for_timer_timeouts()
-{
-  for (int tn=0;tn<4;tn++){
-    if (mfp_timer_enabled[tn]){
-      if ((ABSOLUTE_CPU_TIME-mfp_timer_timeout[tn]) >= 0){
-        mfp_set_pending(mfp_timer_irq[tn],mfp_timer_timeout[tn]);
-        ioaccess|=IOACCESS_FLAG_FOR_CHECK_INTRS;
-      }
-    }
-  }
+  return (mfp_reg[MFPR_IPRA+mfp_interrupt_i_ab(irq)] 
+    & mfp_interrupt_i_bit(irq))!=0;
 }
 
 #define LOGSECTION LOGSECTION_MFP_TIMERS
@@ -183,11 +179,12 @@ void mfp_set_timer_reg(int reg,BYTE old_val,BYTE new_val)
     }while (timer==3);
     INSTRUCTION_TIME(-12);
 
-    if (reg==MFPR_TBCR && new_val==8) calc_time_of_next_timer_b();
+    if (reg==MFPR_TBCR && new_val==8) calc_time_of_next_timer_b();// SS: general use
 
 #ifdef ENABLE_LOGGING
     if (reg<=MFPR_TBCR && new_val>8){
       log("MFP: --------------- PULSE EXTENSION MODE!! -----------------");
+      TRACE("MFP: --------------- PULSE EXTENSION MODE!! -----------------");
     }
 #endif
 
@@ -261,11 +258,14 @@ int mfp_calc_timer_counter(int timer)
 
 #undef LOGSECTION
 
+// called by run when cpu_cycles < 0
 void ASMCALL check_for_interrupts_pending()
 {
+
   if (STOP_INTS_BECAUSE_INTERCEPT_OS==0){
     if ((ioaccess & IOACCESS_FLAG_DELAY_MFP)==0){
-      for (int irq=15;irq>=0;irq--){
+      for (int irq=15;irq>=0;irq--)
+      {
         BYTE i_bit=BYTE(1 << (irq & 7));
         int i_ab=1-((irq & 8) >> 3);
         if (mfp_reg[MFPR_ISRA+i_ab] & i_bit){ //interrupt in service
@@ -277,11 +277,14 @@ void ASMCALL check_for_interrupts_pending()
             break;        //lower priority interrupts not allowed now.
           }
         }
-      }
+      }//nxt irq
     }
     if (vbl_pending){
       if ((sr & SR_IPL)<SR_IPL_4){
         VBL_INTERRUPT
+#if defined(SS_VID_HATARI)
+//        if(LPEEK(0x70)!=0xFC06DE) TRACE("VBL %d vector %X\n",nVBLs,LPEEK(0x70));
+#endif
       }
     }
     if (hbl_pending){
@@ -291,6 +294,9 @@ void ASMCALL check_for_interrupts_pending()
         if (int(ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl)<scanline_time_in_cpu_cycles_at_start_of_vbl){
           HBL_INTERRUPT;
         }
+#if defined(SS_DEBUG)
+        else if(LPEEK(0x0068)<0xFC0000) TRACE("no hbl %X\n",LPEEK(0x0068));
+#endif
       }
     }
   }
@@ -304,7 +310,8 @@ void mfp_interrupt(int irq,int when_fired)
   if (mfp_interrupt_enabled[irq]){
     log_to_section(LOGSECTION_INTERRUPTS,EasyStr("  enabled"));
     if (mfp_set_pending(irq,when_fired)==0){
-      log_to_section(LOGSECTION_INTERRUPTS,EasyStr("  but ignored due to MFP clearing pending after it was set"));              \
+      log_to_section(LOGSECTION_INTERRUPTS,EasyStr("  but ignored due to MFP clearing pending after it was set"));
+      TRACE("MFP irq ignored\n");
     }else{
       if ((mfp_reg[MFPR_IMRA+mfp_interrupt_i_ab(irq)] & mfp_interrupt_i_bit(irq))==0){
         log_to_section(LOGSECTION_INTERRUPTS,EasyStr("  but masked"));
@@ -323,10 +330,12 @@ void mfp_interrupt(int irq,int when_fired)
             MEM_ADDRESS vector;
             vector=    (mfp_reg[MFPR_VR] & 0xf0)  +(irq);
             vector*=4;
-
             mfp_time_of_start_of_last_interrupt[irq]=ABSOLUTE_CPU_TIME;
+#if defined(STEVEN_SEAGAL) && defined(SS_INTERRUPT) 
+            INSTRUCTION_TIME_ROUND(MFP_CYCLES); // just removing a magic value
+#else
             INSTRUCTION_TIME_ROUND(56);
-
+#endif
             m68k_interrupt(LPEEK(vector));
             sr=WORD((sr & (~SR_IPL)) | SR_IPL_6);
             log_to_section(LOGSECTION_INTERRUPTS,EasyStr("  IRQ fired - vector=")+HEXSl(LPEEK(vector),6));

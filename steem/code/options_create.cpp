@@ -32,14 +32,28 @@ void TOptionBox::CreateMachinePage()
 {
   HWND Win;
   long Wid;
-
+  
   int y=10;
-
+  
+#if defined(STEVEN_SEAGAL) && defined(SS_STF)
+  // Adding the STF/STE switch
+  Wid=get_text_width(T("ST Model"));
+  CreateWindow("Static",T("ST Model"),WS_CHILD,
+	  page_l,y+4,Wid,21,Handle,(HMENU)209,HInstance,NULL);
+  
+  STTypeOption=CreateWindow("Combobox","",WS_CHILD  | WS_TABSTOP | CBS_DROPDOWNLIST,
+	  page_l+5+Wid,y,page_w-(5+Wid),200,Handle,(HMENU)211,HInstance,NULL);
+  SendMessage(STTypeOption,CB_ADDSTRING,0,(long)CStrT("STF"));
+  SendMessage(STTypeOption,CB_ADDSTRING,1,(long)CStrT("STE"));
+  SendMessage(STTypeOption,CB_SETCURSEL,min((int)ST_type,1),0);
+  y+=30;
+#endif
+  
   Wid=get_text_width(T("ST CPU speed"));
   CreateWindow("Static",T("ST CPU speed"),WS_CHILD,page_l,y+4,Wid,23,Handle,(HMENU)403,HInstance,NULL);
-
+  
   Win=CreateWindow("Combobox","",WS_CHILD  | WS_TABSTOP | WS_VSCROLL | CBS_DROPDOWNLIST,
-                          page_l+5+Wid,y,page_w-(5+Wid),400,Handle,(HMENU)404,HInstance,NULL);
+	  page_l+5+Wid,y,page_w-(5+Wid),400,Handle,(HMENU)404,HInstance,NULL);
   EasyStr Mhz=T("Megahertz");
   CBAddString(Win,EasyStr("8 ")+Mhz+" ("+T("ST standard")+")",8000000);
   CBAddString(Win,EasyStr("9 ")+Mhz,9000000);
@@ -345,6 +359,29 @@ void TOptionBox::CreateGeneralPage()
                           page_l,y,Wid,25,Handle,(HMENU)901,HInstance,NULL);
   SendMessage(Win,BM_SETCHECK,StartEmuOnClick,0);
   ToolAddWindow(ToolTip,Win,T("When this option is ticked clicking a mouse button on Steem's main window will start emulation."));
+
+#if defined(STEVEN_SEAGAL) 
+  
+#if defined(SS_VAR_MOUSE_CAPTURE) 
+  // Option Capture mouse
+  int Wid2=GetCheckBoxSize(Font,T("Capture mouse")).Width;
+  Win=CreateWindow("Button",T("Capture mouse"),
+                          WS_CHILD | WS_TABSTOP | BS_CHECKBOX,
+                          page_l+Wid,y,Wid2,25,Handle,(HMENU)1028,HInstance,NULL);
+  SendMessage(Win,BM_SETCHECK,CaptureMouse,0);
+  ToolAddWindow(ToolTip,Win,T("If unchecked, Steem will leave mouse control to Windows until you click the window."));
+#endif
+
+#if defined(SS_VARIOUS)
+  // Option Specific hacks
+  y+=30;
+  Wid=GetCheckBoxSize(Font,T("Hacks")).Width;
+  Win=CreateWindow("Button",T("Hacks"),WS_CHILD | WS_TABSTOP | BS_CHECKBOX,
+                          page_l,y,Wid,23,Handle,(HMENU)1027,HInstance,NULL);
+  SendMessage(Win,BM_SETCHECK,SpecificHacks,0);
+  ToolAddWindow(ToolTip,Win,T("If checked, specific hacks targetting known programs are used. Those hacks may break other programs."));
+#endif
+#endif//SS
 
   SetPageControlsFont();
   if (Focus==NULL) Focus=GetDlgItem(Handle,1041);
@@ -739,6 +776,21 @@ void TOptionBox::CreateDisplayPage()
   long Wid;
   int y=10;
 
+#if defined(STEVEN_SEAGAL) && defined(SS_VID_BORDERS)
+
+  // Option large border (now a list)
+  Wid=get_text_width(T("Display Size"));
+  CreateWindow("Static",T("Display Size"),WS_CHILD,
+	  page_l,y+4,Wid,21,Handle,(HMENU)209,HInstance,NULL);
+  BorderSizeOption=CreateWindow("Combobox","",WS_CHILD  | WS_TABSTOP | CBS_DROPDOWNLIST,
+	  page_l+5+Wid,y,page_w-(5+Wid),200,Handle,(HMENU)1026,HInstance,NULL);
+  SendMessage(BorderSizeOption,CB_ADDSTRING,0,(long)CStrT("Normal (384x270)"));
+  SendMessage(BorderSizeOption,CB_ADDSTRING,1,(long)CStrT("Large (400x275)"));
+  SendMessage(BorderSizeOption,CB_ADDSTRING,1,(long)CStrT("Very large (416x280)"));
+  SendMessage(BorderSizeOption,CB_SETCURSEL,min((int)BorderSize,2),0);
+  y+=30;
+#endif
+
   int x=page_l;
   int w=get_text_width(T("Frameskip"));
   CreateWindow("Static",T("Frameskip"),WS_CHILD,
@@ -765,6 +817,7 @@ void TOptionBox::CreateDisplayPage()
   SendMessage(BorderOption,CB_ADDSTRING,2,(long)CStrT("Auto Borders"));
   if (Disp.BorderPossible()==0 && FullScreen==0) EnableBorderOptions(0);
   y+=30;
+
 
   CreateWindow("Button",T("Window Size"),WS_CHILD | BS_GROUPBOX,
                   page_l,y,page_w,20+30+30+30+30+2,Handle,(HMENU)99,HInstance,NULL);
@@ -912,7 +965,6 @@ void TOptionBox::FillScreenShotFormatOptsCombo()
 void TOptionBox::UpdateWindowSizeAndBorder()
 {
   if (BorderOption==NULL) return;
-
   SendMessage(BorderOption,CB_SETCURSEL,min(border,2),0);
   for (int r=0;r<3;r++){
     DWORD dat=WinSizeForRes[r];
@@ -927,9 +979,16 @@ void TOptionBox::CreateOSDPage()
   long Wid;
   int y=10;
 
+#if defined(STEVEN_SEAGAL) && defined(SS_OSD)
+  Wid=GetCheckBoxSize(Font,T("Disk access light")).Width;
+  Win=CreateWindow("Button",T("Disk access light"),WS_CHILD  | WS_TABSTOP | BS_CHECKBOX,
+                          page_l,y,Wid,23,Handle,(HMENU)12000,HInstance,NULL);
+#else
   Wid=GetCheckBoxSize(Font,T("Floppy disk access light")).Width;
   Win=CreateWindow("Button",T("Floppy disk access light"),WS_CHILD  | WS_TABSTOP | BS_CHECKBOX,
                           page_l,y,Wid,23,Handle,(HMENU)12000,HInstance,NULL);
+#endif
+
   SendMessage(Win,BM_SETCHECK,osd_show_disk_light,0);
   y+=30;
 
@@ -1422,6 +1481,21 @@ void TOptionBox::CreateSoundPage()
                           page_l,y,Wid,25,Handle,(HMENU)7300,HInstance,NULL);
   SendMessage(Win,BM_SETCHECK,sound_internal_speaker,0);
 
+#if defined(STEVEN_SEAGAL) && defined(SS_VARIOUS) 
+/* Option to mute the damn keyboard click.
+   A poke on $484 each time you press a key can break some programs 
+   (No Cooper).
+   So it has been changed into interactive control of bit 0 of this address.
+*/
+  int wid2=Wid+5;	// we want to place the checkbox on the right of last one
+  Wid=GetCheckBoxSize(Font,T("Keyboard click")).Width;
+  Win=CreateWindow("Button",T("Keyboard click"),WS_CHILD | WS_TABSTOP |
+                          BS_CHECKBOX,
+                          page_l+wid2,y,Wid,25,Handle,(HMENU)7301,HInstance,NULL);
+  BOOL keyboard_click=( PEEK(0x484)&1 );
+  SendMessage(Win,BM_SETCHECK,keyboard_click,0);
+#endif  
+
   if (Focus==NULL) Focus=GetDlgItem(Handle,7099);
   SetPageControlsFont();
   ShowPageControls();
@@ -1431,6 +1505,7 @@ void TOptionBox::CreateStartupPage()
 {
   ConfigStoreFile CSF(INIFile);
   bool NoDD=(bool)CSF.GetInt("Options","NoDirectDraw",0);
+    // SS: This option has no attached global variable.
   int y=10,Wid;
   HWND Win;
 

@@ -102,9 +102,11 @@ inline void m68k_poke(MEM_ADDRESS ad,BYTE x);
 inline void m68k_dpoke(MEM_ADDRESS ad,WORD x);
 inline void m68k_lpoke(MEM_ADDRESS ad,LONG x);
 
+
+
 #define INSTRUCTION_TIME(t) {cpu_cycles-=(t);}
+
 #define INSTRUCTION_TIME_ROUND(t) {INSTRUCTION_TIME(t); cpu_cycles&=-4;}
-#define FETCH_TIMING {INSTRUCTION_TIME(4); cpu_cycles&=-4;}
 
 #ifdef _DEBUG_BUILD
 
@@ -151,15 +153,36 @@ MEM_ADDRESS pc_rel_stop_on_ref=0;
 
 #else
 #define PC_RELATIVE_MONITOR(ad)
-#endif
+#endif//_RELEASE_BUILD
 
 #else
 #define CHECK_STOP_ON_USER_CHANGE
 #define CHECK_STOP_USER_MODE_NO_INTR
 #define debug_check_break_on_irq(irq)
 #define PC_RELATIVE_MONITOR(ad)
-#endif
+#endif//_DEBUG_BUILD
 
+
+#define DEST_IS_REGISTER ((ir&BITS_543)<=BITS_543_001)
+#define DEST_IS_MEMORY ((ir&BITS_543)>BITS_543_001)
+#define SOURCE_IS_REGISTER_OR_IMMEDIATE ((ir & BITS_543)<=BITS_543_001 || ((ir&b00111111)==b00111100) )
+
+
+WORD*lpfetch,*lpfetch_bound;
+bool prefetched_2=false;
+WORD prefetch_buf[2]; // SS the 2 words prefetch queue
+
+
+#if!(defined(STEVEN_SEAGAL) && defined(SS_CPU))
+// Those macros replaced by inline functions
+
+// This one is apparently never used.
+#define EXTRA_PREFETCH_IF_TO_MEM \
+  if(DEST_IS_MEMORY){           \
+    EXTRA_PREFETCH               \
+  }
+
+// I can't find one instance where checkints is passed.
 #define M68K_PERFORM_RTE(checkints)             \
             SET_PC(m68k_lpeek(r[15]+2));        \
             sr=m68k_dpeek(r[15]);r[15]+=6;      \
@@ -168,41 +191,10 @@ MEM_ADDRESS pc_rel_stop_on_ref=0;
             DETECT_TRACE_BIT;                   \
             checkints;                          \
 
-#define DEST_IS_REGISTER ((ir&BITS_543)<=BITS_543_001)
-#define DEST_IS_MEMORY ((ir&BITS_543)>BITS_543_001)
-
-#define SOURCE_IS_REGISTER_OR_IMMEDIATE ((ir & BITS_543)<=BITS_543_001 || ((ir&b00111111)==b00111100) )
-
-
-WORD*lpfetch,*lpfetch_bound;
-bool prefetched_2=false;
-WORD prefetch_buf[2];
-
 #define PREFETCH_SET_PC                       \
   prefetched_2=false; /*will have prefetched 1 word*/ \
   prefetch_buf[0]=*lpfetch;               \
   lpfetch+=MEM_DIR;  /*let's not cause exceptions here*/
-
-#define EXTRA_PREFETCH                    \
-  prefetch_buf[1]=*lpfetch;              \
-  prefetched_2=true;
-
-#define EXTRA_PREFETCH_IF_TO_MEM \
-  if(DEST_IS_MEMORY){           \
-    EXTRA_PREFETCH               \
-  }
-
-#define FETCH_W(dest_word)              \
-  if(prefetched_2){                     \
-    dest_word=prefetch_buf[0];            \
-    prefetch_buf[0]=prefetch_buf[1];       \
-    prefetched_2=false;                           \
-  }else{ /* if(prefetched==1) */             \
-    dest_word=prefetch_buf[0];                \
-    prefetch_buf[0]=*lpfetch;              \
-  }                                            \
-  lpfetch+=MEM_DIR;                             \
-  if(lpfetch MEM_GE lpfetch_bound)exception(BOMBS_BUS_ERROR,EA_FETCH,pc);
 
 #define SET_PC(ad)        \
     pc=ad;                               \
@@ -241,34 +233,19 @@ WORD prefetch_buf[2];
     }                                         \
     PREFETCH_SET_PC
 
-#define IOACCESS_FLAGS_MASK  0xFFFFFFC0
-#define IOACCESS_NUMBER_MASK 0x0000003F
+#define FETCH_W(dest_word)              \
+  if(prefetched_2){                     \
+    dest_word=prefetch_buf[0];            \
+    prefetch_buf[0]=prefetch_buf[1];       \
+    prefetched_2=false;                           \
+  }else{ /* if(prefetched==1) */             \
+    dest_word=prefetch_buf[0];                \
+    prefetch_buf[0]=*lpfetch;              \
+  }                                            \
+  lpfetch+=MEM_DIR;                             \
+  if(lpfetch MEM_GE lpfetch_bound)exception(BOMBS_BUS_ERROR,EA_FETCH,pc);
 
-#define IOACCESS_FLAG_FOR_CHECK_INTRS BIT_6
-#define IOACCESS_FLAG_PSG_BUS_JAM_R BIT_7
-#define IOACCESS_FLAG_PSG_BUS_JAM_W BIT_8
-#define IOACCESS_FLAG_DO_BLIT BIT_9
-#define IOACCESS_FLAG_FOR_CHECK_INTRS_MFP_CHANGE BIT_10
-#define IOACCESS_FLAG_DELAY_MFP BIT_11
-#define IOACCESS_INTERCEPT_OS BIT_12
-#define IOACCESS_INTERCEPT_OS2 BIT_13
-
-#ifdef ENABLE_LOGFILE
-#define IOACCESS_DEBUG_MEM_WRITE_LOG BIT_14
-MEM_ADDRESS debug_mem_write_log_address;
-int debug_mem_write_log_bytes;
-#endif
-
-#define STOP_INTS_BECAUSE_INTERCEPT_OS bool(ioaccess & (IOACCESS_INTERCEPT_OS | IOACCESS_INTERCEPT_OS2))
-
-void m68k_interrupt(MEM_ADDRESS);  //non-address or bus error interrupt
-void change_to_user_mode();
-void change_to_supervisor_mode();
-
-bool cpu_stopped=false,m68k_do_trace_exception;
-
-signed int compare_buffer;
-
+#define FETCH_TIMING {INSTRUCTION_TIME(4); cpu_cycles&=-4;} 
 
 #define m68k_SET_DEST_B_TO_ADDR        \
   abus&=0xffffff;                                   \
@@ -373,6 +350,45 @@ signed int compare_buffer;
 #define m68k_SET_DEST_L(addr)           \
   abus=addr;                            \
   m68k_SET_DEST_L_TO_ADDR;
+
+
+#endif//!ss
+
+#if defined(STEVEN_SEAGAL) && defined(SS_CPU_PREFETCH)
+#else
+#define EXTRA_PREFETCH                    \
+  prefetch_buf[1]=*lpfetch;              \
+  prefetched_2=true;
+#endif
+
+#define IOACCESS_FLAGS_MASK  0xFFFFFFC0
+#define IOACCESS_NUMBER_MASK 0x0000003F
+
+#define IOACCESS_FLAG_FOR_CHECK_INTRS BIT_6
+#define IOACCESS_FLAG_PSG_BUS_JAM_R BIT_7
+#define IOACCESS_FLAG_PSG_BUS_JAM_W BIT_8
+#define IOACCESS_FLAG_DO_BLIT BIT_9
+#define IOACCESS_FLAG_FOR_CHECK_INTRS_MFP_CHANGE BIT_10
+#define IOACCESS_FLAG_DELAY_MFP BIT_11
+#define IOACCESS_INTERCEPT_OS BIT_12
+#define IOACCESS_INTERCEPT_OS2 BIT_13
+
+#ifdef ENABLE_LOGFILE
+#define IOACCESS_DEBUG_MEM_WRITE_LOG BIT_14
+MEM_ADDRESS debug_mem_write_log_address;
+int debug_mem_write_log_bytes;
+#endif
+
+#define STOP_INTS_BECAUSE_INTERCEPT_OS bool(ioaccess & (IOACCESS_INTERCEPT_OS | IOACCESS_INTERCEPT_OS2))
+
+void m68k_interrupt(MEM_ADDRESS);  //non-address or bus error interrupt
+void change_to_user_mode();
+void change_to_supervisor_mode();
+
+bool cpu_stopped=false,m68k_do_trace_exception;
+
+signed int compare_buffer;
+
 
 
 
@@ -647,12 +663,17 @@ signed int compare_buffer;
 #define m68k_GET_IMMEDIATE_L m68k_src_l=m68k_fetchL();pc+=4
 #define m68k_IMMEDIATE_B (signed char)m68k_fetchB()
 #define m68k_IMMEDIATE_W (short)m68k_fetchW()
-#define m68k_IMMEDIATE_L (long)m68k_fetchL()
+#define m68k_IMMEDIATE_L (long)m68k_fetchL() // SS unused
 
+// SS SR has just been loaded, if supervisor bit
+// in it isn't set, go user mode
 #define DETECT_CHANGE_TO_USER_MODE  \
           if (!SUPERFLAG) change_to_user_mode();
 
+
+
 #define ILLEGAL  exception(BOMBS_ILLEGAL_INSTRUCTION,EA_INST,0);
+
 
 #ifndef DETECT_TRACE_BIT
 #define DETECT_TRACE_BIT {if (sr & SR_TRACE) ioaccess=TRACE_BIT_JUST_SET | (ioaccess & IOACCESS_FLAGS_MASK);}
@@ -673,12 +694,19 @@ void sr_check_z_n_l_for_r0()
   SR_CHECK_Z_AND_N_L;
 }
 
-#else
 
+#else //inemu
+
+
+#if defined(STEVEN_SEAGAL) && defined(SS_CPU)
+
+
+#else
 #define SET_PC(ad) set_pc(ad);
 extern void set_pc(MEM_ADDRESS);
-#define M68K_PERFORM_RTE(s) perform_rte();
 extern void perform_rte();
+#endif
+
 extern void sr_check_z_n_l_for_r0();
 extern void m68k_process();
 

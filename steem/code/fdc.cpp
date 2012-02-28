@@ -523,7 +523,16 @@ instant_sector_access_loop:
     int PosInSector=(SectorStage-1)*BytesPerStage;
 
     BYTE Temp;
+    
     if (Command & 0x20){ // Write
+      
+#if defined(STEVEN_SEAGAL) && defined(SS_OSD)
+      // Red floppy led for writing
+      if(FDCWritingTimer<timer)
+        FDCWritingTimer=timer+RED_LED_DELAY;
+      FDCWriting=TRUE;
+#endif
+      
       if (floppy->ReadOnly){
         floppy_irq_flag=FLOPPY_IRQ_NOW; //interrupt with write-protect flag
         FDCCantWriteDisplayTimer=timer+3000;
@@ -543,8 +552,12 @@ instant_sector_access_loop:
         }
       }
     }else{
+#if defined(STEVEN_SEAGAL) && defined(SS_OSD)
+      // reading
+      FDCWriting=0;
+#endif
       BYTE *lpDest;
-      for (int bb=BytesPerStage;bb>0;bb--){
+      for (int bb=BytesPerStage;bb>0;bb--){	// SS: int BytesPerStage=16;
         if (DMA_ADDRESS_IS_VALID_W && dma_sector_count){
           lpDest=lpPEEK(dma_address);
         }else{
@@ -983,12 +996,35 @@ void pasti_handle_return(struct pastiIOINFO *pPIOI)
 //  log_to(LOGSECTION_PASTI,Str("PASTI: Handling return, update cycles=")+pPIOI->updateCycles+" irq="+pPIOI->intrqState+" Xfer="+pPIOI->haveXfer);
   pasti_update_time=ABSOLUTE_CPU_TIME+pPIOI->updateCycles;
 
+#if defined(STEVEN_SEAGAL)
+  BOOL old_irq=(mfp_reg[MFPR_GPIP] & BIT_5)==0; // 0=irq on
+#else
   bool old_irq=(mfp_reg[MFPR_GPIP] & BIT_5)==0; // 0=irq on
+#endif
   if (old_irq!=pPIOI->intrqState){
     mfp_gpip_set_bit(MFP_GPIP_FDC_BIT,!pPIOI->intrqState);
     if (pPIOI->intrqState){
       // FDC is busy, activate light
       disk_light_off_time=timer+DisableDiskLightAfter;
+
+#if defined(STEVEN_SEAGAL) && defined(SS_OSD)
+      // Red floppy led for writing in Pasti mode
+      pastiPEEKINFO ppi;
+      pasti->Peek(&ppi);
+      if( (ppi.commandReg) & 0X20) // Pasti is writing
+      {
+        if(FDCWritingTimer<timer)
+        {
+          FDCWritingTimer=timer+RED_LED_DELAY;	
+        }
+        FDCWriting=TRUE;
+      }
+      else// if( (ppi.commandReg) & 0X20)
+      {
+        FDCWriting=FALSE;
+      }//if(ppi.commandReg & 0X20)
+#endif
+
     }
   }
   

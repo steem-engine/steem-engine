@@ -6,11 +6,64 @@
 #define INIT(s)
 #endif
 
+
 EXT int MILLISECONDS_TO_HBLS(int);
 EXT void make_Mem(BYTE,BYTE);
 EXT void GetCurrentMemConf(BYTE[2]);
 
 EXT BYTE *Mem INIT(NULL),*Rom INIT(NULL);
+
+
+//SS About memory:
+/*
+6.1	Memory
+
+The ST’s RAM is stored in the variable Mem, which is declared in emulator.h and set 
+up in the make_Mem() function in main.cpp.
+
+The ST’s ROM is stored in the variable Rom, which is declared in emulator.h and set 
+up in the Initialise() function in main.cpp.
+
+On little-endian processors such as the 486-compatibles used in modern PCs, the issue 
+arises of storing data for use by a big-endian processor such as an emulated Motorola 
+68000 (the ST’s CPU).  For example, imagine that a computer has a byte $AB stored at 
+address $100 and $CD stored at address $101.  If the computer is big-endian, reading 
+a word (two bytes) from the address $100 will return $ABCD.  If the computer is
+ little-endian, it will return $CDAB.  Thus if a little-endian computer is emulating 
+a big-endian one, and the naïve storage method is used for the emulated computer’s
+ memory, then each word and longword needs to be reversed before writing to and after
+ reading from the emulated memory.  To avoid this overhead, Steem stores the ST memory 
+in reverse order in the PC’s memory.  We store the address immediately after the last
+ byte of the storage buffer (the variable Mem_End), and calculate PC addresses from 
+ST addresses by subtracting the address and the data length from this address. 
+ Hence the ST’s word at $100 is stored in the PC’s memory at (Mem_End-2-$100). 
+ Macros are provided to hide this confusing calculation, for example
+
+#define DPEEK(l)   *(WORD*)(Mem_End_minus_2-(l))
+
+in steemh.h.
+
+
+SS:
+
+I find the big or little-endian definition confusing.
+It's "big" if the RAM position is "bigger" (comes after).
+In big-endian processors, we have AB CD; CD is on a higher, bigger RAM position
+than AB.
+In practice, little-endian processors (like Intel) reverse all the data they write
+in memory (CDAB)
+
+The way the Steem Authors dealt with the situation is a stroke of genius (or they 
+took it from another genius...) 
+By "naive" we must understand WinSTon and maybe Hatari.
+
+Mem_End is the end of the allocated PC RAM, but it's the beginning
+of the ST RAM!
+
+*/
+
+
+
 EXT WORD tos_version;
 
 #define COLOUR_MONITOR (mfp_gpip_no_interrupt & MFP_GPIP_COLOUR)
@@ -199,10 +252,6 @@ int ACIAClockToHBLS(int,bool=0);
 void ACIA_Reset(int,bool);
 void ACIA_SetControl(int,BYTE);
 
-#define ACIA_OVERRUN_NO 0
-#define ACIA_OVERRUN_COMING 1
-#define ACIA_OVERRUN_YES 416
-
 struct _ACIA_STRUCT{
   int clock_divide;
 
@@ -222,11 +271,16 @@ struct _ACIA_STRUCT{
   int last_rx_read_time;
 }acia[2];
 
+#define ACIA_OVERRUN_NO 0
+#define ACIA_OVERRUN_COMING 1
+#define ACIA_OVERRUN_YES 416
 #define NUM_ACIA_IKBD 0
 #define NUM_ACIA_MIDI 1
+#define ACIA_CYCLES_NEEDED_TO_START_TX 512
+
 #define ACIA_IKBD acia[0]
 #define ACIA_MIDI acia[1]
-#define ACIA_CYCLES_NEEDED_TO_START_TX 512
+
 
 #ifndef NO_CRAZY_MONITOR
 

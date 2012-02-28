@@ -7,13 +7,12 @@ DESCRIPTION: Sets up all conditions that affect the Steem binary.
 //---------------------------------------------------------------------------
 //                         Conditional Defines for Steem
 //---------------------------------------------------------------------------
+
 #if !defined(_NO_DEBUG_BUILD) && !defined(_DEBUG_BUILD) && !defined(ONEGAME) && defined(WIN32)
 #define _DEBUG_BUILD
 #endif
 
-
 //#include "mmgr/mmgr.h"
-
 
 #ifndef WIN32
 #include "notwindows.h"
@@ -26,13 +25,13 @@ DESCRIPTION: Sets up all conditions that affect the Steem binary.
 //#define SHOW_WAVEFORM 8
 //#define DISABLE_STEMDOS
 //#define DISABLE_PSG
-//#define DISABLE_BLITTER
+//#define DISABLE_BLITTER	// SS: made option
 //#define SHOW_DRAW_SPEED
 //#define WRITE_ONLY_SINE_WAVE
 //#define DRAW_ALL_ICONS_TO_SCREEN
 //#define DRAW_TIMER_TO_SCREEN
 //#define TRANSLATION_TEST
-#define NO_ASM_PORTIO
+#define NO_ASM_PORTIO	// SS: for internal speaker
 //#define NO_CRAZY_MONITOR
 //#define NO_CSF
 //#define USE_PORTAUDIO_ON_WIN32
@@ -91,6 +90,7 @@ DESCRIPTION: Sets up all conditions that affect the Steem binary.
 #define INIT(s) =s
 #else
 #define EXT extern
+//#pragma message("EXT is extern")
 #define INIT(s)
 #endif
 
@@ -116,6 +116,12 @@ char *_argv[2]={"",""};
 #else
 EXT char *_argv[2];
 #endif
+
+// SS: VC++ 6.0 (and below) scoping bugfix
+#if defined(_MSC_VER) && _MSC_VER <= 1200
+#define for if(0); else for
+#endif
+
 
 //---------------------------------------------------------------------------
 //                                GCC/MinGW
@@ -283,6 +289,8 @@ typedef Window WINDOWTYPE;
 #endif
 
 #ifndef BIG_ENDIAN_PROCESSOR
+
+// SS: X86 are little endian, M68K are big endian
 
 // Little endian: least significant byte , low mid byte, hi mid byte , most significant byte
 #define MEM_DIR -1

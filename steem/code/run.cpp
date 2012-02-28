@@ -8,6 +8,16 @@ to be scheduled to the nearest cycle. Speed limiting and drawing is also
 handled here, in event_scanline and event_vbl_interrupt.
 ---------------------------------------------------------------------------*/
 
+#if defined(STEVEN_SEAGAL) && defined(SS_IKBD) 
+#if  defined(SS_IKBD_TIGHTER) // much ado for little results
+#define ACIA_CYCLES    7200         /* Cycles (Multiple of 4) between sent to ACIA from keyboard along serial line - 500Hz/64, (approx' 6920-7200cycles from test program) */
+#define ACIA_CYCLES_EXTRA 20
+#endif
+#if defined(SS_IKBD_HATARI)
+extern bool IKBD_ExeMode; // forward
+#endif
+#endif
+ 
 //---------------------------------------------------------------------------
 void exception(int exn,exception_action ea,MEM_ADDRESS a)
 {
@@ -16,6 +26,8 @@ void exception(int exn,exception_action ea,MEM_ADDRESS a)
   ExceptionObject.init(exn,ea,a);
   if (pJmpBuf==NULL){
     log_write(Str("Unhandled exception! pc=")+HEXSl(old_pc,6)+" action="+int(ea)+" address involved="+HEXSl(a,6));
+    TRACE(Str("Unhandled exception! pc=")+HEXSl(old_pc,6)+" action="+int(ea)+" address involved="+HEXSl(a,6));
+    TRACE("\n");
     return;
   }
   longjmp(*pJmpBuf,1);
@@ -52,7 +64,11 @@ void run()
 
   Sound_Start();
 
+#if defined (STEVEN_SEAGAL) && defined(SS_VIDEO)
+  Shifter.AddFreqChange(shifter_freq);
+#else
   ADD_SHIFTER_FREQ_CHANGE(shifter_freq);
+#endif	
 
   init_screen();
 
@@ -66,6 +82,11 @@ void run()
   DEBUG_ONLY(mode=STEM_MODE_CPU;)
 
   log_write(">>> Start Emulation <<<");
+  TRACE(">>> Start Emulation <<<\n");
+
+#if defined(STEVEN_SEAGAL) && defined(SS_VARIOUS) && defined(SS_DEBUG) 
+  ReportGeneralInfos(START);
+#endif
 
   DEBUG_ONLY( debug_first_instruction=true; ) // Don't break if running from breakpoint
 
@@ -84,39 +105,123 @@ void run()
 
   ioaccess=0;
   if (Blit.Busy) Blitter_Draw();
-
   do{
     ExcepHappened=0;
+
     TRY_M68K_EXCEPTION
+
       while (runstate==RUNSTATE_RUNNING){
+        // cpu_cycles is the amount of cycles before next event.
+        // SS It is *decremented* by instruction timings, not incremented.
         while (cpu_cycles>0 && runstate==RUNSTATE_RUNNING){
 
           DEBUG_ONLY( pc_history[pc_history_idx++]=pc; )
           DEBUG_ONLY( if (pc_history_idx>=HISTORY_SIZE) pc_history_idx=0; )
-
+          
 #define LOGSECTION LOGSECTION_CPU
-          m68k_PROCESS
+
+#if defined(STEVEN_SEAGAL) && defined(SS_CPU)
+          // This is where instructions are executed. We're in the main loop.
+          // Other places that execute instructions are trace and blitter.
+          m68k_Process(); // inline function
+#else
+          m68k_PROCESS // macro
+#endif
+
 #undef LOGSECTION
 
           DEBUG_ONLY( debug_first_instruction=0; )
           CHECK_BREAKPOINT
-        }
+        }//while (cpu_cycles>0 && runstate==RUNSTATE_RUNNING)
         DEBUG_ONLY( if (runstate!=RUNSTATE_RUNNING) break; )
         DEBUG_ONLY( mode=STEM_MODE_INSPECT; )
 
+        // SS when cpu_cycles <=0, Steem looks up events (interrupts, scanline, etc)
         while (cpu_cycles<=0){
           screen_event_vector();
           prepare_next_event();
 
+#if defined(STEVEN_SEAGAL) && defined(SS_IKBD) && defined(SS_IKBD_TIGHTER)
+          if(trigger_ACIA_irq) 
+          {              
+            int lcycles=ABSOLUTE_CPU_TIME-ikbd.timer_when_keyboard_info;
+            // RX flag? note 90 is guessed, it's OK for V8MS & Yo Demo (hack)
+            if(trigger_ACIA_irq==1 && lcycles >= ACIA_CYCLES-90)
+            {
+              if(!ikbd.send_nothing)
+              {
+                keyboard_buffer_length--;
+                if(ikbd.joy_packet_pos>=keyboard_buffer_length) 
+                  ikbd.joy_packet_pos=-1;
+                if(ikbd.mouse_packet_pos>=keyboard_buffer_length) 
+                  ikbd.mouse_packet_pos=-1;
+                    
+                if(ACIA_IKBD.rx_not_read)
+                {
+#if defined(SS_IKBD_HATARI)
+                  if(!IKBD_ExeMode) 
+#endif
+                  {
+                    // discard data and set overrun
+                    if(ACIA_IKBD.overrun!=ACIA_OVERRUN_YES) 
+                      ACIA_IKBD.overrun=ACIA_OVERRUN_COMING;
+                  }
+                }
+                else // OK
+                {
+                  // Put FIFO info from buffer to data register 
+                  // (readable at $FFFC02)
+                  ACIA_IKBD.data=keyboard_buffer[keyboard_buffer_length];
+                  ACIA_IKBD.rx_not_read=true;
+#if defined(SS_IKBD_TRACE)
+#if defined(SS_IKBD_HATARI)
+                  if(!IKBD_ExeMode) 
+#endif
+                    TRACE("ACIA_IKBD.rx=true %d\n",lcycles);
+#endif
+                }
+                if(ACIA_IKBD.rx_irq_enabled)
+                  trigger_ACIA_irq++; // 2: irq can trigger
+              }//if(!ikbd.send_nothing)
+              // More to process?
+              if(keyboard_buffer_length) 
+              {
+                if(screen_res!=2)//ST_HIGH_RES)
+                  agenda_add(agenda_keyboard_replace,ACIA_DELAY_HBL,0);
+                else
+                  agenda_add(agenda_keyboard_replace,ACIAClockToHBLS(ACIA_IKBD.clock_divide),0);
+              }
+              if(macro_start_after_ikbd_read_count) 
+                macro_start_after_ikbd_read_count--;
+                  
+            }//if(trigger_ACIA_irq==1 && lcycles>=ACIA_CYCLES-100)
+            // IRQ flag? (in fact, we're too late, TODO)
+            if(trigger_ACIA_irq==2 && lcycles>=ACIA_CYCLES )//+18)
+            {
+              ACIA_IKBD.irq=true;
+#if defined(SS_IKBD_TRACE)
+#if defined(SS_IKBD_HATARI)
+              if(!IKBD_ExeMode) 
+#endif
+                TRACE("ACIA_IKBD.irq=true %d\n",lcycles);
+#endif
+              mfp_gpip_set_bit(MFP_GPIP_ACIA_BIT,0);
+              trigger_ACIA_irq=FALSE; 
+            }
+          }// end hack keyboard
+
+#endif
           // This has to be in while loop as it can cause an interrupt,
           // thus making another event happen.
           if (cpu_cycles>0) check_for_interrupts_pending();
-        }
+
+        }//while (cpu_cycles<=0)
+
         CHECK_BREAKPOINT
 
         DEBUG_ONLY( mode=STEM_MODE_CPU; )
 //---------------------------------------------------------------------------
-      }
+      }//while (runstate==RUNSTATE_RUNNING)
     CATCH_M68K_EXCEPTION
       m68k_exception e=ExceptionObject;
       ExcepHappened=true;
@@ -192,6 +297,20 @@ void run()
   DEBUG_ONLY( debug_run_end(); )
 
   log_write(">>> Stop Emulation <<<");
+  TRACE(">>> Stop Emulation <<<\n");
+#if defined(STEVEN_SEAGAL) && defined(SS_VARIOUS) && defined(SS_DEBUG) 
+  ReportGeneralInfos(STOP);
+#endif
+
+#if defined(STEVEN_SEAGAL) && defined(SS_DEBUG)
+#if defined(SS_VIDEO)
+  Shifter.OverscanModeTrace=Shifter.BorderMaskTrace=0;
+  VideoEvents.Init();
+#endif
+#if defined(SS_CPU)
+  Cpu.nExceptions=0;
+#endif
+#endif
 
 #ifdef WIN32
   timeEndPeriod(tc.wPeriodMin); // Finished with accurate timing
@@ -226,23 +345,24 @@ void inline prepare_event_again() //might be an earlier one
   screen_event_vector=(screen_event_pointer->event);
   //  end of new 3/7/2001
 
-//  PREPARE_EVENT_CHECK_FOR_DMA_SOUND_END
 
-  //check timers for timeouts
-  PREPARE_EVENT_CHECK_FOR_TIMER_TIMEOUTS(0);
-  PREPARE_EVENT_CHECK_FOR_TIMER_TIMEOUTS(1);
-  PREPARE_EVENT_CHECK_FOR_TIMER_TIMEOUTS(2);
-  PREPARE_EVENT_CHECK_FOR_TIMER_TIMEOUTS(3);
-
-  PREPARE_EVENT_CHECK_FOR_TIMER_B
-
-  PREPARE_EVENT_CHECK_FOR_DEBUG
-
-  PREPARE_EVENT_CHECK_FOR_PASTI
+    //  PREPARE_EVENT_CHECK_FOR_DMA_SOUND_END
+    //check timers for timeouts
+    PREPARE_EVENT_CHECK_FOR_TIMER_TIMEOUTS(0);
+    PREPARE_EVENT_CHECK_FOR_TIMER_TIMEOUTS(1);
+    PREPARE_EVENT_CHECK_FOR_TIMER_TIMEOUTS(2);
+    PREPARE_EVENT_CHECK_FOR_TIMER_TIMEOUTS(3);
+    
+    PREPARE_EVENT_CHECK_FOR_TIMER_B;
+    
+    PREPARE_EVENT_CHECK_FOR_DEBUG;
+    
+    PREPARE_EVENT_CHECK_FOR_PASTI;
 
   // cpu_timer must always be set to the next 4 cycle boundary after time_of_next_event
   int oo=time_of_next_event-cpu_timer;
   oo=(oo+3) & -4;
+
 //  log_write(EasyStr("prepare event again: offset=")+oo);
   cpu_cycles+=oo;cpu_timer+=oo;
 }
@@ -252,19 +372,19 @@ void inline prepare_next_event()
   time_of_next_event=cpu_time_of_start_of_event_plan + screen_event_pointer->time;
   screen_event_vector=(screen_event_pointer->event);
 
-//  PREPARE_EVENT_CHECK_FOR_DMA_SOUND_END
-
-  // check timers for timeouts
-  PREPARE_EVENT_CHECK_FOR_TIMER_TIMEOUTS(0);
-  PREPARE_EVENT_CHECK_FOR_TIMER_TIMEOUTS(1);
-  PREPARE_EVENT_CHECK_FOR_TIMER_TIMEOUTS(2);
-  PREPARE_EVENT_CHECK_FOR_TIMER_TIMEOUTS(3);
-
-  PREPARE_EVENT_CHECK_FOR_TIMER_B
-
-  PREPARE_EVENT_CHECK_FOR_DEBUG
-
-  PREPARE_EVENT_CHECK_FOR_PASTI
+    //  PREPARE_EVENT_CHECK_FOR_DMA_SOUND_END
+    
+    // check timers for timeouts
+    PREPARE_EVENT_CHECK_FOR_TIMER_TIMEOUTS(0);
+    PREPARE_EVENT_CHECK_FOR_TIMER_TIMEOUTS(1);
+    PREPARE_EVENT_CHECK_FOR_TIMER_TIMEOUTS(2);
+    PREPARE_EVENT_CHECK_FOR_TIMER_TIMEOUTS(3);
+    
+    PREPARE_EVENT_CHECK_FOR_TIMER_B;
+      
+    PREPARE_EVENT_CHECK_FOR_DEBUG;
+      
+    PREPARE_EVENT_CHECK_FOR_PASTI;
 
   // It is safe for events to be in past, whatever happens events
   // cannot get into a constant loop.
@@ -330,7 +450,6 @@ void event_timer_b()
       // There is a problem that this draw_check_border_removal() can happen before
       // event_scanline but after a change to mono for left border removal, this
       // stops the border opening on the next line somehow.
-
       mfp_timer_counter[1]-=64;
       log_to(LOGSECTION_MFP_TIMERS,EasyStr("MFP: Timer B counter decreased to ")+(mfp_timer_counter[1]/64)+" at "+scanline_cycle_log());
       if (mfp_timer_counter[1]<64){
@@ -349,15 +468,36 @@ void event_timer_b()
 //---------------------------------------------------------------------------
 void event_hbl()   //just HBL, don't draw yet
 {
+/* SS: It seems this function is called only once per frame before first line
+   is drawn, event_scanline is called for each line and takes over this hbl's
+   tasks, including hbl_pending (the interrupts are triggered in mfp.cpp).
+*/
+
 #define LOGSECTION LOGSECTION_AGENDA
+
+#if defined(STEVEN_SEAGAL) && defined(SS_VARIOUS)
+  CheckAgenda();
+#else
   CHECK_AGENDA
+#endif
+
 #undef LOGSECTION
   log_to_section(LOGSECTION_VIDEO,EasyStr("VIDEO: Event HBL at end of line ")+scan_y+", cycle "+(ABSOLUTE_CPU_TIME-cpu_time_of_last_vbl));
   right_border_changed=0;
   scanline_drawn_so_far=0;
   shifter_draw_pointer_at_start_of_line=shifter_draw_pointer;
   cpu_timer_at_start_of_hbl=time_of_next_event;
+
+#if defined(STEVEN_SEAGAL) && defined(SS_VIDEO)
+#if defined(SS_VID_HATARI)
+  Video_InterruptHandler_HBL();
+#endif
+  Shifter.IncScanline();
+  ASSERT(scan_y==-32 || scan_y==-62 || scan_y==-33);
+#else
   scan_y++;
+#endif
+ 
 #ifdef _DEBUG_BUILD
   if (debug_run_until==DRU_SCANLINE){
     if (debug_run_until_val==scan_y){
@@ -369,15 +509,50 @@ void event_hbl()   //just HBL, don't draw yet
     hbl_pending=true;
   }
   if (dma_sound_on_this_screen) dma_sound_fetch();
-  screen_event_pointer++;
+  screen_event_pointer++;  
 }
 //---------------------------------------------------------------------------
+
+//SS: The pointer to this function is used, so don't mess with it C++ like!
 void event_scanline()
 {
 #define LOGSECTION LOGSECTION_AGENDA
-  CHECK_AGENDA
+
+#if defined(STEVEN_SEAGAL) && defined(SS_VARIOUS)
+  CheckAgenda();
+#else
+  CHECK_AGENDA;
+#endif
+
 #undef LOGSECTION
 
+#if defined(STEVEN_SEAGAL) && defined(SS_VIDEO)
+  // Note: refactoring here is very dangerous!
+  if (scan_y<shifter_first_draw_line-1){
+    if (scan_y>=draw_first_scanline_for_border){
+      if (bad_drawing==0) Shifter.DrawScanlineToEnd();
+      time_of_next_timer_b=time_of_next_event+160000;  //put into future
+    }
+  }else if (scan_y<shifter_first_draw_line){ //next line is first visible
+    if (bad_drawing==0) Shifter.DrawScanlineToEnd();
+#if defined(SS_MFP_TIMER_B)
+    time_of_next_timer_b=time_of_next_event+Video_TimerB_GetPos(0);
+#else
+    time_of_next_timer_b=time_of_next_event+cpu_cycles_from_hbl_to_timer_b+TB_TIME_WOBBLE;
+#endif
+  }else if (scan_y<shifter_last_draw_line-1){
+    if (bad_drawing==0) Shifter.DrawScanlineToEnd();
+#if defined(SS_MFP_TIMER_B) // fixes Seven Gates of Jambala + "refixes" BIG #1
+    time_of_next_timer_b=time_of_next_event+Video_TimerB_GetPos(0);
+#else
+    time_of_next_timer_b=time_of_next_event+cpu_cycles_from_hbl_to_timer_b+TB_TIME_WOBBLE;
+#endif
+  }else if (scan_y<draw_last_scanline_for_border){
+    if (bad_drawing==0) Shifter.DrawScanlineToEnd();
+    time_of_next_timer_b=time_of_next_event+160000;  //put into future
+  }
+
+#else // Steem 3.2
   if (scan_y<shifter_first_draw_line-1){
     if (scan_y>=draw_first_scanline_for_border){
       if (bad_drawing==0) draw_scanline_to_end();
@@ -393,9 +568,14 @@ void event_scanline()
     if (bad_drawing==0) draw_scanline_to_end();
     time_of_next_timer_b=time_of_next_event+160000;  //put into future
   }
+#endif
 
   log_to(LOGSECTION_VIDEO,EasyStr("VIDEO: Event Scanline at end of line ")+scan_y+" sdp is $"+HEXSl(shifter_draw_pointer,6));
 
+  
+#if defined(STEVEN_SEAGAL) && defined(SS_VIDEO) &&!defined(SS_VIDEO_DRAW_DBG)
+  Shifter.CheckOverscan();
+#else // Steem 3.2
   if (shifter_freq_at_start_of_vbl==50){
     if (scan_y==-30 || scan_y==199 || scan_y==225){
       // Check top/bottom overscan
@@ -420,7 +600,7 @@ void event_scanline()
       if (freq_at_trigger==60){
         if (scan_y==-30){
           log_to_section(LOGSECTION_VIDEO,EasyStr("VIDEO: TOP BORDER REMOVED"));
-
+          
           shifter_first_draw_line=-29;
           overscan=OVERSCAN_MAX_COUNTDOWN;
           time_of_next_timer_b=time_of_next_event+cpu_cycles_from_hbl_to_timer_b+TB_TIME_WOBBLE;
@@ -429,15 +609,15 @@ void event_scanline()
             draw_first_possible_line+=off;
             draw_last_possible_line+=off;
           }
-
+          
         }else if (scan_y==199){
           // Turn on bottom overscan
           log_to_section(LOGSECTION_VIDEO,EasyStr("VIDEO: BOTTOM BORDER REMOVED"));
           overscan=OVERSCAN_MAX_COUNTDOWN;
-
+          
           // Timer B will fire for the last time when scan_y is 246
           shifter_last_draw_line=247;
-
+          
           // Must be time of the next scanline or we don't get a Timer B on scanline 200!
           time_of_next_timer_b=time_of_next_event+cpu_cycles_from_hbl_to_timer_b+TB_TIME_WOBBLE;
         }else if (scan_y==225){
@@ -450,11 +630,13 @@ void event_scanline()
       }
     }
   }
+#endif
+
   if (freq_change_this_scanline){
     if (shifter_freq_change_time[shifter_freq_change_idx]<time_of_next_event-16){
       freq_change_this_scanline=0;
     }
-    if (draw_line_off){
+    if (draw_line_off){ // SS: we had a blank line = all colours black
       palette_convert_all();
       draw_line_off=0;
     }
@@ -464,7 +646,13 @@ void event_scanline()
   scanline_drawn_so_far=0;
   shifter_draw_pointer_at_start_of_line=shifter_draw_pointer;
   cpu_timer_at_start_of_hbl=time_of_next_event;
+
+#if defined(STEVEN_SEAGAL) && defined(SS_VIDEO)
+  Shifter.IncScanline();
+#else
   scan_y++;
+#endif
+
 #ifdef _DEBUG_BUILD
   if (debug_run_until==DRU_SCANLINE){
     if (debug_run_until_val==scan_y){
@@ -472,6 +660,7 @@ void event_scanline()
     }
   }
 #endif
+
   if (abs_quick(cpu_timer_at_start_of_hbl-time_of_last_hbl_interrupt)>CYCLES_FROM_START_OF_HBL_IRQ_TO_WHEN_PEND_IS_CLEARED){
     hbl_pending=true;
   }
@@ -482,7 +671,7 @@ void event_scanline()
 void event_start_vbl()
 {
   // This happens about 60 cycles into scanline 247 (50Hz)
-  shifter_draw_pointer=xbios2;
+  shifter_draw_pointer=xbios2; // SS: reload SDP
   shifter_draw_pointer_at_start_of_line=shifter_draw_pointer;
   shifter_pixel=shifter_hscroll;
   overscan_add_extra=0;
@@ -494,16 +683,24 @@ void event_vbl_interrupt()
 {
   bool VSyncing=(FSDoVsync && FullScreen && fast_forward==0 && slow_motion==0);
   bool BlitFrame=0;
-
+  //TRACE("xbios2 %X\n",xbios2);
 #ifndef NO_CRAZY_MONITOR
   if (extended_monitor==0)
 #endif
   { // Make sure whole screen is drawn (in 60Hz and 70Hz there aren't enough lines)
     while (scan_y<draw_last_scanline_for_border){
+#if defined(STEVEN_SEAGAL) && defined(SS_VIDEO)
+      if(!bad_drawing) 
+        Shifter.DrawScanlineToEnd();
+      scanline_drawn_so_far=0;
+      shifter_draw_pointer_at_start_of_line=shifter_draw_pointer;
+      Shifter.IncScanline();
+#else
       if (bad_drawing==0) draw_scanline_to_end();
       scanline_drawn_so_far=0;
       shifter_draw_pointer_at_start_of_line=shifter_draw_pointer;
       scan_y++;
+#endif
     }
     scanline_drawn_so_far=0;
     shifter_draw_pointer_at_start_of_line=shifter_draw_pointer;
@@ -524,21 +721,20 @@ void event_vbl_interrupt()
 
   //----------- VBL interrupt ---------
   vbl_pending=true;
-/*
+/* //SS this was a commented out part:
   if ((sr & SR_IPL)<SR_IPL_4){ //level 4 interupt to m68k, is VBL interrupt enabled?
     VBL_INTERRUPT
   }else{
     vbl_pending=true;
   }
 */
-
   scan_y=-scanlines_above_screen[shifter_freq_idx];
 
   if (floppy_mediach[0]) floppy_mediach[0]--;  //counter for media change
   if (floppy_mediach[1]) floppy_mediach[1]--;  //counter for media change
 
   if (border & 2){ //auto-border
-    if (overscan){
+    if (overscan){	// SS: overscan started at 25, so it's in VBL
       overscan--;
       if ((border & 1)==0){
         //change to bordered mode
@@ -814,7 +1010,7 @@ void event_vbl_interrupt()
   shifter_freq_at_start_of_vbl=shifter_freq;
   scanline_time_in_cpu_cycles_at_start_of_vbl=scanline_time_in_cpu_cycles[shifter_freq_idx];
   CALC_CYCLES_FROM_HBL_TO_TIMER_B(shifter_freq);
-
+// SS: this was so in the source
   cpu_time_of_last_vbl=time_of_next_event; ///// ABSOLUTE_CPU_TIME;
 //  cpu_time_of_last_vbl=ABSOLUTE_CPU_TIME;
 // /////  cpu_time_of_next_hbl_interrupt=cpu_time_of_last_vbl+cycles_for_vertical_return[shifter_freq_idx]+
@@ -824,7 +1020,11 @@ void event_vbl_interrupt()
   screen_event_pointer++;
   if (screen_event_pointer->event==NULL){
     cpu_time_of_start_of_event_plan=cpu_time_of_last_vbl;
+#if defined(STEVEN_SEAGAL) && defined(SS_MFP_RATIO)
+    if (n_cpu_cycles_per_second>CpuNormalHz){
+#else
     if (n_cpu_cycles_per_second>8000000){
+#endif
       screen_event_pointer=event_plan_boosted[shifter_freq_idx];
     }else{
       screen_event_pointer=event_plan[shifter_freq_idx];
@@ -841,6 +1041,9 @@ void event_vbl_interrupt()
     if (runstate==RUNSTATE_RUNNING) runstate=RUNSTATE_STOPPING;
   }
   debug_vbl();
+#endif
+#if defined(STEVEN_SEAGAL) && defined(SS_VIDEO)
+  Shifter.Vbl();
 #endif
 }
 //---------------------------------------------------------------------------
@@ -874,7 +1077,11 @@ void prepare_cpu_boosted_event_plans()
 void event_pasti_update()
 {
   if (hPasti==NULL || pasti_active==false){
+#if defined(STEVEN_SEAGAL) && defined(SS_MFP_RATIO)
+    pasti_update_time=ABSOLUTE_CPU_TIME+CpuNormalHz;
+#else
     pasti_update_time=ABSOLUTE_CPU_TIME+8000000;
+#endif
     return;
   }
 

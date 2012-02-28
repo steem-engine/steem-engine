@@ -7,6 +7,11 @@ draw one line, draw_end unlocks output and draw_blit blits the drawn output
 to the PC display. 
 ---------------------------------------------------------------------------*/
 
+#if defined(STEVEN_SEAGAL) && defined(SS_VIDEO)
+#include "SSEVideo.cpp"
+#endif
+
+
 //---------------------------------------------------------------------------
 void ASMCALL draw_scanline_dont(int,int,int,int) {}
 
@@ -32,6 +37,7 @@ void ASMCALL draw_scanline_dont(int,int,int,int) {}
 #define DRAW_BUFFERED_SCANLINE_TO_VIDEO
 #endif
 //---------------------------------------------------------------------------
+
 void draw_begin()
 {
   if (draw_lock) return;
@@ -116,7 +122,7 @@ void draw_begin()
   }
 #endif
 
-#ifdef _DEBUG_BUILD
+#ifdef SS_DEBUG_BUILD
   if (debug_cycle_colours){
     debug_cycle_colours--;
     if (debug_cycle_colours==0){
@@ -258,6 +264,8 @@ void draw_set_jumps_and_source()
       draw_dest_increase_y=2*draw_line_length;
     }
   }else{
+    // SS normal windowed drawing
+    // putting the pointer to the right ASM routine
     draw_scanline=jump_draw_scanline[0][BytesPerPixel-1][screen_res];
     draw_scanline_lowres=jump_draw_scanline[0][BytesPerPixel-1][0];
     draw_scanline_medres=jump_draw_scanline[0][BytesPerPixel-1][1];
@@ -314,8 +322,12 @@ void draw_end()
   if (draw_osd) osd_draw();
 #endif
 
-#ifdef _DEBUG_BUILD
+#ifdef DEBUG_BUILD
+#if defined(STEVEN_SEAGAL) && defined(SS_VIDEO)
+  DrawBufferedScanlineToVideo();
+#else
   DRAW_BUFFERED_SCANLINE_TO_VIDEO
+#endif
 #endif
 
   Disp.Unlock();
@@ -334,8 +346,12 @@ void draw_end()
     DoSaveScreenShot&=~1;
   }
 }
+
 #define LOGSECTION LOGSECTION_VIDEO
 
+#if !defined(STEVEN_SEAGAL) || !defined(SS_VIDEO) || defined(SS_DEBUG) // normally nuked by the linker
+
+//---------------------------------------------------------------------------
 void draw_check_border_removal()
 {
 //  if (shifter_freq_at_start_of_vbl!=50) return;
@@ -354,6 +370,7 @@ void draw_check_border_removal()
   if (left_border){
     // We haven't removed the left border, so check if we ought to.
     t=cpu_timer_at_start_of_hbl+2+stfm_borders; //trigger point
+//ss    if(t>0) 
     if (act>t){
       i=shifter_freq_change_idx;
       while (shifter_freq_change_time[i]>t){
@@ -417,6 +434,7 @@ void draw_check_border_removal()
   if (shifter_freq_at_start_of_vbl==50){
     if (draw_line_off==0){
       t=cpu_timer_at_start_of_hbl+28; //trigger point
+//ss      if(t>0)      
       if (act>t){
         i=shifter_freq_change_idx;
         while (shifter_freq_change_time[i]>t){
@@ -438,6 +456,7 @@ void draw_check_border_removal()
     // not change fetching position
     if (left_border==BORDER_SIDE){
       t=cpu_timer_at_start_of_hbl+58; // Check 60Hz border off (50Hz border off-4)
+//ss if(t>0)      
       if (act>t){
         i=shifter_freq_change_idx;
         while (shifter_freq_change_time[i]>t){
@@ -473,6 +492,7 @@ void draw_check_border_removal()
 
   // Check for right border stuff
   t=cpu_timer_at_start_of_hbl+172; //trigger point for big right border
+//ss if(t>0)  
   if (act>=t){
     i=shifter_freq_change_idx;
     while (shifter_freq_change_time[i]>t){
@@ -493,7 +513,8 @@ void draw_check_border_removal()
 
   // Check for right border removal/cut
   t=cpu_timer_at_start_of_hbl+372; //trigger point for right border cut
-  if (act>=t){
+//ss if(t>0) 
+   if (act>=t){
     i=shifter_freq_change_idx;
     while (shifter_freq_change_time[i]>t){
       i--; i&=31;
@@ -516,6 +537,7 @@ void draw_check_border_removal()
           log_to(LOGSECTION_VIDEO,Str("VIDEO: RIGHT BORDER REMOVED, change to 60 at ")+
                           (shifter_freq_change_time[i]-cpu_timer_at_start_of_hbl));
           right_border=0;overscan_add_extra+=OVERSCAN_ADD_EXTRA_FOR_RIGHT_BORDER_REMOVAL;
+//BRK(hsklfhlkdf);
           overscan=OVERSCAN_MAX_COUNTDOWN;
           right_border_changed=true;
         }
@@ -523,8 +545,7 @@ void draw_check_border_removal()
     }
   }
 }
-
-
+//---------------------------------------------------------------------------
 void inline draw_scanline_to(int cycles_since_hbl)
 {
   if (screen_res>=2) return;
@@ -678,7 +699,7 @@ void inline draw_scanline_to(int cycles_since_hbl)
     scanline_drawn_so_far=pixels_in;
   }
 }
-
+//---------------------------------------------------------------------------
 void inline draw_scanline_to_end()
 {
   MEM_ADDRESS nsdp;
@@ -797,7 +818,9 @@ void inline draw_scanline_to_end()
   }
 
   left_border=BORDER_SIDE;
+
   if (shifter_hscroll) left_border+=16;
+
   if (shifter_hscroll_extra_fetch) left_border-=16;
   right_border=BORDER_SIDE;overscan_add_extra=0;
 
@@ -806,8 +829,10 @@ void inline draw_scanline_to_end()
   // end of the line we must add a raster.  
   shifter_skip_raster_for_hscroll = shifter_hscroll!=0;
 }
-
+#endif//ssdbg
 #undef LOGSECTION
+
+
 //---------------------------------------------------------------------------
 bool draw_blit()
 {
@@ -822,6 +847,8 @@ bool draw_blit()
 //---------------------------------------------------------------------------
 void draw(bool osd)
 {
+  // SS: this is called by init, load... not for actual emulation
+  // It draws the screen in one time
   int save_scan_y=scan_y;
   MEM_ADDRESS save_sdp=shifter_draw_pointer;
   MEM_ADDRESS save_sdp_at_start_of_line=shifter_draw_pointer_at_start_of_line;
@@ -845,7 +872,13 @@ void draw(bool osd)
       scan_y=yy;
       scanline_drawn_so_far=0;
       shifter_draw_pointer_at_start_of_line=shifter_draw_pointer;
+
+#if defined(STEVEN_SEAGAL) && defined(SS_VIDEO)
+      Shifter.DrawScanlineToEnd();
+#else      
       draw_scanline_to_end();
+#endif
+
 //      shifter_draw_pointer+=shifter_scanline_width_in_bytes;
     }
     if (osd) osd_init_draw_static();
@@ -904,6 +937,9 @@ void get_fullscreen_rect(RECT *rc)
 //---------------------------------------------------------------------------
 void init_screen()
 {
+
+
+
   draw_end();
 
 #ifndef NO_CRAZY_MONITOR
@@ -979,12 +1015,34 @@ void res_change()
 bool draw_routines_init()
 {
   {
+
+/* SS: with: 
+typedef void(*EVENTPROC)();	pointer to C function
+typedef struct{
+  int time;	
+  EVENTPROC event;
+}screen_event_struct;
+
+screen_event_struct event_plan_50hz[313*2+2],event_plan_60hz[263*2+2],...
+screen_event_struct*screen_event_pointer,*event_plan[4],*event_plan_boosted[4];
+
+For each line, 2 events can be scheduled, but the line index isn't memorised
+(?)
+The boosted versions are for CPU > 8MHz
+In this function, each event_plan is filled with timing
+and interrupt function
+
+
+
+*/
+
     event_plan[0]=event_plan_50hz;
     event_plan[1]=event_plan_60hz;
     event_plan[2]=event_plan_70hz;
     event_plan_boosted[0]=event_plan_boosted_50hz;
     event_plan_boosted[1]=event_plan_boosted_60hz;
     event_plan_boosted[2]=event_plan_boosted_70hz;
+
 
     /* 50Hz:
       VBLs spaced by 160256 cycles (49.92Hz)
@@ -994,9 +1052,11 @@ bool draw_routines_init()
       160256:  VBL
     */
     screen_event_struct *evp=event_plan_50hz;
+	// SS for line 0, event is not scanline but hbl
     evp->time=CYCLES_FOR_VERTICAL_RETURN_IN_50HZ;
     evp->event=event_hbl;
     evp++;
+
     for (int y=1;y<313;y++){
       evp->time=CYCLES_FOR_VERTICAL_RETURN_IN_50HZ + y*512;
       evp->event=event_scanline;
@@ -1040,7 +1100,7 @@ bool draw_routines_init()
     evp++;
     evp->event=NULL;
 
-    /* 60Hz:
+    /* 70Hz:
       VBLs spaced by 112000 cycles (71.36Hz)
 
       200 cycles:  HBL interrupt
@@ -1066,55 +1126,73 @@ bool draw_routines_init()
     evp->event=NULL;
   }
 
-  PCpal=Get_PCpal();
+  PCpal=Get_PCpal(); // SS defined in asm_draw.asm
 
-  for(int a=0;a<3;a++)for(int b=0;b<4;b++)for(int c=0;c<3;c++)
-    jump_draw_scanline[a][b][c]=draw_scanline_dont;
+  // SS init to draw_scanline_dont (will draw nothing)
+  for(int a=0;a<3;a++)
+    for(int b=0;b<4;b++)
+      for(int c=0;c<3;c++)
+        jump_draw_scanline[a][b][c]=draw_scanline_dont;
 
   // [0=Smallest size possible, 1=640x400 (all reses), 2=640x200 (med/low res)]
   //  [BytesPerPixel-1]
   //    [screen_res]
 
-  jump_draw_scanline[0][0][0]=draw_scanline_8_lowres_pixelwise;
-  jump_draw_scanline[0][0][1]=draw_scanline_8_medres_pixelwise;
-  jump_draw_scanline[0][0][2]=draw_scanline_8_hires;
-  jump_draw_scanline[0][1][0]=draw_scanline_16_lowres_pixelwise;
-  jump_draw_scanline[0][1][1]=draw_scanline_16_medres_pixelwise;
-  jump_draw_scanline[0][1][2]=draw_scanline_16_hires;
-  jump_draw_scanline[0][2][0]=draw_scanline_24_lowres_pixelwise;
-  jump_draw_scanline[0][2][1]=draw_scanline_24_medres_pixelwise;
-  jump_draw_scanline[0][2][2]=draw_scanline_24_hires;
-  jump_draw_scanline[0][3][0]=draw_scanline_32_lowres_pixelwise;
-  jump_draw_scanline[0][3][1]=draw_scanline_32_medres_pixelwise;
-  jump_draw_scanline[0][3][2]=draw_scanline_32_hires;
+  // SS Smallest size possible
+  // 1 byte per pixel
+  jump_draw_scanline[0][0][0]=draw_scanline_8_lowres_pixelwise; //LO
+  jump_draw_scanline[0][0][1]=draw_scanline_8_medres_pixelwise; //ME
+  jump_draw_scanline[0][0][2]=draw_scanline_8_hires; //HI
+  // 2 bytes per pixel
+  jump_draw_scanline[0][1][0]=draw_scanline_16_lowres_pixelwise; //LO
+  jump_draw_scanline[0][1][1]=draw_scanline_16_medres_pixelwise; //ME
+  jump_draw_scanline[0][1][2]=draw_scanline_16_hires; //HI
+  // 3 bytes per pixel
+  jump_draw_scanline[0][2][0]=draw_scanline_24_lowres_pixelwise; //LO
+  jump_draw_scanline[0][2][1]=draw_scanline_24_medres_pixelwise; //ME
+  jump_draw_scanline[0][2][2]=draw_scanline_24_hires; //HI
+  // 4 bytes per pixel
+  jump_draw_scanline[0][3][0]=draw_scanline_32_lowres_pixelwise; //LO
+  jump_draw_scanline[0][3][1]=draw_scanline_32_medres_pixelwise; //ME
+  jump_draw_scanline[0][3][2]=draw_scanline_32_hires; //HI
 
-  jump_draw_scanline[1][0][0]=draw_scanline_8_lowres_pixelwise_400;
-  jump_draw_scanline[1][0][1]=draw_scanline_8_medres_pixelwise_400;
-  jump_draw_scanline[1][0][2]=draw_scanline_8_hires;
-  jump_draw_scanline[1][1][0]=draw_scanline_16_lowres_pixelwise_400;
-  jump_draw_scanline[1][1][1]=draw_scanline_16_medres_pixelwise_400;
-  jump_draw_scanline[1][1][2]=draw_scanline_16_hires;
-  jump_draw_scanline[1][2][0]=draw_scanline_24_lowres_pixelwise_400;
-  jump_draw_scanline[1][2][1]=draw_scanline_24_medres_pixelwise_400;
-  jump_draw_scanline[1][2][2]=draw_scanline_24_hires;
-  jump_draw_scanline[1][3][0]=draw_scanline_32_lowres_pixelwise_400;
-  jump_draw_scanline[1][3][1]=draw_scanline_32_medres_pixelwise_400;
-  jump_draw_scanline[1][3][2]=draw_scanline_32_hires;
+  // SS 640x400 (all reses)
+  // 1 byte per pixel
+  jump_draw_scanline[1][0][0]=draw_scanline_8_lowres_pixelwise_400; //LO
+  jump_draw_scanline[1][0][1]=draw_scanline_8_medres_pixelwise_400; //ME
+  jump_draw_scanline[1][0][2]=draw_scanline_8_hires; //HI
+  // 2 bytes per pixel
+  jump_draw_scanline[1][1][0]=draw_scanline_16_lowres_pixelwise_400; //LO
+  jump_draw_scanline[1][1][1]=draw_scanline_16_medres_pixelwise_400; //ME
+  jump_draw_scanline[1][1][2]=draw_scanline_16_hires; //HI
+  // 3 bytes per pixel
+  jump_draw_scanline[1][2][0]=draw_scanline_24_lowres_pixelwise_400; //LO
+  jump_draw_scanline[1][2][1]=draw_scanline_24_medres_pixelwise_400; //ME
+  jump_draw_scanline[1][2][2]=draw_scanline_24_hires; //HI
+  // 4 bytes per pixel
+  jump_draw_scanline[1][3][0]=draw_scanline_32_lowres_pixelwise_400; //LO
+  jump_draw_scanline[1][3][1]=draw_scanline_32_medres_pixelwise_400; //ME
+  jump_draw_scanline[1][3][2]=draw_scanline_32_hires; //HI
 
-  jump_draw_scanline[2][0][0]=draw_scanline_8_lowres_pixelwise_dw;
-  jump_draw_scanline[2][0][1]=draw_scanline_8_medres_pixelwise;
-  jump_draw_scanline[2][0][2]=draw_scanline_8_hires;
-  jump_draw_scanline[2][1][0]=draw_scanline_16_lowres_pixelwise_dw;
-  jump_draw_scanline[2][1][1]=draw_scanline_16_medres_pixelwise;
-  jump_draw_scanline[2][1][2]=draw_scanline_16_hires;
-  jump_draw_scanline[2][2][0]=draw_scanline_24_lowres_pixelwise_dw;
-  jump_draw_scanline[2][2][1]=draw_scanline_24_medres_pixelwise;
-  jump_draw_scanline[2][2][2]=draw_scanline_24_hires;
-  jump_draw_scanline[2][3][0]=draw_scanline_32_lowres_pixelwise_dw;
-  jump_draw_scanline[2][3][1]=draw_scanline_32_medres_pixelwise;
-  jump_draw_scanline[2][3][2]=draw_scanline_32_hires;
+  // SS 640x200 (med/low res) dw=1
+  // 1 byte per pixel
+  jump_draw_scanline[2][0][0]=draw_scanline_8_lowres_pixelwise_dw; //LO
+  jump_draw_scanline[2][0][1]=draw_scanline_8_medres_pixelwise; //ME
+  jump_draw_scanline[2][0][2]=draw_scanline_8_hires; //HI
+  // 2 bytes per pixel
+  jump_draw_scanline[2][1][0]=draw_scanline_16_lowres_pixelwise_dw; //LO
+  jump_draw_scanline[2][1][1]=draw_scanline_16_medres_pixelwise; //ME
+  jump_draw_scanline[2][1][2]=draw_scanline_16_hires; //HI
+  // 3 bytes per pixel
+  jump_draw_scanline[2][2][0]=draw_scanline_24_lowres_pixelwise_dw; //LO
+  jump_draw_scanline[2][2][1]=draw_scanline_24_medres_pixelwise; //ME
+  jump_draw_scanline[2][2][2]=draw_scanline_24_hires; //HI
+  // 4 bytes per pixel
+  jump_draw_scanline[2][3][0]=draw_scanline_32_lowres_pixelwise_dw; //LO
+  jump_draw_scanline[2][3][1]=draw_scanline_32_medres_pixelwise; //ME
+  jump_draw_scanline[2][3][2]=draw_scanline_32_hires; //HI
 
-  draw_scanline=draw_scanline_dont;
+  draw_scanline=draw_scanline_dont; // SS init the general pointer
 //  palette_convert_entry=palette_convert_16_565;
 
   osd_routines_init();

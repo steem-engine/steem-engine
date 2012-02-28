@@ -6,6 +6,7 @@ DESCRIPTION: The code for Steem's memory browsers, used heavily in the debug
 build to view memory and I/O areas.
 ---------------------------------------------------------------------------*/
 
+
 LRESULT __stdcall mem_browser_WndProc(HWND,UINT,UINT,long);
 WNDPROC Old_mem_browser_WndProc;
 //---------------------------------------------------------------------------

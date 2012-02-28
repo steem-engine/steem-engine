@@ -4,6 +4,204 @@ MODULE: Steem
 DESCRIPTION: Completely random accessory functions.
 ---------------------------------------------------------------------------*/
 
+#if defined(STEVEN_SEAGAL) && defined(SS_VARIOUS)
+
+int SpecificHacks=1;
+
+#if defined(SS_VAR_MOUSE_CAPTURE)
+int CaptureMouse=0;
+#endif
+
+#if defined(SS_DEBUG) 
+int debug0=0,debug1=0,debug2=0,debug3=0,debug4=0,
+  debug5=0,debug6=0,debug7=0,debug8=0,debug9=0;
+#endif
+
+#if defined(SS_VAR_PROG_ID)
+EProgram Program=NONE;
+#if defined(SS_DEBUG)
+  // Of course this needs to be the same list as in SSE.h.
+char program_name[][20]= {
+ //1234567890123456789/!!!!!!!!!!!!!!!!!!!
+  "NONE",
+  "BPOC",
+  "DOLB",
+  "DRAGONNELS",
+  "ENCH_LAND",
+  "FOREST",
+  "FROGGIES",
+  "LX_STF",
+  "MOLZ",
+  "MOLZ_SPIRAL",
+  "NBL",
+  "NCG",
+  "NGC",
+  "NIGHTMARE",
+  "OMEGA",
+  "SENTINEL",
+  "ST_CNX",
+  "TEKILA",
+  "TB2_MENU",
+  "????????"
+};
+int nProgramChanges=0;
+#endif
+
+
+EProgram SetProgram(EProgram new_program) {
+  EProgram old_program = Program;
+  Program=new_program;
+#if defined(SS_DEBUG)
+  ASSERT(strlen(program_name[new_program])<20);
+  // reset
+  if(new_program==NONE)
+    Program=NONE;
+  else if(old_program==NONE)
+    TRACE("Program detected: %s?\n",program_name[new_program]);
+  else if(old_program!=new_program)
+  {
+    if(nProgramChanges < MAX_PROGRAM_CHANGES)
+      TRACE("Program changed from %s to %s?\n",program_name[old_program],program_name[new_program]);
+    nProgramChanges++;
+  }
+#endif
+  return old_program;
+}
+#endif
+
+#if defined(SS_DEBUG)
+
+extern int stemdos_current_drive; // forward
+
+int ReportGeneralInfos(EReportGeneralInfos when) {
+  // A series of TRACE giving precious info at the start & end of emulation
+  if(when==START)
+  {
+#if defined(SS_STF)
+    TRACE("Machine ST%c; ", (ST_type==STF) ? 'F' : 'E');
+#endif
+    TRACE("TOS %X; ",tos_version);
+    TRACE("RAM %dK; ",mem_len/1024);
+    TRACE("Display %s", MONO ? "Monochrome" : "Colour");
+#if defined(SS_VID_BORDERS)
+    if(!MONO)
+      TRACE(", Size %dx%d", SideBorderSize*2+320, BottomBorderSize+30+200);
+#endif
+    TRACE("\n");
+#if USE_PASTI
+    if(pasti_active)
+      TRACE("Pasti ON; ");
+#endif
+    if(!floppy_instant_sector_access)
+      TRACE("ADATS ON; ");
+    TRACE("%d drives",num_connected_floppies);
+    if(FloppyDrive[0].DiskInDrive())
+      TRACE("; Disk A: %s",FloppyDrive[0].DiskName.c_str()); 
+    if(num_connected_floppies==2 && FloppyDrive[1].DiskInDrive())
+      TRACE("; Disk B: %s",FloppyDrive[1].DiskName.c_str()); 
+    if(!HardDiskMan.DisableHardDrives && stemdos_current_drive) // check
+      TRACE("; HD ON");
+    TRACE("\nHacks ");
+    if(SpecificHacks)
+      TRACE("ON");
+    else
+      TRACE("OFF");
+#if defined(SS_VAR_PROG_ID) && defined(SS_DEBUG)
+    TRACE("; Program ID: %s",program_name[Program]);
+#endif
+    TRACE("\n");
+  }
+  else
+  {    // pick the info you need...
+#if defined(SS_VIDEO)
+  //TRACE("OverscanModeTrace=%X BorderMaskTrace=%X\n",Shifter.OverscanModeTrace,Shifter.BorderMaskTrace);
+  //TRACE("shifter_hscroll %d shifter_fetch_extra_words %d\n",shifter_hscroll,shifter_fetch_extra_words);
+#endif
+  // Vectors
+  TRACE("HBL %X VBL %X\n",LPEEK(0x68),LPEEK(0x70));
+  TRACE("Timers A %X B %X C %X D %X\n",LPEEK(0x134),LPEEK(0x120),LPEEK(0x114),LPEEK(0x110));
+  TRACE("ACIA %X\n",LPEEK(0x118));
+  }
+  return TRUE;
+}
+#endif
+#endif
+
+// Debug facilities, adapted to the build
+///////////////////////////////////////////
+
+#if defined(_DEBUG)
+// TRACE for VC IDE
+#include <stdio.h>
+#include <stdarg.h>
+#include <windows.h>
+// Our TRACE facility has no MFC dependency.
+// The same for ASSERT.
+void _trace(char *fmt, ...){
+  char out[1024];	
+  va_list body;	
+  va_start(body, fmt);	
+  vsprintf(out, fmt, body);	
+  va_end(body);	
+  OutputDebugString(out);
+}
+#endif
+
+#if defined(STEVEN_SEAGAL)
+
+#if defined(SS_DEBUG)
+
+#include <stdio.h>
+#include <stdarg.h>
+
+TDebug::TDebug() {
+  OutputTraceToFile=TRUE; // can be disabled in Boiler
+  ReportBreakpoints=TRUE; // disabled when clicking cancel in the box
+  TraceFileLimit=TRUE; // stop TRACING to file at +-3+MB
+
+  trace_file_pointer=NULL; // classic C file handling
+  nTrace=0; // trace counter
+#if !defined(_DEBUG) && defined(_DEBUG_BUILD)
+  trace_file_pointer=fopen("TRACE.txt","w"); // only one file name...
+  ASSERT(trace_file_pointer);
+#endif
+}
+
+
+TDebug::~TDebug() {
+  if(trace_file_pointer)
+  {
+    TRACE("Closing TRACE file...\n");
+    fclose(trace_file_pointer);
+  }
+}
+
+#if !defined(_DEBUG) && defined(_DEBUG_BUILD)
+void TDebug::TraceToFile(char *fmt, ...){ 
+  if(OutputTraceToFile
+    && (!TraceFileLimit||nTrace <TRACE_MAX_WRITES)
+    && trace_file_pointer)  
+  {
+    char out[1024];	
+    va_list body;	
+    va_start(body, fmt);	
+    vsprintf(out, fmt, body);
+    va_end(body);	
+    fprintf(trace_file_pointer,out);
+    nTrace++; 
+  }
+}
+#endif
+
+TDebug SSDebug; // singleton
+
+#endif//SSDEBUG
+
+#endif//STEVEN_SEAGAL
+
+
+
+
 // Porting: GetNearestPaletteIndex  get_text_width flush_message_queue
 
 /*void inline log(EasyStr a){

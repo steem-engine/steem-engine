@@ -6,6 +6,7 @@ DESCRIPTION: A class to encapsulate the labels that contain various data
 in the debugger.
 ---------------------------------------------------------------------------*/
 
+
 mr_static::~mr_static()
 {
   active=false;

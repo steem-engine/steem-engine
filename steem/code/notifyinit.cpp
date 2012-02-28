@@ -65,20 +65,34 @@ void SetNotifyInitText(char *){}
 #endif
 //---------------------------------------------------------------------------
 LRESULT __stdcall NotifyInitWndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lPar)
-{
-  switch (Mess){
-#ifndef ONEGAME
-    case WM_CREATE:
-    {
-      char *Text=new char[200];
-      strcpy(Text,T("Please wait..."));
-      SetProp(Win,"NotifyText",Text);
-      break;
-    }
-    case WM_PAINT:
-    {
-      HDC DC;
-      RECT rc;
+
+{
+
+  switch (Mess){
+
+#ifndef ONEGAME
+
+    case WM_CREATE:
+
+    {
+
+      char *Text=new char[200];
+
+      strcpy(Text,T("Please wait..."));
+
+      SetProp(Win,"NotifyText",Text);
+
+      break;
+
+    }
+
+    case WM_PAINT:
+
+    {
+
+      HDC DC;
+
+      RECT rc;
       char *Text;
       SIZE sz;
 
@@ -166,9 +180,12 @@ LRESULT __stdcall NotifyInitWndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lPar)
 #endif
   }
 	return DefWindowProc(Win,Mess,wPar,lPar);
-}
-//---------------------------------------------------------------------------
-void DestroyNotifyInitWin()
+
+}
+
+//---------------------------------------------------------------------------
+
+void DestroyNotifyInitWin()
 {
   if (NotifyWin==NULL) return;
 

@@ -91,10 +91,14 @@ BYTE mfp_gpip_input_buffer=0;
 #define MFP_CLK_EXACT 2457600
 */
 
+#if defined(STEVEN_SEAGAL) && defined(SS_MFP_RATIO)
+// it's a variable! See SSE.h
+#else
 #define CPU_CYCLES_PER_MFP_CLK (8000000.0/double(MFP_CLK_EXACT))
+#endif
 
 #define CYCLES_FROM_START_OF_MFP_IRQ_TO_WHEN_PEND_IS_CLEARED 20
-
+//#define CYCLES_FROM_START_OF_MFP_IRQ_TO_WHEN_PEND_IS_CLEARED 20
 #define MFP_S_BIT (mfp_reg[MFPR_VR] & BIT_3)
 
 //const int mfp_io_port_bit[16]={BIT_0,BIT_1,BIT_2,BIT_3,-1,-1,BIT_4,BIT_5,-1,-1,-1,-1,-1,-1,BIT_6,BIT_7};
@@ -132,26 +136,26 @@ int cpu_time_of_first_mfp_tick;
 
 #define MFP_CALC_INTERRUPTS_ENABLED	\
 {	\
-  int n,mask=1;	\
-  for (n=0;n<8;n++){	\
+  int mask=1;	\
+  for (int n=0;n<8;n++){	\
     mfp_interrupt_enabled[n]=mfp_reg[MFPR_IERB] & mask; mask<<=1;	\
   }	\
   mask=1;	\
-  for (n=0;n<8;n++){	\
+  for (int n=0;n<8;n++){	\
     mfp_interrupt_enabled[n+8]=mfp_reg[MFPR_IERA] & mask; mask<<=1;	\
   }	\
 }
 
 #define MFP_CALC_TIMERS_ENABLED	\
-  for (int n=0;n<4;n++){	\
-    mfp_timer_enabled[n]=mfp_interrupt_enabled[mfp_timer_irq[n]] && (mfp_get_timer_control_register(n) & 7);	\
-  }	
+	for (int n=0;n<4;n++){	\
+		mfp_timer_enabled[n]=mfp_interrupt_enabled[mfp_timer_irq[n]] && (mfp_get_timer_control_register(n) & 7);	\
+	}
 
 //int mfp_timer_tick_countdown[4];
 void mfp_interrupt(int,int);
 //bool mfp_interrupt_enabled(int irq);
 void mfp_gpip_transition(int,bool);
-void mfp_check_for_timer_timeouts();
+void mfp_check_for_timer_timeouts(); // SS not defined
 
 #define MFP_CALC_TIMER_PERIOD(t)  mfp_timer_period[t]=int(  \
           double(mfp_timer_prescale[mfp_get_timer_control_register(t)]* \

@@ -58,7 +58,7 @@ public:
   bool TrackIsFormatted[2][FLOPPY_MAX_TRACK_NUM+1];
   int FormatMostSectors,FormatLargestSector;
 
-  bool WrittenTo;
+  bool WrittenTo;	//SS: WrittenTo just means 'dirty'
 };
 
 #ifdef IN_MAIN

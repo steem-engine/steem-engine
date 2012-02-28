@@ -1,3 +1,5 @@
+// SS: this is where's there's some work to do.
+
 int rt_sound_buf_pointer=0; // sample count
 bool rt_started=0;
 

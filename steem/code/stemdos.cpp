@@ -64,7 +64,11 @@ bool stemdos_any_files_open()
 //---------------------------------------------------------------------------
 void stemdos_final_rte() //clear stack from original GEMDOS call
 {
+#if defined(STEVEN_SEAGAL) && defined(SS_CPU)
+  m68k_perform_rte(); // no function to call
+#else
   M68K_PERFORM_RTE(;);
+#endif
   interrupt_depth--;
   check_for_interrupts_pending();
   intercept_os();
@@ -321,6 +325,10 @@ void stemdos_read(int h,MEM_ADDRESS sp)
   }
   r[0]=c; //number of characters read
 
+#if defined(STEVEN_SEAGAL) && defined(SS_OSD)
+  HDDisplayTimer=timer+HD_TIMER;
+#endif
+
   log(EasyStr("STEMDOS: FRead returned ")+r[0]);
 }
 
@@ -339,6 +347,11 @@ void stemdos_write(int h,MEM_ADDRESS sp)
     }
   }
   r[0]=c; //number of characters written
+
+#if defined(STEVEN_SEAGAL) && defined(SS_OSD)
+  HDDisplayTimer=timer+HD_TIMER;
+#endif
+
   log(EasyStr("STEMDOS: fwrite wrote ")+c+" bytes successfully");
 }
 
@@ -370,6 +383,10 @@ void stemdos_seek(int h,MEM_ADDRESS sp)
   }else{
     r[0]=ftell(stemdos_file[h].f);
   }
+
+#if defined(STEVEN_SEAGAL) && defined(SS_OSD)
+  HDDisplayTimer=timer+HD_TIMER;
+#endif
 
   log(EasyStr("STEMDOS: FSeek returned ")+r[0]);
 }
@@ -642,6 +659,11 @@ void stemdos_mkdir()
   }else{
     r[0]=0; //succeed!
   }
+
+#if defined(STEVEN_SEAGAL) && defined(SS_OSD)
+  HDDisplayTimer=timer+HD_TIMER;
+#endif
+
 }
 
 void stemdos_rmdir()
@@ -654,6 +676,12 @@ void stemdos_rmdir()
   }else{
     r[0]=0; //succeed!
   }
+
+#if defined(STEVEN_SEAGAL) && defined(SS_OSD)
+  HDDisplayTimer=timer+HD_TIMER;
+#endif
+
+
 }
 
 void stemdos_Fdelete()
@@ -675,10 +703,20 @@ void stemdos_Fdelete()
   }else{
     r[0]=0; //succeed!
   }
+
+#if defined(STEVEN_SEAGAL) && defined(SS_OSD)
+  HDDisplayTimer=timer+HD_TIMER;
+#endif
+
 }
 
 void stemdos_Fattrib()
 {
+
+#if defined(STEVEN_SEAGAL) && defined(SS_OSD)
+  HDDisplayTimer=timer+HD_TIMER;
+#endif
+
   stemdos_get_PC_path();
   stemdos_search_wildcard_PC_path();
   log(EasyStr("STEMDOS: Got the PC filename as ")+PC_filename);
@@ -727,6 +765,11 @@ void stemdos_Fattrib()
 
 void stemdos_rename()
 {
+
+#if defined(STEVEN_SEAGAL) && defined(SS_OSD)
+  HDDisplayTimer=timer+HD_TIMER;
+#endif
+
   //try to rename stemdos_filename to stemdos_rename_to_filename
   StrUpperNoSpecial(stemdos_rename_to_filename.Text);
   if (stemdos_rename_to_filename[1]==':'){
@@ -815,6 +858,7 @@ void stemdos_Pexec() //called from stemdos_rte, nothing done after this fn calle
       if ((MEM_ADDRESS)(basepage+0x100UL+text+data+bss) > (MEM_ADDRESS)(m68k_lpeek(basepage+0x4))){ //basepage+4 contains hi-tpa
         r[0]=-39;  //out of memory
         log("STEMDOS: Program too big! Out of memory.");
+        TRACE("STEMDOS: Program too big! Out of memory.\n");
         fclose(stemdos_Pexec_file);
         stemdos_Pexec_file=NULL;
         stemdos_mfree_from_Pexec_list();
@@ -981,6 +1025,8 @@ void stemdos_intercept_trap_1()
       return true;
     }
 */
+
+
     case 0x4e:{  //fsfirst
       log("STEMDOS: Intercepted FSfirst");
 
@@ -1523,6 +1569,10 @@ bool stemdos_check_mount(int a)
 void stemdos_parse_path()  //remove \..\ etc.
 {
   log(EasyStr("STEMDOS: Parsing path ")+stemdos_filename);
+
+#if defined(STEVEN_SEAGAL) && defined(SS_OSD)
+  HDDisplayTimer=timer+HD_TIMER;
+#endif
 
   int c=0;
   while (c<stemdos_filename.Length()){

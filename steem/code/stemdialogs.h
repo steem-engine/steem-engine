@@ -27,7 +27,8 @@ public:
   void DestroyCurrentPage();
   void GetPageControlList(DynamicArray<HWND> &);
   void ShowPageControls(),SetPageControlsFont();
-  void UpdateDirectoryTreeIcons(DirectoryTree*);
+
+  void UpdateDirectoryTreeIcons(DirectoryTree*);
 
   HWND Handle,Focus,PageTree;
   HFONT Font;

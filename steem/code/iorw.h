@@ -4,7 +4,8 @@
 #else
 #define EXT extern
 #define INIT(s)
-#endif
+
+#endif
 
 extern DWORD get_shifter_draw_pointer(int);
 
@@ -21,10 +22,8 @@ void ASMCALL io_write_l(MEM_ADDRESS,LONG);
 
 EXT bool io_word_access INIT(0);
 
-
 #define BUS_JAM_TIME(t) INSTRUCTION_TIME_ROUND(t)
 //#define BUS_JAM_TIME(t) INSTRUCTION_TIME(t)
-
 
 #undef EXT
 #undef INIT

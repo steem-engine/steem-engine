@@ -22,9 +22,16 @@ EXT bool osd_old_pos INIT(0);
 EXT bool osd_show_disk_light INIT(true),osd_show_scrollers INIT(true);
 EXT DWORD osd_start_time,osd_scroller_start_time,osd_scroller_finish_time;
 EXT bool osd_shown_scroller INIT(0);
-
 EXT long col_yellow[2],col_blue,col_red,col_green,col_white;
+
 EXT DWORD FDCCantWriteDisplayTimer INIT(0);
+
+#if defined(STEVEN_SEAGAL) && defined(SS_OSD)
+EXT long col_fd_red[2],col_fd_green[2];
+EXT DWORD FDCWriting INIT(0);
+EXT DWORD FDCWritingTimer INIT(0);
+EXT DWORD HDDisplayTimer INIT(0);
+#endif
 
 EXT void osd_draw_begin();
 EXT void osd_init_run(bool);

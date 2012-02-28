@@ -204,7 +204,6 @@ DWORD GetJagPadDown(int n,DWORD Mask)
   if (IsToggled(n)==0) return 0;
 
   DWORD Ret=0;
-
   // JagPad only buttons
   for (int b=0;b<17;b++){
     if (Mask & (1 << b)) if (IsDirIDPressed(Joy[n].JagDirID[b],Joy[n].DeadZone,true)) Ret|=(1 << b);
@@ -297,7 +296,11 @@ BYTE JoyReadSTEAddress(MEM_ADDRESS addr,bool *pIllegal)
       if (Joy[N_JOY_STE_A_0].Type==JOY_TYPE_JAGPAD){
         Ret|=HIWORD(ReadJagPad(N_JOY_STE_A_0));
       }else{
+#if defined(STEVEN_SEAGAL)
+        Ret|=(BOOL)(stick[N_JOY_STE_A_0] & BIT_7);
+#else
         Ret|=bool(stick[N_JOY_STE_A_0] & BIT_7);
+#endif
         Ret|=bool(stick[N_JOY_STE_A_1] & BIT_7)*BIT_1;
       }
 
@@ -848,18 +851,18 @@ void TJoystickConfig::CheckJoyType()
     for (int n=0;n<2;n++){
       if (DoJag){
         for (int n=180;n<200;n++) if (GetDlgItem(Handle,n)) ShowWindow(GetDlgItem(Handle,n),JagShowType);
-        for (int n=160;n<180;n++) if (GetDlgItem(Handle,n)) ShowWindow(GetDlgItem(Handle,n),JagShowType);
+        for ( n=160;n<180;n++) if (GetDlgItem(Handle,n)) ShowWindow(GetDlgItem(Handle,n),JagShowType);
       }else{
         for (int n=114;n<=118;n++) ShowWindow(GetDlgItem(Handle,n),NormShowType);
 
-        for (int n=150;n<=151;n++) ShowWindow(GetDlgItem(Handle,n),NormShowType);
+        for ( n=150;n<=151;n++) ShowWindow(GetDlgItem(Handle,n),NormShowType);
 
-        for (int n=201;n<=202;n++) ShowWindow(GetDlgItem(Handle,n),NormShowType);
+        for ( n=201;n<=202;n++) ShowWindow(GetDlgItem(Handle,n),NormShowType);
 
-        for (int n=210;n<=218;n++) ShowWindow(GetDlgItem(Handle,n),NormShowType);
+        for ( n=210;n<=218;n++) ShowWindow(GetDlgItem(Handle,n),NormShowType);
         ShowWindow(GetDlgItem(Handle,220),NormShowType);
 
-        for (int n=250;n<=251;n++) ShowWindow(GetDlgItem(Handle,n),NormShowType);
+        for ( n=250;n<=251;n++) ShowWindow(GetDlgItem(Handle,n),NormShowType);
       }
 
       DoJag=!DoJag;
@@ -867,7 +870,6 @@ void TJoystickConfig::CheckJoyType()
   }
   if (PortOAlter){
     if (Port0ShowType==SW_SHOW) ShowWindow(GetDlgItem(Handle,95),SW_HIDE);
-
     for (int n=101;n<=102;n++) ShowWindow(GetDlgItem(Handle,n),Port0ShowType);
 
     for (int n=110;n<=113;n++) ShowWindow(GetDlgItem(Handle,n),Port0ShowType);
@@ -1224,7 +1226,11 @@ LRESULT __stdcall TJoystickConfig::GroupBoxWndProc(HWND Win,UINT Mess,WPARAM wPa
   if (Mess==WM_COMMAND){
     if (LOWORD(wPar)==98){
       if (HIWORD(wPar)==BN_CLICKED){
+#if defined(STEVEN_SEAGAL)
+        BOOL NewType=SendMessage((HWND)lPar,BM_GETCHECK,0,0);
+#else
         bool NewType=SendMessage((HWND)lPar,BM_GETCHECK,0,0);
+#endif
         if (NewType!=Joy[BasePort].Type){
           Joy[BasePort].Type=NewType;
           This->JoyModeChange(BasePort,100);

@@ -5,6 +5,8 @@ DESCRIPTION: A class to encapsulate the process of outputting to the display.
 This contains the DirectDraw code used by Windows Steem for output.
 ---------------------------------------------------------------------------*/
 
+//SS: the singleton object is Disp
+
 //---------------------------------------------------------------------------
 SteemDisplay::SteemDisplay()
 {
@@ -138,6 +140,7 @@ HRESULT SteemDisplay::InitDD()
       Err=EasyStr("CoCreateInstance error\n\n")+Err;
       log_write("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
       log_write(Err);
+      TRACE("%s\n",Err);
       log_write("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
 #ifndef ONEGAME
       MessageBox(NULL,Err,T("Steem Engine DirectDraw Error"),
@@ -197,6 +200,7 @@ HRESULT SteemDisplay::InitDD()
 
     return DD_OK;
   }catch(...){
+    TRACE("DirectDraw caused DISASTER!\n");
     return DDError("DirectDraw caused DISASTER!",DDERR_EXCEPTION);
   }
 }
@@ -279,8 +283,13 @@ HRESULT SteemDisplay::DDCreateSurfaces()
       }else
 #endif
       if (Disp.BorderPossible()){
+#if defined(STEVEN_SEAGAL) && defined(SS_VID_BORDERS)
+        DDBackSurDesc.dwWidth=640+4* (SideBorderSize); // 768 or 800 or 832
+        DDBackSurDesc.dwHeight=400+2*(BORDER_TOP+BottomBorderSize);
+#else
         DDBackSurDesc.dwWidth=768;
         DDBackSurDesc.dwHeight=400+2*(BORDER_TOP+BORDER_BOTTOM);
+#endif
       }else{
         DDBackSurDesc.dwWidth=640;
         DDBackSurDesc.dwHeight=480;
@@ -349,6 +358,7 @@ HRESULT SteemDisplay::DDError(char *ErrorText,HRESULT DErr)
   DDGetErrorDescription(DErr,Text+strlen(Text),499-strlen(Text));
   log_write("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
   log_write(Text);
+  TRACE("%s",Text);
   log_write("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!");
   strcat(Text,EasyStr("\n\n")+T("Would you like to disable the use of DirectDraw?"));
 #ifndef ONEGAME
@@ -373,10 +383,19 @@ bool SteemDisplay::InitGDI()
     h=GetScreenHeight();
   }else
 #endif
+
+#if defined(STEVEN_SEAGAL) && defined(SS_VID_BORDERS)
+  if(GetSystemMetrics(SM_CXSCREEN)>640+4*SideBorderSize)
+  {
+    w=640+4*SideBorderSize;
+    h=400+2*(BORDER_TOP+BORDER_BOTTOM);
+  }
+#else
   if (GetSystemMetrics(SM_CXSCREEN)>768){
     w=768;
     h=400+2*(BORDER_TOP+BORDER_BOTTOM);
   }
+#endif
 
   log(Str("STARTUP: Creating bitmap w=")+w+" h="+h);
   HDC dc=GetDC(NULL);
@@ -473,7 +492,10 @@ void SteemDisplay::Unlock()
 //---------------------------------------------------------------------------
 void SteemDisplay::VSync()
 {
+  ASSERT(FullScreen);
+
   if (FullScreen==0) return;
+
 
   log_to(LOGSECTION_SPEEDLIMIT,Str("SPEED: VSYNC - Starting wait for VBL at ")+(timeGetTime()-run_start_time));
 
@@ -532,6 +554,7 @@ bool SteemDisplay::Blit()
           hRet=RestoreSurfaces();
           if (hRet!=DD_OK){
             DDError(T("Drawing memory permanently lost"),hRet);
+			TRACE("Drawing memory permanently lost\n");
             Init();
           }
         }
@@ -546,6 +569,7 @@ bool SteemDisplay::Blit()
             if (i==0) hRet=RestoreSurfaces();
             if (hRet!=DD_OK){
               DDError(T("Drawing memory permanently lost"),hRet);
+			  TRACE("Drawing memory permanently lost\n");
               Init();
               break;
             }
@@ -567,6 +591,7 @@ bool SteemDisplay::Blit()
 
       for (int i=0;i<2;i++){
         hRet=DDPrimarySur->Blt(&dest,DDBackSur,&draw_blit_source_rect,DDBLT_WAIT,NULL);
+        //hRet=DDPrimarySur->Blt(NULL,DDBackSur,&draw_blit_source_rect,DDBLT_WAIT,NULL);
         if (hRet==DDERR_SURFACELOST){
           if (i==0) hRet=RestoreSurfaces();
           if (hRet!=DD_OK){
@@ -637,6 +662,7 @@ void SteemDisplay::RunStart(bool Temp)
   DDPrimarySur->SetClipper(NULL);
 
   ShowAllDialogs(0);
+
   SetStemMouseMode(STEM_MOUSEMODE_WINDOW);
 
 #ifdef WIN32
@@ -785,6 +811,14 @@ void SteemDisplay::ScreenChange()
 void SteemDisplay::ChangeToFullScreen()
 {
   if (CanGoToFullScreen()==0 || FullScreen || DDExclusive) return;
+
+#if defined(STEVEN_SEAGAL) && defined(SS_VID_BORDERS)
+  if(BorderSize>=2)
+  {
+    OptionBox.Hide();
+    ChangeBorderSize(1); // max res for fullscreen if 800x600
+  }
+#endif
 
   draw_end();
 

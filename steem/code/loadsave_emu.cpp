@@ -24,6 +24,7 @@ void ReadWriteVar(void *lpVar,DWORD szVar,NOT_ONEGAME( FILE *f ) ONEGAME_ONLY( B
       fwrite(lpVar,1,szVar,f);
     }else{
       fread(lpVar,1,szVar,f);
+      //TRACE("Read
     }
 //    log_write(Str(szVar));
   }else{
@@ -88,10 +89,18 @@ int ReadWriteEasyStr(EasyStr &s,NOT_ONEGAME( FILE *f ) ONEGAME_ONLY( BYTE* &pMem
 
   return 0;
 }
-
+#if defined(STEVEN_SEAGAL) && defined(SS_DEBUG)
+#define ReadWrite(var) {ReadWriteVar(&(var),sizeof(var),f,LoadOrSave,0,Version);\
+/*TRACE(#var); TRACE(":%d\n",var); Sleep(2);*/}
+//#define ReadWrite(var) ReadWriteVar(&(var),sizeof(var),f,LoadOrSave,0,Version)
+#define ReadWriteArray(var) ReadWriteVar(var,sizeof(var),f,LoadOrSave,1,Version)
+#define ReadWriteStruct(var) ReadWriteVar(&(var),sizeof(var),f,LoadOrSave,2,Version)
+#else
 #define ReadWrite(var) ReadWriteVar(&(var),sizeof(var),f,LoadOrSave,0,Version)
 #define ReadWriteArray(var) ReadWriteVar(var,sizeof(var),f,LoadOrSave,1,Version)
 #define ReadWriteStruct(var) ReadWriteVar(&(var),sizeof(var),f,LoadOrSave,2,Version)
+#endif
+
 #define ReadWriteStr(s) {int i=ReadWriteEasyStr(s,f,LoadOrSave,Version);if (i) return i; }
 //---------------------------------------------------------------------------
 int LoadSaveAllStuff(NOT_ONEGAME( FILE *f ) ONEGAME_ONLY( BYTE* &f ),
@@ -112,19 +121,17 @@ int LoadSaveAllStuff(NOT_ONEGAME( FILE *f ) ONEGAME_ONLY( BYTE* &f ),
 
 
   ReadWrite(xbios2);         //4
-
   ReadWriteArray(STpal);
 
   ReadWrite(interrupt_depth); //4
   ReadWrite(on_rte);          //4
   ReadWrite(on_rte_interrupt_depth); //4
-
   ReadWrite(shifter_draw_pointer); //4
   ReadWrite(shifter_freq);         //4
   if (shifter_freq>65) shifter_freq=MONO_HZ;
   ReadWrite(shifter_x);            //4
   ReadWrite(shifter_y);            //4
-  ReadWrite(shifter_scanline_width_in_bytes); //4
+  ReadWrite(shifter_scanline_width_in_bytes); //4 //SS: unused
   ReadWrite(shifter_fetch_extra_words);       //4
   ReadWrite(shifter_hscroll);                 //4
   if (Version==17 || Version==18){ // The unreleased freak versions!
@@ -541,7 +548,21 @@ int LoadSaveAllStuff(NOT_ONEGAME( FILE *f ) ONEGAME_ONLY( BYTE* &f ),
       //read in length, read in block, pass it to pasti.
       ReadWrite(pasti_block_len);
       if (pasti_block_len){ //something to load in
-        pasti_block=new BYTE[pasti_block_len];
+#if defined(STEVEN_SEAGAL) // avoid bad crash
+        if(pasti_block_len>0 && pasti_block_len<1024*1024)
+        {
+          pasti_block=new BYTE[pasti_block_len];
+          ASSERT(pasti_block);
+          fread(pasti_block,1,pasti_block_len,f);
+#if USE_PASTI
+          if (hPasti==NULL)
+#endif
+          {
+            delete[] pasti_block;
+            pasti_block=NULL;
+          }
+        }
+#else
         fread(pasti_block,1,pasti_block_len,f);
 #if USE_PASTI
         if (hPasti==NULL)
@@ -550,6 +571,7 @@ int LoadSaveAllStuff(NOT_ONEGAME( FILE *f ) ONEGAME_ONLY( BYTE* &f ),
           delete[] pasti_block;
           pasti_block=NULL;
         }
+#endif//SS
       }
     }
   }else{
@@ -557,6 +579,27 @@ int LoadSaveAllStuff(NOT_ONEGAME( FILE *f ) ONEGAME_ONLY( BYTE* &f ),
     pasti_active=0;
 #endif
   }
+
+#ifdef STEVEN_SEAGAL
+  if(Version>=41) // Steem 3.3
+  {
+#ifdef SS_STF
+    EST_type oldtype=ST_type;
+    ReadWrite(ST_type);
+    if(ST_type!=STF && ST_type!=STE)
+      ST_type=STE;
+    if(ST_type!=oldtype)
+      SwitchSTType(ST_type);
+#endif
+#if defined(SS_VARIOUS) && defined(SS_VAR_PROG_ID)
+    ReadWrite(Program);
+    if(Program<NONE || Program>LAST_PRG)
+      Program=NONE; // avoids some bad crashes!
+#endif
+
+  }
+#endif
+
 
   //
 
