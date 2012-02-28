@@ -1,0 +1,8 @@
+[Text]
+Description=This is for the full version of the game (Automation 378, Supergau 486, Medway Boys 101). Apparently some interrupts prevent others from triggering and the keyboard hits are missed by the program. Note that there are other versions around that skip the title screen, so maybe the game was buggy on real ST as well.
+ApplyWhen=At title screen.
+Version=3.3beta
+PatchAuthor=Steven Seagal
+
+[Patch]
+FFFA19 = $0000

@@ -8,6 +8,60 @@ and (for some reason) command-line options.
 
 #include "stemwin.cpp"
 #define LOGSECTION LOGSECTION_INIT
+
+
+#if defined(STEVEN_SEAGAL) && defined(SS_VID_BORDERS)
+
+extern int draw_last_scanline_for_border,res_vertical_scale; // forward
+
+int BorderSize=0; // original=0
+
+int ChangeBorderSize(int size) {
+  ASSERT(size==0||size==1||size==2);
+  if(FullScreen && size==2)
+    size=1; // Very large -> large (max for fullscreen)
+  BorderSize=size;
+  switch(size)
+  {
+  case 0:
+    SideBorderSize=ORIGINAL_BORDER_SIDE;
+    BottomBorderSize=ORIGINAL_BORDER_BOTTOM;
+    break;
+  case 1:
+    SideBorderSize=LARGE_BORDER_SIDE;
+    BottomBorderSize=LARGE_BORDER_BOTTOM;
+    break;
+  case 2:
+    SideBorderSize=VERY_LARGE_BORDER_SIDE;
+    BottomBorderSize=VERY_LARGE_BORDER_BOTTOM;
+  }//sw
+  int i,j;
+  for(i=0;i<4;i++) 
+  {
+    for(j=0;j<5;j++) 
+    {
+      switch(size)
+      {
+      case 0:
+        WinSizeBorder[i][j]=WinSizeBorderOriginal[i][j];
+        break;
+      case 1:
+        WinSizeBorder[i][j]=WinSizeBorderLarge[i][j];
+        break;
+      case 2:
+        WinSizeBorder[i][j]=WinSizeBorderVeryLarge[i][j];
+      }//sw
+    }
+  }
+  draw_last_scanline_for_border=shifter_y+res_vertical_scale*(BORDER_BOTTOM);
+  StemWinResize();
+  Disp.ScreenChange();
+  return TRUE;
+}
+
+#endif
+
+
 //---------------------------------------------------------------------------
 void GUIRunStart()
 {
@@ -1122,13 +1176,13 @@ void HandleKeyPress(UINT VKCode,bool Up,int Extended)
       if (STCode) DidShiftSwitching=true;
     }
   }
-
-  if (STCode==0) STCode=key_table[BYTE(VKCode)];
+  
+  if (STCode==0) STCode=key_table[BYTE(VKCode)]; //SS: +- ASCII -> ST scancode
   if (STCode){
     ST_Key_Down[STCode]=!Up;
     if (Up) STCode|=MSB_B;
     keyboard_buffer_write_n_record(STCode);
-
+    
 #ifndef DISABLE_STEMDOS
     if (VKCode=='C'){ //control-C
       if (ST_Key_Down[key_table[VK_CONTROL]]){ //control-C
@@ -1136,12 +1190,13 @@ void HandleKeyPress(UINT VKCode,bool Up,int Extended)
       }
     }
 #endif
-  }
+  }//SS: if (STCode): if not, it's a PC key that doesn't translate to ST
   if (DidShiftSwitching) ShiftSwitchRestoreModifiers(ModifierRestoreArray);
 }
 //---------------------------------------------------------------------------
 void SetStemMouseMode(int NewMM)
 {
+  //TRACE("SetStemMouseMode(%d)\n",NewMM);
   static POINT OldMousePos={-1,0};
 //  if (NewMM==stem_mousemode) return;
 

@@ -9,6 +9,7 @@ disa_d2 (see bottom of file) to disassemble an instruction and
 d2_routines_init to initialise the debugger.
 ---------------------------------------------------------------------------*/
 
+
 void (*d2_high_nibble_jump_table[16])();
 void (*d2_jump_line_0[64])();
 void (*d2_jump_line_4[64])();
@@ -2748,7 +2749,6 @@ void d2_routines_init(){
   d2_jump_get_dest_b[7]=d2_get_dest_111_b;
   d2_jump_get_dest_w[7]=d2_get_dest_111_w;
   d2_jump_get_dest_l[7]=d2_get_dest_111_l;
-
   for(int n=0;n<8;n++){
     d2_jump_get_dest_b_not_a[n]=d2_jump_get_dest_b[n];
     d2_jump_get_dest_w_not_a[n]=d2_jump_get_dest_w[n];

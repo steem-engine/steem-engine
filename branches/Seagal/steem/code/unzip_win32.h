@@ -35,6 +35,7 @@ int (_stdcall *UnzipFile)(char*,char*,WORD,long,void*,long);        //unzipping
 #define UNZIP_DLLNotFound  -2              // DLL not loaded!
 
 HINSTANCE hUnzip=NULL;
+
 //---------------------------------------------------------------------------
 void LoadUnzipDLL()
 {

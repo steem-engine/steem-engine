@@ -231,7 +231,8 @@ void TDiskManager::ShowDiskDiag()
                           150-Wid,44,Wid,23,DiskDiag,(HMENU)99,HInstance,NULL);
   Win=CreateWindow("Combobox","",WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
                           150,40,90,300,DiskDiag,(HMENU)105,HInstance,NULL);
-  for (int n=75;n<=FLOPPY_MAX_TRACK_NUM;n++){
+  int n;
+  for (n=75;n<=FLOPPY_MAX_TRACK_NUM;n++){
     SendMessage(Win,CB_ADDSTRING,0,long(EasyStr(n).Text));
   }
   SendMessage(Win,CB_SETCURSEL,min(int(TracksIdx),(FLOPPY_MAX_TRACK_NUM+1)-75),0);
@@ -245,7 +246,7 @@ void TDiskManager::ShowDiskDiag()
                           150-Wid,74,Wid,23,DiskDiag,(HMENU)98,HInstance,NULL);
   Win=CreateWindow("Combobox","",WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST | WS_VSCROLL,
                           150,70,90,300,DiskDiag,(HMENU)103,HInstance,NULL);
-  for (int n=8;n<=FLOPPY_MAX_SECTOR_NUM;n++){
+  for ( n=8;n<=FLOPPY_MAX_SECTOR_NUM;n++){
     SendMessage(Win,CB_ADDSTRING,0,long(EasyStr(n).Text));
   }
   SendMessage(Win,CB_SETCURSEL,SecsPerTrackIdx,0);
@@ -547,7 +548,7 @@ void TDiskManager::ShowPropDiag()
       EasyStringList esl;
       esl.Sort=eslSortByNameI;
       zippy.list_contents(PropInf.Path,&esl,0);
-      for (int i=0;i<esl.NumStrings;i++){
+	  for (int i=0;i<esl.NumStrings;i++){
         SendMessage(Win,LB_SETITEMDATA,SendMessage(Win,LB_ADDSTRING,0,LPARAM(esl[i].String)),esl[i].Data[0]);
       }
       SendMessage(Win,LB_SETCURSEL,0,0);

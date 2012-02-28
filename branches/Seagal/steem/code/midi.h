@@ -4,7 +4,8 @@
 #else
 #define EXT extern
 #define INIT(s)
-#endif
+
+#endif
 
 int MidiGetStatusNumParams(BYTE);
 

@@ -264,7 +264,7 @@ void TGeneralInfo::CreateAboutPage()
   int y=10,h=4;
   HWND Win;
 
-  EasyStr Text=EasyStr("Steem Engine v")+(char*)stem_version_text+" (built " __DATE__ ")\n";
+  EasyStr Text=EasyStr("Steem Engine v")+(char*)stem_version_text+" (built " __DATE__" " +"- "__TIME__")\n";
   Text+="Written by Anthony && Russell Hayward\n";
   Text+="Copyright 2000-2004\n";
   if (TranslateBuf){

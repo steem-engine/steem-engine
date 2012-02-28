@@ -6,9 +6,9 @@ that deal with reads from ST I/O addresses ($ff8000 onwards).
 ---------------------------------------------------------------------------*/
 
 #define LOGSECTION LOGSECTION_IO
-
+#if !defined(STEVEN_SEAGAL) || !defined(SS_VIDEO) || defined(SS_DEBUG)
 MEM_ADDRESS get_shifter_draw_pointer(int cycles_since_hbl)
-{
+{ // SS: also see TShifter::ReadSDP in SSEVideo.h
   if (bad_drawing){
     // Fake SDP
     if (scan_y<0){
@@ -50,6 +50,7 @@ MEM_ADDRESS get_shifter_draw_pointer(int cycles_since_hbl)
     return shifter_draw_pointer;
   }
 }
+#endif
 //---------------------------------------------------------------------------
 BYTE ASMCALL io_read_b(MEM_ADDRESS addr)
 {
@@ -111,9 +112,13 @@ BYTE ASMCALL io_read_b(MEM_ADDRESS addr)
           // should depend on the phase relationship between both clocks.
 
           int rel_cycle=ABSOLUTE_CPU_TIME-shifter_cycle_base;
+#if defined(STEVEN_SEAGAL) && defined(SS_MFP_RATIO)
+          rel_cycle=CpuNormalHz-rel_cycle;
+#else
           rel_cycle=8000000-rel_cycle;
+#endif
           rel_cycle%=10;
-          BUS_JAM_TIME(rel_cycle+6);
+          BUS_JAM_TIME(rel_cycle+4);//6); //+6
 //          BUS_JAM_TIME(8);
         }
       }
@@ -121,6 +126,46 @@ BYTE ASMCALL io_read_b(MEM_ADDRESS addr)
       switch (addr){
 /******************** Keyboard ACIA ************************/
 
+#if defined(STEVEN_SEAGAL) && defined(SS_IKBD___) // just debug info for now
+
+      case 0xfffc00:  //status
+      {
+#if defined(SS_DEBUG) && defined(SS_IKBD_TIGHTER)
+        int elapsed_cycles=ABSOLUTE_CPU_TIME-ikbd.timer_when_keyboard_info;
+#endif
+        // Build the byte x to be returned based on our ACIA var.
+        // Note ACIA_IKBD = acia[0].
+        BYTE x=0;
+        // bit 0
+        if(ACIA_IKBD.overrun)
+          x|=BIT_0;
+        if(ACIA_IKBD.rx_not_read)
+          x|=BIT_0; 
+        // bit 1
+        if (ACIA_IKBD.tx_flag==0) 
+          x|=BIT_1; //empty bit
+        // bit 7 (high bit)
+        if(ACIA_IKBD.irq) 
+        {
+          ASSERT( ACIA_IKBD.rx_irq_enabled );
+          {
+            x|=BIT_7; //irq bit
+#if defined(SS_IKBD_TRACE) && defined(SS_IKBD_TIGHTER)
+#if defined(SS_IKBD_HATARI)
+            if(!IKBD_ExeMode)
+#endif
+                TRACE("$FC00 check irq at %d\n",elapsed_cycles);
+#endif
+          }
+        }
+        // bit 5
+        if (ACIA_IKBD.overrun==ACIA_OVERRUN_YES) 
+          x|=BIT_5; //overrun
+          //TRACE("Read 0xfffc00: %x after %d cycles\n",x,elapsed_cycles); 
+          return x;
+        }//scope
+
+#else // Steem 3.2
       case 0xfffc00:  //status
       {
         BYTE x=0;
@@ -131,11 +176,13 @@ BYTE ASMCALL io_read_b(MEM_ADDRESS addr)
         if (ACIA_IKBD.overrun==ACIA_OVERRUN_YES) x|=BIT_5; //overrun
         return x;
       }
+#endif
+
       case 0xfffc02:  //data
       {
         DEBUG_ONLY( if (mode!=STEM_MODE_CPU) return ACIA_IKBD.data; )
 //        if (acia[ACIA_IKBD].rx_not_read) keyboard_buffer_length--;
-        ACIA_IKBD.rx_not_read=0;
+        ACIA_IKBD.rx_not_read=0; // SS: reading the data register changes the status register
         LOG_ONLY( bool old_irq=ACIA_IKBD.irq; )
         if (ACIA_IKBD.overrun==ACIA_OVERRUN_COMING){
           ACIA_IKBD.overrun=ACIA_OVERRUN_YES;
@@ -148,11 +195,13 @@ BYTE ASMCALL io_read_b(MEM_ADDRESS addr)
           // IRQ should be off for receive, but could be set for tx empty interrupt
           ACIA_IKBD.irq=(ACIA_IKBD.tx_irq_enabled && ACIA_IKBD.tx_flag==0);
           LOG_ONLY( if (ACIA_IKBD.irq!=old_irq) log_to_section(LOGSECTION_IKBD,Str("IKBD: ")+
-                            HEXSl(old_pc,6)+" - Read data ($"+HEXSl(ACIA_IKBD.data,2)+
-                            "), changing ACIA IRQ bit from "+old_irq+" to "+ACIA_IKBD.irq); )
-        }
-        mfp_gpip_set_bit(MFP_GPIP_ACIA_BIT,!(ACIA_IKBD.irq || ACIA_MIDI.irq));
-        return ACIA_IKBD.data;
+            HEXSl(old_pc,6)+" - Read data ($"+HEXSl(ACIA_IKBD.data,2)+
+            "), changing ACIA IRQ bit from "+old_irq+" to "+ACIA_IKBD.irq); )
+          }
+          mfp_gpip_set_bit(MFP_GPIP_ACIA_BIT,!(ACIA_IKBD.irq || ACIA_MIDI.irq));
+          //TRACE("Read 0xfffc02: %x\n",ACIA_IKBD.data);
+          return ACIA_IKBD.data;
+          
       }
 
   /******************** MIDI ACIA ************************/
@@ -306,7 +355,11 @@ BYTE ASMCALL io_read_b(MEM_ADDRESS addr)
             }else{
               dat=WORD(MicroWire_Data << nShifts);
               while (nShifts--){
+#if defined(STEVEN_SEAGAL) // warning
+                BOOL lobit=(mask & BIT_15)!=0;
+#else
                 bool lobit=(mask & BIT_15)!=0;
+#endif
                 mask<<=1;
                 mask|=lobit;
               }
@@ -523,25 +576,52 @@ FF8240 - FF827F   palette, res
         case 0xff8203:  //mid byte of screen memory address
           return HIBYTE(LOWORD(xbios2));
         case 0xff820d:  //low byte of screen memory address
+#if defined(STEVEN_SEAGAL) && defined(SS_STF) && defined(SS_DEBUG)
+          if(ST_type==STF) ASSERT(!(xbios2 & 0xFF)); // protection in iow.cpp
+#endif
           return LOBYTE(xbios2);
         case 0xff8205:  //high byte of screen draw pointer
         case 0xff8207:  //mid byte of screen draw pointer
         case 0xff8209:{  //low byte of screen draw pointer
+#if defined(STEVEN_SEAGAL) && defined(SS_DEBUG) && defined(SS_VID_HATARI)
+          int FrameCycles, HblCounterVideo, LineCycles;
+          Video_GetPosition_OnWriteAccess ( &FrameCycles , &HblCounterVideo , &LineCycles );
+          VideoEvents.Add( HblCounterVideo , LineCycles, 'p', addr&0xF); 
+            // p for pointer, 5,7,9 to show which byte
+#endif
           MEM_ADDRESS sdp;
-          if (scan_y<shifter_first_draw_line || scan_y>=shifter_last_draw_line){
+          if(scan_y<shifter_first_draw_line || scan_y>=shifter_last_draw_line){
             sdp=shifter_draw_pointer;
           }else{
+#if defined(STEVEN_SEAGAL) && defined(SS_VIDEO)
+            sdp=Shifter.ReadSDP(ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl);
+#else
             sdp=get_shifter_draw_pointer(ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl);
+#endif
             LOG_ONLY( DEBUG_ONLY( if (mode==STEM_MODE_CPU) ) log_to(LOGSECTION_VIDEO,Str("VIDEO: ")+HEXSl(old_pc,6)+
                         " - Read shifter draw pointer as $"+HEXSl(sdp,6)+
                         " on "+scanline_cycle_log()); )
           }
-          return DWORD_B(&sdp, (2-(addr-0xff8205)/2) );    // change for big endian
+          return DWORD_B(&sdp, (2-(addr-0xff8205)/2) );    // change for big endian !!!!!!!!!
         }
+
         case 0xff820a:  //synchronization mode
-          if (shifter_freq==50) return b11111110;
-          return b11111100;
+          if (shifter_freq==50) return b11111110; // SS FE
+          return b11111100; // SS FC
+
+        case 0xff820b:
+#if defined(STEVEN_SEAGAL) && defined(SS_STF)
+          if(ST_type==STF)
+            return  0xFF; // STF; fixes Live & Let Die
+#endif
+          return 0; // STE
+          break;
+
         case 0xff820f:
+#if defined(STEVEN_SEAGAL) && defined(SS_STF)
+          if(ST_type==STF)
+            return 0;
+#endif
           return (BYTE)shifter_fetch_extra_words;
 
         //// Unused bytes between $60 and $80 should return 0!
@@ -551,6 +631,10 @@ FF8240 - FF827F   palette, res
           return (BYTE)0;
         case 0xff8265:  //hscroll
           DEBUG_ONLY( if (mode==STEM_MODE_CPU) ) shifter_hscroll_extra_fetch=(shifter_hscroll!=0);
+#if defined(STEVEN_SEAGAL) && defined(SS_STF)
+          if(ST_type==STF)
+            return 0;
+#endif
           return (BYTE)shifter_hscroll;
         }
         // Below $10 - Odd bytes return value or 0, even bytes return 0xfe/0x7e
@@ -562,6 +646,7 @@ FF8240 - FF827F   palette, res
     }case 0xff8000:{      //----------------------------------- MMU
       if (addr==0xff8001){
         if (mem_len>FOUR_MEGS) return MEMCONF_2MB | (MEMCONF_2MB << 2);
+        TRACE("PC %X read MMU %X\n",pc,mmu_memory_configuration);
         return mmu_memory_configuration;
       }else if (addr>0xff800f){ //forbidden range
         exception(BOMBS_BUS_ERROR,EA_READ,addr);
@@ -617,8 +702,8 @@ FF8240 - FF827F   palette, res
           case 0xffc116: return HIBYTE(LOWORD(cpu_timer_at_start_of_hbl));
           case 0xffc117: return LOBYTE(LOWORD(cpu_timer_at_start_of_hbl));
 
-          case 0xffc118: return HIBYTE(short(scan_y));
-          case 0xffc119: return LOBYTE(short(scan_y));
+          case 0xffc118: return HIBYTE( (short) (scan_y));
+          case 0xffc119: return LOBYTE( (short) (scan_y));
           case 0xffc11a: return emudetect_write_logs_to_printer;
           case 0xffc11b: return emudetect_falcon_mode;
           case 0xffc11c: return BYTE((emudetect_falcon_mode_size-1) + (emudetect_falcon_extra_height ? 2:0));
@@ -659,4 +744,3 @@ DWORD ASMCALL io_read_l(MEM_ADDRESS addr)
 }
 
 #undef LOGSECTION
-

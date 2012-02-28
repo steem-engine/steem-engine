@@ -4,7 +4,8 @@
 #else
 #define EXT extern
 #define INIT(s)
-#endif
+
+#endif
 
 EXT void OGVBL(),OGIntercept(),OGWriteSector(int,int,int,int),OGHandleQuit(),OGSetRestart();
 

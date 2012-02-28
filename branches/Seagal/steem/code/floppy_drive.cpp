@@ -7,6 +7,8 @@ to move to the correct place in the disk image file and then reads/writes
 data.
 ---------------------------------------------------------------------------*/
 
+// SS some casts corrected int( -> (int)(
+
 #define LOGSECTION LOGSECTION_FDC
 
 int TFloppyImage::SetDisk(EasyStr File,EasyStr CompressedDiskName,BPBINFO *pDetectBPB,BPBINFO *pFileBPB)
@@ -784,18 +786,18 @@ void TFloppyImage::RemoveDisk(bool LoseChanges)
               WipeOld=0;
             }
           }
-          if (CanShrink==0) NewSides=max(NewSides,int(Sides));
+          if (CanShrink==0) NewSides=max(NewSides,(int)(Sides));
 
-          int NewTracksPerSide=int(CanShrink ? MaxTrack+1:max((int)TracksPerSide,MaxTrack+1));
-          int NewSectorsPerTrack=int(CanShrink ? FormatMostSectors:max((int)SectorsPerTrack,FormatMostSectors));
-          int NewBytesPerSector=int(WipeOld ? FormatLargestSector:max((int)BytesPerSector,FormatLargestSector));
+          int NewTracksPerSide=(int)(CanShrink ? MaxTrack+1:max((int)TracksPerSide,MaxTrack+1));
+          int NewSectorsPerTrack=(int)(CanShrink ? FormatMostSectors:max((int)SectorsPerTrack,FormatMostSectors));
+          int NewBytesPerSector=(int)(WipeOld ? FormatLargestSector:max((int)BytesPerSector,FormatLargestSector));
           int NewBytesPerTrack=NewBytesPerSector*NewSectorsPerTrack;
 
           log("FDC: Formatted disk removed, copying data to disk image");
           log(EasyStr("  New format: Sides=")+NewSides+"  Tracks per side="+NewTracksPerSide+
                       "     SectorsPerTrack="+NewSectorsPerTrack);
 
-          int HeaderLen=int(DIM_File ? 32:0);
+          int HeaderLen=(int)(DIM_File ? 32:0);
           BYTE *NewDiskBuf=new BYTE[HeaderLen + NewBytesPerSector*NewSectorsPerTrack*NewTracksPerSide*NewSides];
           BYTE *lpNewDisk=NewDiskBuf;
           ZeroMemory(NewDiskBuf,HeaderLen + NewBytesPerSector*NewSectorsPerTrack*NewTracksPerSide*NewSides);

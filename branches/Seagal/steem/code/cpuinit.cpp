@@ -12,6 +12,7 @@ definitions at top of cpu.cpp
 
 void cpu_routines_init()
 {
+  
   m68k_high_nibble_jump_table[0]=m68k_0000;
   m68k_high_nibble_jump_table[1]=m68k_0001;
   m68k_high_nibble_jump_table[2]=m68k_0010;

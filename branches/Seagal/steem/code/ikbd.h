@@ -9,9 +9,9 @@
 extern BYTE key_table[256];
 
 #define IKBD_HBLS_FROM_COMMAND_WRITE_TO_PROCESS 5
-
 #define IKBD_DEFAULT_MOUSE_MOVE_MAX 15 // 5 for X-Out
 #define IKBD_RESET_MESSAGE 0xf1  // 0xf0 in docs
+
 
 EXT void keyboard_buffer_write(BYTE);
 EXT void keyboard_buffer_write_n_record(BYTE);
@@ -24,6 +24,7 @@ EXT int disable_input_vbl_count INIT(0);
 EXT int ikbd_joy_poll_line INIT(0),ikbd_mouse_poll_line INIT(0),ikbd_key_poll_line INIT(0);
 
 #define MAX_KEYBOARD_BUFFER_SIZE 1024
+
 EXT BYTE keyboard_buffer[MAX_KEYBOARD_BUFFER_SIZE];
 EXT int keyboard_buffer_length;
 
@@ -34,11 +35,11 @@ EXT int mouse_speed INIT(10);
 extern BYTE TaskSwitchVKList[4];
 extern bool CutTaskSwitchVKDown[4];
 #endif
-
+
 #define STKEY_PAD_DIVIDE 0x65
 #define STKEY_PAD_ENTER 0x72
 
-EXT int mouse_move_since_last_interrupt_x,mouse_move_since_last_interrupt_y;
+EXT int mouse_move_since_last_interrupt_x,mouse_move_since_last_interrupt_y;
 EXT bool mouse_change_since_last_interrupt;
 EXT int mousek;
 
@@ -78,7 +79,8 @@ BYTE key_table[256]={
 BYTE TaskSwitchVKList[4]={VK_ESCAPE,VK_TAB,VK_DELETE,0};
 bool CutTaskSwitchVKDown[4]={0,0,0,0};
 #endif
-
+
+
 void IKBD_VBL();
 void agenda_ikbd_process(int);  //intelligent keyboard handle byte
 void ikbd_run_start(bool);
@@ -88,26 +90,33 @@ void agenda_keyboard_reset(int);
 void ikbd_report_abs_mouse(int);
 void ikbd_send_joystick_message(int);
 
+
 #define IKBD_MOUSE_MODE_ABSOLUTE 0x9
 #define IKBD_MOUSE_MODE_RELATIVE 0x8
 #define IKBD_MOUSE_MODE_CURSOR_KEYS 0xa
 #define IKBD_MOUSE_MODE_OFF 0x12
-
 #define IKBD_JOY_MODE_OFF 0x1a
 #define IKBD_JOY_MODE_ASK 0x15
 #define IKBD_JOY_MODE_AUTO_NOTIFY 0x14
 #define IKBD_JOY_MODE_CURSOR_KEYS 0x19
 #define IKBD_JOY_MODE_DURATION 100
 #define IKBD_JOY_MODE_FIRE_BUTTON_DURATION 101
+#define BIT_RMB BIT_0
+#define BIT_LMB BIT_1
 
+
+
+#if defined(STEVEN_SEAGAL) && defined(SS_IKBD_TIGHTER)
+#define IKBD_SCANLINES_FROM_ABS_MOUSE_POLL_TO_SEND int((MONO) ? 50:60)
+#else
 #define IKBD_SCANLINES_FROM_ABS_MOUSE_POLL_TO_SEND int((MONO) ? 50:30)
-#define IKBD_SCANLINES_FROM_JOY_POLL_TO_SEND int((MONO) ? 32:20)
+#endif
 
+
+#define IKBD_SCANLINES_FROM_JOY_POLL_TO_SEND int((MONO) ? 32:20)
 #define RMB_DOWN(mk) (mk & 1)
 #define LMB_DOWN(mk) (mk & 2)
 
-#define BIT_RMB BIT_0
-#define BIT_LMB BIT_1
 
 const int ikbd_clock_days_in_mon[13]={0,31,28,31,30,/*MAY!*/31,30,31,31,30,31,30,31};
 const int ikbd_clock_max_val[6]={99,12,0,23,59,59};
@@ -142,6 +151,14 @@ struct _IKBD_STRUCT{
   int reset_1214_hack;
   int joy_packet_pos;
   int mouse_packet_pos;
+#if defined(STEVEN_SEAGAL) && defined(SS_IKBD)
+#if defined(SS_IKBD_TIGHTER)  
+  int timer_when_keyboard_info; // to improve accuracy of keyboard IRQ timing
+#endif
+#if defined(SS_IKBD_HATARI)
+  BOOL mouse_change; // "this VBL"; necessary for custom keybard programs
+#endif
+#endif
 }ikbd;
 
 BYTE keyboard_buffer_read();

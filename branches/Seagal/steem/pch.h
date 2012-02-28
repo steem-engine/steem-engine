@@ -29,7 +29,9 @@ for pre-compiled headers (to reduce build time on slower development PCs).
 #define DIRECTSOUND_VERSION 0x0200
 #define OEMRESOURCE 1
 #define STRICT 1
+#if _MSC_VER > 1200	// VC6: 1200
 #pragma anon_structs on
+#endif
 //---------------------------------------------------------------------------
 #include <windows.h>
 #include <shlobj.h>
@@ -39,6 +41,7 @@ for pre-compiled headers (to reduce build time on slower development PCs).
 #include <mmsystem.h>
 #include <commctrl.h>
 #include <binary.h>
+//#include "..\include\binary.h"
 #include <time.h>
 #include <setjmp.h>
 #include <clarity.h>

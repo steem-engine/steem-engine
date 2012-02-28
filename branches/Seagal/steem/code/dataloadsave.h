@@ -7,9 +7,12 @@
     LoadPosition(pCSF); \
     if (pCSF->GetInt(Section,"Visible",0)) Show();
 
-#else
-#define UPDATE
-#endif
+
+#else
+
+#define UPDATE
+
+#endif
 
 void LoadAllDialogData(bool,Str,bool* = NULL,GoodConfigStoreFile* = NULL);
 void SaveAllDialogData(bool,Str,ConfigStoreFile* = NULL);

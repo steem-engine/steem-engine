@@ -5,6 +5,8 @@ DESCRIPTION: The guts of Steem's sound output code, uses a DirectSound buffer
 for output.
 ---------------------------------------------------------------------------*/
 
+// SS some casts corrected DWORD( -> (DWORD)(
+
 #define LOGSECTION LOGSECTION_SOUND
 //---------------------------------------------------------------------------
 void sound_record_open_file()
@@ -285,14 +287,14 @@ HRESULT DSGetPrimaryBuffer()
         }
       }
 
-      DS_SetFormat_freq=min(DWORD(desired_freq),SoundCaps.dwMaxSecondarySampleRate);
+      DS_SetFormat_freq=min((DWORD)(desired_freq),SoundCaps.dwMaxSecondarySampleRate);
       PrimaryFormat.nSamplesPerSec=DS_SetFormat_freq;
       PrimaryFormat.nAvgBytesPerSec=PrimaryFormat.nSamplesPerSec*PrimaryFormat.nBlockAlign;
       Ret=PrimaryBuf->SetFormat(&PrimaryFormat);
       log(EasyStr("SOUND: SetFormat to ")+DS_SetFormat_freq+"Hz, it "+LPSTR(Ret==DS_OK ? "succeeded.":"failed."));
       if (Ret==DS_OK) break;
 
-      DS_SetFormat_freq=min(DWORD((desired_freq/1000)*1000),SoundCaps.dwMaxSecondarySampleRate);
+      DS_SetFormat_freq=min((DWORD)((desired_freq/1000)*1000),SoundCaps.dwMaxSecondarySampleRate);
       LOOP{
         PrimaryFormat.nSamplesPerSec=DS_SetFormat_freq;
         PrimaryFormat.nAvgBytesPerSec=PrimaryFormat.nSamplesPerSec*PrimaryFormat.nBlockAlign;
@@ -301,7 +303,7 @@ HRESULT DSGetPrimaryBuffer()
 
         DS_SetFormat_freq-=500;
         // Fail if less than 4/5th of the desired frequency
-        if (DS_SetFormat_freq < DWORD(desired_freq-(desired_freq/5 + 500))) break;
+        if (DS_SetFormat_freq < (DWORD)(desired_freq-(desired_freq/5 + 500))) break;
       }
       if (Ret==DS_OK) break;
 
@@ -322,7 +324,7 @@ HRESULT DSGetPrimaryBuffer()
 
     if (DS_GetFormat_Wrong) break;
 
-    if (DWORD(sound_freq)>=(DS_SetFormat_freq-2500) && DWORD(sound_freq)<=(DS_SetFormat_freq+2500)){
+    if (DWORD(sound_freq)>=(DS_SetFormat_freq-2500) &&(DWORD)(sound_freq)<=(DS_SetFormat_freq+2500)){
       break;
     }else if (desired_freq<20000){
       log("   Sound card is a dirty liar! Ignoring what it says and restarting.");

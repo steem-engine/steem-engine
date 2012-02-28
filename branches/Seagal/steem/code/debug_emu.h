@@ -40,7 +40,8 @@ EXT bool stop_on_ipl_7 INIT(false);
 EXT int stop_on_user_change INIT(0);
 EXT int stop_on_next_program_run INIT(0);
 EXT bool debug_first_instruction INIT(0);
-EXT Str runstate_why_stop;
+
+EXT Str runstate_why_stop;
 EXT DWORD debug_cycles_since_VBL,debug_cycles_since_HBL;
 EXT MEM_ADDRESS debug_VAP;
 EXT int debug_time_to_timer_timeout[4];

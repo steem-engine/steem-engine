@@ -13,7 +13,17 @@ maps all sorts of user input to all sorts of emulator functions.
 #define CUT_TOGGLEFULLSCREEN 17
 #define CUT_TAKESCREENSHOT 29
 
+#if defined(STEVEN_SEAGAL) && defined(SS_VARIOUS)
+#define CUT_TOGGLEHARDDRIVES 231	// <255!!!!
+#if defined(SS_DEBUG) && defined(SS_VIDEO)
+#define CUT_REPORTSHIFTERTRICKS 232	// <255!!!!
+#define NUM_SHORTCUTS (1+1+   54+1+1 DEBUG_ONLY(+5)) // adding my own
+#else
+#define NUM_SHORTCUTS (1+   54+1+1 DEBUG_ONLY(+5)) // adding my own
+#endif
+#else
 #define NUM_SHORTCUTS (54+1+1 DEBUG_ONLY(+5))
+#endif
 
 const char *ShortcutNames[NUM_SHORTCUTS*2]=
   {
@@ -33,6 +43,15 @@ const char *ShortcutNames[NUM_SHORTCUTS*2]=
   "Stop Emulation",(char*)2,"Toggle Emulation Start/Stop",(char*)CUT_TOGGLESTARTSTOP,
 
   "Save Over Last Memory Snapshot",(char*)53,"Load Last Memory Snapshot",(char*)54,
+
+#if defined(STEVEN_SEAGAL) && defined(SS_VARIOUS)
+	"Toggle Hard Drives On/Off",(char*)CUT_TOGGLEHARDDRIVES,
+#endif
+
+#if defined(STEVEN_SEAGAL) && defined(SS_DEBUG) && defined(SS_VIDEO)
+   "Report shifter tricks",(char*)CUT_REPORTSHIFTERTRICKS,
+#endif
+
 
 #ifdef UNIX
   "Toggle Port 1 Joystick Active",(char*)50,"Toggle Port 0 Joystick Active",(char*)49,
@@ -389,14 +408,22 @@ void DoShortcutDown(SHORTCUTINFO &Inf)
       }
       break;
     case 21:
+#if defined(STEVEN_SEAGAL) && defined(SS_MFP_RATIO)
+      if (n_cpu_cycles_per_second>CpuNormalHz){
+#else
       if (n_cpu_cycles_per_second>8000000){
+#endif
         n_cpu_cycles_per_second-=1000000;
         if (runstate==RUNSTATE_RUNNING) osd_init_run(0);
         prepare_cpu_boosted_event_plans();
       }
       break;
     case 22:
+#if defined(STEVEN_SEAGAL) && defined(SS_MFP_RATIO)
+      n_cpu_cycles_per_second=CpuNormalHz;
+#else
       n_cpu_cycles_per_second=8000000;
+#endif
       prepare_cpu_boosted_event_plans();
       break;
     case 23:
@@ -530,6 +557,23 @@ void DoShortcutDown(SHORTCUTINFO &Inf)
       }
       break;
 
+#if defined(STEVEN_SEAGAL) && defined(SS_VARIOUS)
+    case CUT_TOGGLEHARDDRIVES:	// toggle hard drives on/off
+      HardDiskMan.DisableHardDrives=!HardDiskMan.DisableHardDrives;	// toggle
+      HardDiskMan.update_mount();
+      break;
+#endif      
+#if defined(STEVEN_SEAGAL) && defined(SS_DEBUG) && defined(SS_VIDEO)
+      // Trigger a report of all video events for the current VBL
+      // so as to investigate shifter tricks (txt file)
+    case CUT_REPORTSHIFTERTRICKS:	
+      VideoEvents.TriggerReport=2;
+      break;
+#endif
+      
+      
+
+      
 #ifdef _DEBUG_BUILD
     case 200: // Trace Into
       if (runstate!=RUNSTATE_RUNNING || GetForegroundWindow()!=StemWin){

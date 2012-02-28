@@ -544,6 +544,19 @@ void LoadState(GoodConfigStoreFile *pCSF)
   CheckMenuItem(boiler_op_menu,1514,MF_BYCOMMAND | int(trace_show_window ? MF_CHECKED:MF_UNCHECKED));
   CheckMenuItem(boiler_op_menu,1515,MF_BYCOMMAND | int(debug_monospace_disa ? MF_CHECKED:MF_UNCHECKED));
   CheckMenuItem(boiler_op_menu,1516,MF_BYCOMMAND | int(debug_uppercase_disa ? MF_CHECKED:MF_UNCHECKED));
+
+#if defined(STEVEN_SEAGAL) && defined(SS_DEBUG)
+  SSDebug.OutputTraceToFile
+    =pCSF->GetInt("Debug Options","OutputTraceToFile",SSDebug.OutputTraceToFile);
+  SSDebug.TraceFileLimit
+    =pCSF->GetInt("Debug Options","TraceFileLimit",SSDebug.TraceFileLimit);
+
+  CheckMenuItem(boiler_op_menu,1517,MF_BYCOMMAND|
+    ((int)(SSDebug.OutputTraceToFile)?MF_CHECKED:MF_UNCHECKED));
+  CheckMenuItem(boiler_op_menu,1518,MF_BYCOMMAND|
+    ((int)(SSDebug.TraceFileLimit)?MF_CHECKED:MF_UNCHECKED));
+#endif
+  
   CheckMenuItem(logsection_menu,1013,MF_BYCOMMAND | int(debug_wipe_log_on_reset ? MF_CHECKED:MF_UNCHECKED));
   CheckMenuItem(breakpoint_menu,1103,MF_BYCOMMAND | int((monitor_mode==2) ? MF_CHECKED:MF_UNCHECKED));
   CheckMenuItem(breakpoint_menu,1104,MF_BYCOMMAND | int((monitor_mode==3) ? MF_CHECKED:MF_UNCHECKED));
@@ -670,6 +683,11 @@ void SaveState(ConfigStoreFile *pCSF)
   pCSF->SetStr("Debug Options","Run Until Text",GetWindowTextStr(GetDlgItem(DWin,1021)));
   pCSF->SetInt("Debug Options","Monospace Disa",debug_monospace_disa);
   pCSF->SetInt("Debug Options","Uppercase Disa",debug_uppercase_disa);
+
+#if defined(STEVEN_SEAGAL) && defined(SS_DEBUG)
+  pCSF->SetInt("Debug Options","OutputTraceToFile",SSDebug.OutputTraceToFile);
+  pCSF->SetInt("Debug Options","TraceFileLimit",SSDebug.TraceFileLimit);
+#endif
 
   FILE *bf=fopen(WriteDir+SLASH "logsection.dat","wb");
   if (bf){

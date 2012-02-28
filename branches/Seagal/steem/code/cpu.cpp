@@ -8,6 +8,15 @@ the rest of the program are the macro m68k_PROCESS that executes the next
 instruction and cpu_routines_init in cpuinit.cpp.
 ---------------------------------------------------------------------------*/
 
+// SS: very accurate & clever, a good surprise
+
+#if defined(STEVEN_SEAGAL)
+#include "SSECpu.h" // also if SS_CPU not defined
+#else
+#define PREFETCH_IRC
+#define REFETCH_IR
+#endif
+
 void (*m68k_high_nibble_jump_table[16])();
 void (*m68k_jump_line_0[64])();
 void (*m68k_jump_line_4[64])();
@@ -39,6 +48,9 @@ void (*m68k_jump_get_dest_w_not_a_faster_for_d[8])();
 void (*m68k_jump_get_dest_l_not_a_faster_for_d[8])();
 bool (*m68k_jump_condition_test[16])();
 
+#if defined(STEVEN_SEAGAL) && defined(SS_CPU)
+  // those macros have been replaced with inline functions (SSECpu.h)
+#else
 #define m68k_READ_B_FROM_ADDR                         \
   abus&=0xffffff;                                   \
   if(abus>=himem){                                  \
@@ -151,7 +163,7 @@ bool (*m68k_jump_condition_test[16])();
     DEBUG_CHECK_READ_L(abus);  \
     m68k_src_l=LPEEK(abus);                  \
   }else exception(BOMBS_BUS_ERROR,EA_READ,abus);
-
+#endif//SS
 
 
 #define m68k_READ_B(addr)                              \
@@ -167,6 +179,7 @@ bool (*m68k_jump_condition_test[16])();
 inline void change_to_user_mode()
 {
 //  if(SUPERFLAG){
+  ASSERT(!SUPERFLAG);
   compare_buffer=r[15];r[15]=other_sp;other_sp=compare_buffer;
   SR_CLEAR(SR_SUPER);
 //  }
@@ -195,7 +208,11 @@ void m68k_exception::init(int a,exception_action ea,MEM_ADDRESS _abus)
 void ASMCALL perform_crash_and_burn()
 {
   reset_st(RESET_COLD | RESET_NOSTOP | RESET_CHANGESETTINGS | RESET_NOBACKUP);
+#if defined(STEVEN_SEAGAL) && defined(SS_DEBUG)
+  TRACE("CRASH AND BURN - ST RESET\n");
+#else
   osd_start_scroller(T("CRASH AND BURN - ST RESET"));
+#endif
 }
 //---------------------------------------------------------------------------
 #ifdef _DEBUG_BUILD
@@ -241,6 +258,9 @@ NOT_DEBUG(inline) void m68k_interrupt(MEM_ADDRESS ad) //not address, bus, illega
 {
   WORD _sr=sr;
   if (!SUPERFLAG) change_to_supervisor_mode();
+#if defined(SS_CPU_PREFETCH)
+  Cpu.PrefetchClass=2;
+#endif
   m68k_PUSH_L(PC32);
   m68k_PUSH_W(_sr);
   SET_PC(ad);
@@ -250,6 +270,10 @@ NOT_DEBUG(inline) void m68k_interrupt(MEM_ADDRESS ad) //not address, bus, illega
 }
 //---------------------------------------------------------------------------
 // TODO: Allow exception frames to be written to IO?
+
+#if defined(STEVEN_SEAGAL) && defined(SS_CPU_EXCEPTION)
+ // redone in SSECpu.cpp
+#else 
 void m68k_exception::crash()
 {
   DWORD bytes_to_stack=int((bombs==BOMBS_BUS_ERROR || bombs==BOMBS_ADDRESS_ERROR) ? (4+2+2+4+2):(4+2));
@@ -311,6 +335,7 @@ void m68k_exception::crash()
   }
   PeekEvent(); // Stop exception freeze
 }
+#endif
 
 #undef LOGSECTION
 
@@ -340,7 +365,7 @@ NOT_DEBUG(inline) void m68k_poke_abus(BYTE x){
 
 NOT_DEBUG(inline) void m68k_dpoke_abus(WORD x){
   abus&=0xffffff;
-  if(abus&1)exception(BOMBS_ADDRESS_ERROR,EA_WRITE,abus);
+  if(abus&1) exception(BOMBS_ADDRESS_ERROR,EA_WRITE,abus);
   else if(abus>=MEM_IO_BASE){
     if(SUPERFLAG)
       io_write_w(abus,x);
@@ -538,7 +563,6 @@ void m68k_unrecognised()
   exception(BOMBS_ILLEGAL_INSTRUCTION,EA_INST,0);
 }
 
-
 BYTE m68k_read_dest_b(){
   BYTE x;
   switch(ir&BITS_543){
@@ -696,6 +720,10 @@ LONG m68k_read_dest_l(){
   }
   return 0;
 }
+
+#if defined(STEVEN_SEAGAL) && defined(SS_CPU)
+// inlined
+#else
 #ifdef _DEBUG_BUILD
 #define DEBUG_CHECK_IOACCESS \
   if (ioaccess & IOACCESS_DEBUG_MEM_WRITE_LOG){ \
@@ -706,6 +734,7 @@ LONG m68k_read_dest_l(){
 #else
 #define DEBUG_CHECK_IOACCESS
 #endif
+#endif//SS
 
 #define HANDLE_IOACCESS(tracefunc) \
   if (ioaccess){                             \
@@ -747,7 +776,12 @@ LONG m68k_read_dest_l(){
   DEBUG_ONLY( debug_first_instruction=0 );
 
 #define LOGSECTION LOGSECTION_TRACE
+
+#if defined(STEVEN_SEAGAL) && defined(_VC_BUILD)
+extern "C" void ASMCALL m68k_trace() //execute instruction with trace bit set
+#else
 extern "C" ASMCALL void m68k_trace() //execute instruction with trace bit set
+#endif
 {
 #ifdef _DEBUG_BUILD
   pc_history[pc_history_idx++]=pc;
@@ -762,17 +796,26 @@ extern "C" ASMCALL void m68k_trace() //execute instruction with trace bit set
 
   DEBUG_ONLY( if (debug_num_bk) breakpoint_check(); )
 
-
-
   ir=m68k_fetchW();
   pc+=2;
-
+  
   // Store blitter and interrupt check bits, set trace exception bit, lose everything else
   int store_ioaccess=ioaccess & (IOACCESS_FLAG_DO_BLIT | IOACCESS_FLAG_FOR_CHECK_INTRS |
-                                  IOACCESS_FLAG_FOR_CHECK_INTRS_MFP_CHANGE);
+    IOACCESS_FLAG_FOR_CHECK_INTRS_MFP_CHANGE);
   ioaccess=0;
   m68k_do_trace_exception=true;
-  m68k_high_nibble_jump_table[ir>>12]();
+#if defined(STEVEN_SEAGAL) 
+#if defined(SS_CPU) && defined(SS_DEBUG)
+  Cpu.PreviousIr=ir;
+  Cpu.nInstr++;
+  Cpu.NextIrFetched=false;
+#endif
+#if defined(SS_CPU_PREFETCH)
+  Cpu.PrefetchClass=0; // default - useless!
+#endif
+#endif
+ //ASSERT(ir!=0x19F3); // dbg: break on opcode...
+  m68k_high_nibble_jump_table[ir>>12](); //SS call in trace
 
   if (m68k_do_trace_exception){
     // This flag is used for exceptions that we don't want to do a proper exception
@@ -1049,6 +1092,7 @@ void m68k_get_source_111_l(){
   }
 }
 
+
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -1062,7 +1106,6 @@ void m68k_get_source_111_l(){
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
-
 
 void m68k_get_dest_000_b(){ m68k_dest=r+PARAM_M; }
 void m68k_get_dest_000_w(){ m68k_dest=r+PARAM_M; }
@@ -1079,6 +1122,7 @@ void m68k_get_dest_011_l(){ INSTRUCTION_TIME_ROUND(8); m68k_SET_DEST_L(areg[PARA
 void m68k_get_dest_100_b(){ INSTRUCTION_TIME_ROUND(6); areg[PARAM_M]-=1; if(PARAM_M==7)areg[7]--; m68k_SET_DEST_B(areg[PARAM_M]); }
 void m68k_get_dest_100_w(){ INSTRUCTION_TIME_ROUND(6); areg[PARAM_M]-=2; m68k_SET_DEST_W(areg[PARAM_M]); }
 void m68k_get_dest_100_l(){ INSTRUCTION_TIME_ROUND(10); areg[PARAM_M]-=4; m68k_SET_DEST_L(areg[PARAM_M]); }
+
 void m68k_get_dest_101_b(){
   INSTRUCTION_TIME_ROUND(8);
   register signed int fw=(signed short)m68k_fetchW();pc+=2;
@@ -1187,6 +1231,8 @@ void m68k_get_dest_111_l(){
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
+// SS: EXTRA_PREFETCH has been deactivated, it's being taken care of for
+// all instructions now, by PREFETCH_IRC
 
 void m68k_get_dest_000_b_faster(){ INSTRUCTION_TIME(-4); m68k_dest=r+PARAM_M; }
 void m68k_get_dest_000_w_faster(){ INSTRUCTION_TIME(-4); m68k_dest=r+PARAM_M; }
@@ -1309,6 +1355,7 @@ void m68k_get_dest_111_l_faster(){
   }
 }
 
+
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -1342,6 +1389,7 @@ bool m68k_condition_test_lt(){return ((sr&(SR_N+SR_V))==SR_V || (sr&(SR_N+SR_V))
 bool m68k_condition_test_gt(){return (!(sr&SR_Z) && ( ((sr&(SR_N+SR_V))==0) || ((sr&(SR_N+SR_V))==SR_N+SR_V) ));}
 bool m68k_condition_test_le(){return ((sr&SR_Z) || ( ((sr&(SR_N+SR_V))==SR_N) || ((sr&(SR_N+SR_V))==SR_V) ));}
 
+
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -1356,19 +1404,19 @@ bool m68k_condition_test_le(){return ((sr&SR_Z) || ( ((sr&(SR_N+SR_V))==SR_N) ||
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-
-
 void                              m68k_ori_b(){
   FETCH_TIMING;
   if ((ir & B6_111111)==B6_111100){  //to sr
     INSTRUCTION_TIME(16);
     CCR|=m68k_IMMEDIATE_B;
+    PREFETCH_IRC;
     sr&=SR_VALID_BITMASK;
     pc+=2;
   }else{
     INSTRUCTION_TIME(8);
     m68k_GET_IMMEDIATE_B;
     m68k_GET_DEST_B_NOT_A_FASTER_FOR_D;
+    PREFETCH_IRC;
     m68k_DEST_B|=m68k_src_b;
     SR_CLEAR(SR_V+SR_C+SR_N+SR_Z);
     SR_CHECK_Z_AND_N_B
@@ -1380,6 +1428,7 @@ void                              m68k_ori_w(){
     if (SUPERFLAG){
       INSTRUCTION_TIME(16);
       sr|=m68k_IMMEDIATE_W;
+      PREFETCH_IRC;
       sr&=SR_VALID_BITMASK;
       pc+=2;
       DETECT_TRACE_BIT;
@@ -1390,6 +1439,7 @@ void                              m68k_ori_w(){
     INSTRUCTION_TIME(8);
     m68k_GET_IMMEDIATE_W;
     m68k_GET_DEST_W_NOT_A_FASTER_FOR_D;
+    PREFETCH_IRC;
     m68k_DEST_W|=m68k_src_w;
     SR_CLEAR(SR_V+SR_C+SR_N+SR_Z);
     SR_CHECK_Z_AND_N_W
@@ -1400,6 +1450,7 @@ void                              m68k_ori_l(){
   INSTRUCTION_TIME(16);
   m68k_GET_IMMEDIATE_L;
   m68k_GET_DEST_L_NOT_A_FASTER_FOR_D;
+  PREFETCH_IRC;
   m68k_DEST_L|=m68k_src_l;
   SR_CLEAR(SR_V+SR_C+SR_N+SR_Z);
   SR_CHECK_Z_AND_N_L
@@ -1409,11 +1460,13 @@ void                              m68k_andi_b(){
   if((ir&B6_111111)==B6_111100){  //to sr
     INSTRUCTION_TIME(16);
     CCR&=m68k_IMMEDIATE_B;
+    PREFETCH_IRC;
     pc+=2;
   }else{
     INSTRUCTION_TIME(8);
     m68k_GET_IMMEDIATE_B;
     m68k_GET_DEST_B_NOT_A_FASTER_FOR_D;
+    PREFETCH_IRC;
     m68k_DEST_B&=m68k_src_b;
     SR_CLEAR(SR_V+SR_C+SR_N+SR_Z);
     SR_CHECK_Z_AND_N_B
@@ -1424,13 +1477,13 @@ void                              m68k_andi_w(){
   if((ir&B6_111111)==B6_111100){  //to sr
     if(SUPERFLAG){
       DEBUG_ONLY( int debug_old_sr=sr; )
-
       INSTRUCTION_TIME(16);
       sr&=m68k_IMMEDIATE_W;
+      PREFETCH_IRC;
       DETECT_CHANGE_TO_USER_MODE;
       pc+=2;
       ioaccess|=IOACCESS_FLAG_FOR_CHECK_INTRS;
-//      check_for_interrupts_pending(); //in case we've lowered the IPL level
+//    check_for_interrupts_pending(); //in case we've lowered the IPL level// was commented out
 
       CHECK_STOP_ON_USER_CHANGE
     }else exception(BOMBS_PRIVILEGE_VIOLATION,EA_INST,0);
@@ -1438,6 +1491,7 @@ void                              m68k_andi_w(){
     INSTRUCTION_TIME(8);
     m68k_GET_IMMEDIATE_W;
     m68k_GET_DEST_W_NOT_A_FASTER_FOR_D;
+    PREFETCH_IRC;
     m68k_DEST_W&=m68k_src_w;
     SR_CLEAR(SR_V+SR_C+SR_N+SR_Z);
     SR_CHECK_Z_AND_N_W
@@ -1448,6 +1502,7 @@ void                              m68k_andi_l(){
   INSTRUCTION_TIME(16);
   m68k_GET_IMMEDIATE_L;
   m68k_GET_DEST_L_NOT_A_FASTER_FOR_D;
+  PREFETCH_IRC;
   m68k_DEST_L&=m68k_src_l;
   SR_CLEAR(SR_V+SR_C+SR_N+SR_Z);
   SR_CHECK_Z_AND_N_L
@@ -1457,14 +1512,18 @@ void                              m68k_subi_b(){
   INSTRUCTION_TIME(8);
   m68k_GET_IMMEDIATE_B;
   m68k_GET_DEST_B_NOT_A_FASTER_FOR_D;
-//  SR_CLEAR(SR_USER_BYTE);
-//  if((unsigned char)m68k_IMMEDIATE_B>(unsigned char)m68k_DEST_B)SR_SET(SR_C+SR_X);
+  PREFETCH_IRC;
+//  SR_CLEAR(SR_USER_BYTE); // was commented out
+//  if((unsigned char)m68k_IMMEDIATE_B>(unsigned char)m68k_DEST_B)SR_SET(SR_C+SR_X); // was commented out
   m68k_old_dest=m68k_DEST_B;
   m68k_DEST_B-=m68k_src_b;
   SR_SUB_B(SR_X);
-/*
+  //// was commented out:
+  /*
+  int wasnegative=0; // I add
   if(m68k_DEST_B&0x80){
     SR_SET(SR_N);
+    wasnegative++;
   }else{
     if(wasnegative){
       SR_SET(SR_V);
@@ -1473,13 +1532,14 @@ void                              m68k_subi_b(){
       SR_SET(SR_Z);
     }
   }
-*/
+  */
 }
 void                              m68k_subi_w(){
   FETCH_TIMING;
   INSTRUCTION_TIME(8);
   m68k_GET_IMMEDIATE_W;
   m68k_GET_DEST_W_NOT_A_FASTER_FOR_D;
+  PREFETCH_IRC;
   m68k_old_dest=m68k_DEST_W;
   m68k_DEST_W-=m68k_src_w;
   SR_SUB_W(SR_X);
@@ -1489,6 +1549,7 @@ void                              m68k_subi_l(){
   INSTRUCTION_TIME(16);
   m68k_GET_IMMEDIATE_L;
   m68k_GET_DEST_L_NOT_A_FASTER_FOR_D;
+  PREFETCH_IRC;
   m68k_old_dest=m68k_DEST_L;
   m68k_DEST_L-=m68k_src_l;
   SR_SUB_L(SR_X);
@@ -1498,6 +1559,7 @@ void                              m68k_addi_b(){
   INSTRUCTION_TIME(8);
   m68k_GET_IMMEDIATE_B;
   m68k_GET_DEST_B_NOT_A_FASTER_FOR_D;
+  PREFETCH_IRC;
   m68k_old_dest=m68k_DEST_B;
   m68k_DEST_B+=m68k_src_b;
   SR_ADD_B;
@@ -1507,6 +1569,7 @@ void                              m68k_addi_w(){
   INSTRUCTION_TIME(8);
   m68k_GET_IMMEDIATE_W;
   m68k_GET_DEST_W_NOT_A_FASTER_FOR_D;
+  PREFETCH_IRC;
   m68k_old_dest=m68k_DEST_W;
   m68k_DEST_W+=m68k_src_w;
   SR_ADD_W;
@@ -1517,6 +1580,7 @@ void                              m68k_addi_l(){
   INSTRUCTION_TIME(16);
   m68k_GET_IMMEDIATE_L;
   m68k_GET_DEST_L_NOT_A_FASTER_FOR_D;
+  PREFETCH_IRC;
   m68k_old_dest=m68k_DEST_L;
   m68k_DEST_L+=m68k_src_l;
   SR_ADD_L;
@@ -1527,6 +1591,7 @@ void                              m68k_btst(){
   m68k_GET_IMMEDIATE_B;
   if ((ir&BITS_543)==BITS_543_000){
     INSTRUCTION_TIME(6);
+    PREFETCH_IRC;
     m68k_src_b&=31;
     if((r[PARAM_M]>>m68k_src_b)&1){
       SR_CLEAR(SR_Z);
@@ -1536,11 +1601,12 @@ void                              m68k_btst(){
   }else{
     INSTRUCTION_TIME(4);
     m68k_ap=(short)(m68k_src_b & 7);
-//    m68k_GET_DEST_B_NOT_A;
+//    m68k_GET_DEST_B_NOT_A; // was commented out -> max bombs!
     if((ir&(BIT_5+BIT_4+BIT_3+BIT_2+BIT_1+BIT_0))==B6_111100){  //immediate mode is the only one not allowed -
       m68k_unrecognised();
     }else{
       m68k_GET_SOURCE_B_NOT_A;
+      PREFETCH_IRC;
       if((m68k_src_b>>m68k_ap)&1){
         SR_CLEAR(SR_Z);
       }else{
@@ -1553,6 +1619,7 @@ void                              m68k_bchg(){
   FETCH_TIMING;
   m68k_GET_IMMEDIATE_B;
   if((ir&BITS_543)==BITS_543_000){
+    PREFETCH_IRC;
     m68k_src_b&=31;
     if (m68k_src_b>=16){
       INSTRUCTION_TIME(8); //MAXIMUM VALUE
@@ -1570,6 +1637,7 @@ void                              m68k_bchg(){
     INSTRUCTION_TIME(8);
     m68k_src_b&=7;
     m68k_GET_DEST_B_NOT_A;
+    PREFETCH_IRC;
     m68k_src_b=(BYTE)(1<<m68k_src_b);
     if(m68k_DEST_B&m68k_src_b){
       SR_CLEAR(SR_Z);
@@ -1583,6 +1651,7 @@ void                              m68k_bclr(){
   FETCH_TIMING;
   m68k_GET_IMMEDIATE_B;
   if((ir&BITS_543)==BITS_543_000){
+    PREFETCH_IRC;
     m68k_src_b&=31;
     if (m68k_src_b>=16){
       INSTRUCTION_TIME(10); //MAXIMUM VALUE
@@ -1600,6 +1669,7 @@ void                              m68k_bclr(){
     INSTRUCTION_TIME(8);
     m68k_src_b&=7;
     m68k_GET_DEST_B_NOT_A;
+    PREFETCH_IRC;
     m68k_src_b=(BYTE)(1<<m68k_src_b);
     if(m68k_DEST_B&m68k_src_b){
       SR_CLEAR(SR_Z);
@@ -1613,6 +1683,7 @@ void                              m68k_bset(){
   FETCH_TIMING;
   m68k_GET_IMMEDIATE_B;
   if ((ir&BITS_543)==BITS_543_000){
+    PREFETCH_IRC;
     m68k_src_b&=31;
     if (m68k_src_b>=16){
       INSTRUCTION_TIME(8); //MAXIMUM VALUE
@@ -1630,6 +1701,7 @@ void                              m68k_bset(){
     INSTRUCTION_TIME(8);
     m68k_src_b&=7;
     m68k_GET_DEST_B_NOT_A;
+    PREFETCH_IRC;
     m68k_src_b=(BYTE)(1<<m68k_src_b);
     if(m68k_DEST_B&m68k_src_b){
       SR_CLEAR(SR_Z);
@@ -1644,12 +1716,14 @@ void                              m68k_eori_b(){
   if((ir&B6_111111)==B6_111100){  //to sr
     INSTRUCTION_TIME(16);
     CCR^=m68k_IMMEDIATE_B;
+    PREFETCH_IRC;
     sr&=SR_VALID_BITMASK;
     pc+=2;
   }else{
     INSTRUCTION_TIME(8);
     m68k_GET_IMMEDIATE_B;
     m68k_GET_DEST_B_NOT_A_FASTER_FOR_D;
+    PREFETCH_IRC;
     m68k_DEST_B^=m68k_src_b;
     SR_CLEAR(SR_V+SR_C+SR_N+SR_Z);
     SR_CHECK_Z_AND_N_B
@@ -1660,16 +1734,16 @@ void                              m68k_eori_w(){
   if((ir&B6_111111)==B6_111100){  //to sr
     if(SUPERFLAG){
       DEBUG_ONLY( int debug_old_sr=sr; )
-
       INSTRUCTION_TIME(16);
       sr^=m68k_IMMEDIATE_W;
+      PREFETCH_IRC;
       sr&=SR_VALID_BITMASK;
       pc+=2;
       DETECT_CHANGE_TO_USER_MODE
       DETECT_TRACE_BIT;
       // Interrupts must come after trace exception
       ioaccess|=IOACCESS_FLAG_FOR_CHECK_INTRS;
-//      check_for_interrupts_pending();
+//      check_for_interrupts_pending(); // was commented out
 
       CHECK_STOP_ON_USER_CHANGE;
     }else exception(BOMBS_PRIVILEGE_VIOLATION,EA_INST,0);
@@ -1677,6 +1751,7 @@ void                              m68k_eori_w(){
     INSTRUCTION_TIME(8);
     m68k_GET_IMMEDIATE_W;
     m68k_GET_DEST_W_NOT_A_FASTER_FOR_D;
+    PREFETCH_IRC;
     m68k_DEST_W^=m68k_src_w;
     SR_CLEAR(SR_V+SR_C+SR_N+SR_Z);
     SR_CHECK_Z_AND_N_W;
@@ -1687,6 +1762,7 @@ void                              m68k_eori_l(){
   INSTRUCTION_TIME(16);
   m68k_GET_IMMEDIATE_L;
   m68k_GET_DEST_L_NOT_A_FASTER_FOR_D;
+  PREFETCH_IRC;
   m68k_DEST_L^=m68k_src_l;
   SR_CLEAR(SR_V+SR_C+SR_N+SR_Z);
   SR_CHECK_Z_AND_N_L;
@@ -1697,6 +1773,7 @@ void                              m68k_cmpi_b(){
   INSTRUCTION_TIME(4);
   m68k_GET_IMMEDIATE_B;
   m68k_old_dest=m68k_read_dest_b();
+  PREFETCH_IRC;
   compare_buffer=m68k_old_dest;
   m68k_dest=&compare_buffer;
   m68k_DEST_B-=m68k_src_b;
@@ -1708,6 +1785,7 @@ void                              m68k_cmpi_w(){
   INSTRUCTION_TIME(4);
   m68k_GET_IMMEDIATE_W;
   m68k_old_dest=m68k_read_dest_w();
+  PREFETCH_IRC;
   compare_buffer=m68k_old_dest;
   m68k_dest=&compare_buffer;
   m68k_DEST_W-=m68k_src_w;
@@ -1718,6 +1796,7 @@ void                              m68k_cmpi_l(){
   m68k_GET_IMMEDIATE_L;
   if(DEST_IS_REGISTER){INSTRUCTION_TIME(10);} else {INSTRUCTION_TIME(8);}
   m68k_old_dest=m68k_read_dest_l();
+  PREFETCH_IRC;
   compare_buffer=m68k_old_dest;
   m68k_dest=&compare_buffer;
   m68k_DEST_L-=m68k_src_l;
@@ -1727,25 +1806,25 @@ void                              m68k_cmpi_l(){
 void                              m68k_movep_w_to_dN_or_btst(){
   FETCH_TIMING;
   if((ir&BITS_543)==BITS_543_001){
+    // MOVEP
     MEM_ADDRESS addr=areg[PARAM_M]+(signed short)m68k_fetchW();
     INSTRUCTION_TIME(4);
-
     pc+=2;
     m68k_READ_B(addr);
     DWORD_B_1(&r[PARAM_N])=m68k_src_b; //high byte
     INSTRUCTION_TIME(4);
-
     m68k_READ_B(addr+2);
     DWORD_B_0(&r[PARAM_N])=m68k_src_b; //low byte
     INSTRUCTION_TIME(4);
-
+    PREFETCH_IRC;
+// was commented out:
 //    *( ((BYTE*)(&r[PARAM_N])) +1)=m68k_src_b; //high byte
 //    m68k_READ_B(addr+2);
 //    *( ((BYTE*)(&r[PARAM_N]))   )=m68k_src_b; //low byte
-
   }else{
     if ((ir&BITS_543)==BITS_543_000){  //btst to data register
       INSTRUCTION_TIME(2);
+        PREFETCH_IRC;
       if ((r[PARAM_M] >> (31 & r[PARAM_N])) & 1){
         SR_CLEAR(SR_Z);
       }else{
@@ -1753,6 +1832,7 @@ void                              m68k_movep_w_to_dN_or_btst(){
       }
     }else{ // btst memory
       m68k_GET_SOURCE_B_NOT_A;   //even immediate mode is allowed!!!!
+      PREFETCH_IRC;
       if( (m68k_src_b >> (7 & r[PARAM_N])) & 1){
         SR_CLEAR(SR_Z);
       }else{
@@ -1765,6 +1845,7 @@ void                              m68k_movep_w_to_dN_or_btst(){
 void                              m68k_movep_l_to_dN_or_bchg(){
   FETCH_TIMING;
   if((ir&BITS_543)==BITS_543_001){
+    // MOVEP
     MEM_ADDRESS addr=areg[PARAM_M]+(signed short)m68k_fetchW();
     pc+=2;
     INSTRUCTION_TIME(4);
@@ -1785,10 +1866,12 @@ void                              m68k_movep_l_to_dN_or_bchg(){
     m68k_READ_B(addr+6)
     DWORD_B_0(&r[PARAM_N])=m68k_src_b;
     INSTRUCTION_TIME(4);
+    PREFETCH_IRC;
 
-  }else{
-    if((ir&BITS_543)==BITS_543_000){
+  }else{ // bchg
+    if((ir&BITS_543)==BITS_543_000){ // register
       m68k_src_w=BYTE(LOBYTE(r[PARAM_N]) & 31);
+      PREFETCH_IRC;
       if (m68k_src_w>=16){
         INSTRUCTION_TIME(4); //MAXIMUM VALUE
       }else{
@@ -1803,6 +1886,7 @@ void                              m68k_movep_l_to_dN_or_bchg(){
     }else{
       INSTRUCTION_TIME(4);
       m68k_GET_DEST_B_NOT_A;
+      PREFETCH_IRC;
       if((m68k_DEST_B>>(7&r[PARAM_N]))&1){
         SR_CLEAR(SR_Z);
       }else{
@@ -1812,20 +1896,24 @@ void                              m68k_movep_l_to_dN_or_bchg(){
     }
   }
 }
+
 void                              m68k_movep_w_from_dN_or_bclr(){
   FETCH_TIMING;
   if ((ir & BITS_543)==BITS_543_001){
+    // MOVEP
+#if defined(STEVEN_SEAGAL) && defined(SS_CPU_PREFETCH) && defined(SS_DEBUG)
+    Cpu.PrefetchClass=1;  // not used
+#endif
     MEM_ADDRESS ad=areg[PARAM_M]+(short)m68k_fetchW();
     pc+=2;
     INSTRUCTION_TIME(4);
-
     INSTRUCTION_TIME(4);
     m68k_poke(ad,DWORD_B_1(&r[PARAM_N]));
     ad+=2;
-
     INSTRUCTION_TIME(4);
     m68k_poke(ad,DWORD_B_0(&r[PARAM_N]));
-  }else{
+    PREFETCH_IRC;
+  }else{ //bclr
     if((ir&BITS_543)==BITS_543_000){
       m68k_src_w=BYTE(LOBYTE(r[PARAM_N]) & 31);
       if (m68k_src_w>=16){
@@ -1838,12 +1926,14 @@ void                              m68k_movep_w_from_dN_or_bclr(){
       }else{
         SR_SET(SR_Z);
       }
+        PREFETCH_IRC;
       r[PARAM_M]&=(long)~((long)(1<<m68k_src_w));
 
       //length = .l
     }else{
       INSTRUCTION_TIME(4);
       m68k_GET_DEST_B_NOT_A;
+      PREFETCH_IRC;
       if((m68k_DEST_B>>(7&r[PARAM_N]))&1){
         SR_CLEAR(SR_Z);
       }else{
@@ -1853,29 +1943,31 @@ void                              m68k_movep_w_from_dN_or_bclr(){
     }
   }
 }
+
 void                              m68k_movep_l_from_dN_or_bset(){
   FETCH_TIMING;
   if ((ir&BITS_543)==BITS_543_001){
+    // MOVEP
+#if defined(STEVEN_SEAGAL) && defined(SS_CPU_PREFETCH) && defined(SS_DEBUG)
+    Cpu.PrefetchClass=1; 
+#endif
     MEM_ADDRESS ad=areg[PARAM_M]+(signed short)m68k_fetchW();
     pc+=2;
     INSTRUCTION_TIME(4);
-
     BYTE *p=(BYTE*)(&r[PARAM_N]);
     INSTRUCTION_TIME(4);
     m68k_poke(ad,DWORD_B_3(p));
     ad+=2;
-
     INSTRUCTION_TIME(4);
     m68k_poke(ad,DWORD_B_2(p));
     ad+=2;
-
     INSTRUCTION_TIME(4);
     m68k_poke(ad,DWORD_B_1(p));
     ad+=2;
-
     INSTRUCTION_TIME(4);
     m68k_poke(ad,DWORD_B_0(p));
-  }else{
+    PREFETCH_IRC;
+  }else{ // bset
     if((ir&BITS_543)==BITS_543_000){
       m68k_src_w=BYTE(LOBYTE(r[PARAM_N]) & 31);
       if (m68k_src_w>=16){
@@ -1888,7 +1980,7 @@ void                              m68k_movep_l_from_dN_or_bset(){
       }else{
         SR_SET(SR_Z);
       }
-
+      PREFETCH_IRC;
       r[PARAM_M]|=(1<<m68k_src_w);
 
 
@@ -1897,6 +1989,7 @@ void                              m68k_movep_l_from_dN_or_bset(){
     }else{
       INSTRUCTION_TIME(4);
       m68k_GET_DEST_B_NOT_A;
+      PREFETCH_IRC;
       if((m68k_DEST_B>>(7&r[PARAM_N]))&1){
         SR_CLEAR(SR_Z);
       }else{
@@ -1926,6 +2019,7 @@ void                              m68k_movep_l_from_dN_or_bset(){
 void                              m68k_negx_b(){
   FETCH_TIMING;
   m68k_GET_DEST_B_NOT_A;
+  PREFETCH_IRC;
   m68k_old_dest=m68k_DEST_B;
   m68k_DEST_B=(BYTE)-m68k_DEST_B;
   if(sr&SR_X)m68k_DEST_B--;
@@ -1937,6 +2031,7 @@ void                              m68k_negx_b(){
 }void                             m68k_negx_w(){
   FETCH_TIMING;
   m68k_GET_DEST_W_NOT_A;
+  PREFETCH_IRC;
   m68k_old_dest=m68k_DEST_W;
   m68k_DEST_W=(WORD)-m68k_DEST_W;
   if(sr&SR_X)m68k_DEST_W--;
@@ -1949,6 +2044,7 @@ void                              m68k_negx_b(){
   FETCH_TIMING;
   INSTRUCTION_TIME(2);
   m68k_GET_DEST_L_NOT_A;
+  PREFETCH_IRC;
   m68k_old_dest=m68k_DEST_L;
   m68k_DEST_L=-m68k_DEST_L;
   if(sr&SR_X)m68k_DEST_L-=1;
@@ -1959,10 +2055,16 @@ void                              m68k_negx_b(){
   if(m68k_DEST_L & MSB_L)SR_SET(SR_N);
 }
 // TODO: These read the dest if it is memory
+#if defined(STEVEN_SEAGAL) && defined(SS_CPU_CLR) // done in SSECpu.cpp
+void m68k_clr_b();
+void m68k_clr_w();
+void m68k_clr_l();
+#else
 void                              m68k_clr_b(){
   FETCH_TIMING;
   if (DEST_IS_REGISTER==0){INSTRUCTION_TIME(4);}
   m68k_GET_DEST_B_NOT_A;
+  PREFETCH_IRC;
   m68k_DEST_B=0;
   SR_CLEAR(SR_N+SR_V+SR_C);
   SR_SET(SR_Z);
@@ -1970,6 +2072,7 @@ void                              m68k_clr_b(){
   FETCH_TIMING;
   if(DEST_IS_REGISTER==0){INSTRUCTION_TIME(4);}
   m68k_GET_DEST_W_NOT_A;
+  PREFETCH_IRC;
   m68k_DEST_W=0;
   SR_CLEAR(SR_N+SR_V+SR_C);
   SR_SET(SR_Z);
@@ -1977,14 +2080,17 @@ void                              m68k_clr_b(){
   FETCH_TIMING;
   if(DEST_IS_REGISTER){INSTRUCTION_TIME(2);}else {INSTRUCTION_TIME(8);}
   m68k_GET_DEST_L_NOT_A;
+  PREFETCH_IRC;
   m68k_DEST_L=0;
   SR_CLEAR(SR_N+SR_V+SR_C);
   SR_SET(SR_Z);
 }
+#endif
 void                              m68k_neg_b(){
   FETCH_TIMING;
   if(DEST_IS_REGISTER==0){INSTRUCTION_TIME(4);}
   m68k_GET_DEST_B_NOT_A;
+  PREFETCH_IRC;
   m68k_old_dest=m68k_DEST_B;
   m68k_DEST_B=(BYTE)-m68k_DEST_B;
   SR_CLEAR(SR_USER_BYTE);
@@ -1995,6 +2101,7 @@ void                              m68k_neg_b(){
   FETCH_TIMING;
   if(DEST_IS_REGISTER==0){INSTRUCTION_TIME(4);}
   m68k_GET_DEST_W_NOT_A;
+  PREFETCH_IRC;
   m68k_old_dest=m68k_DEST_W;
   m68k_DEST_W=(WORD)-m68k_DEST_W;
   SR_CLEAR(SR_USER_BYTE);
@@ -2005,6 +2112,7 @@ void                              m68k_neg_b(){
   FETCH_TIMING;
   if(DEST_IS_REGISTER){INSTRUCTION_TIME(2);}else {INSTRUCTION_TIME(8);}
   m68k_GET_DEST_L_NOT_A;
+  PREFETCH_IRC;
   m68k_old_dest=m68k_DEST_L;
   m68k_DEST_L=-m68k_DEST_L;
   SR_CLEAR(SR_USER_BYTE);
@@ -2016,6 +2124,7 @@ void                              m68k_not_b(){
   FETCH_TIMING;
   if(DEST_IS_REGISTER==0){INSTRUCTION_TIME(4);}
   m68k_GET_DEST_B_NOT_A;
+  PREFETCH_IRC;
   m68k_DEST_B=(BYTE)~m68k_DEST_B;
   SR_CLEAR(SR_N+SR_Z+SR_V+SR_C);
   SR_CHECK_Z_AND_N_B;
@@ -2023,6 +2132,7 @@ void                              m68k_not_b(){
   FETCH_TIMING;
   if(DEST_IS_REGISTER==0){INSTRUCTION_TIME(4);}
   m68k_GET_DEST_W_NOT_A;
+  PREFETCH_IRC;
   m68k_DEST_W=(WORD)~m68k_DEST_W;
   SR_CLEAR(SR_N+SR_Z+SR_V+SR_C);
   SR_CHECK_Z_AND_N_W;
@@ -2030,6 +2140,7 @@ void                              m68k_not_b(){
   FETCH_TIMING;
   if (DEST_IS_REGISTER){INSTRUCTION_TIME(2);}else {INSTRUCTION_TIME(8);}
   m68k_GET_DEST_L_NOT_A;
+  PREFETCH_IRC;
   m68k_DEST_L=~m68k_DEST_L;
   SR_CLEAR(SR_N+SR_Z+SR_V+SR_C);
   SR_CHECK_Z_AND_N_L;
@@ -2037,18 +2148,21 @@ void                              m68k_not_b(){
 void                              m68k_tst_b(){
   FETCH_TIMING;
   BYTE x=m68k_read_dest_b();
+  PREFETCH_IRC;
   SR_CLEAR(SR_N+SR_Z+SR_V+SR_C);
   if(!x)SR_SET(SR_Z);
   if(x&MSB_B)SR_SET(SR_N);
 }void                             m68k_tst_w(){
   FETCH_TIMING;
   WORD x=m68k_read_dest_w();
+  PREFETCH_IRC;
   SR_CLEAR(SR_N+SR_Z+SR_V+SR_C);
   if(!x)SR_SET(SR_Z);
   if(x&MSB_W)SR_SET(SR_N);
 }void                             m68k_tst_l(){
   FETCH_TIMING;
   LONG x=m68k_read_dest_l();
+  PREFETCH_IRC;
   SR_CLEAR(SR_N+SR_Z+SR_V+SR_C);
   if(!x)SR_SET(SR_Z);
   if(x&MSB_L)SR_SET(SR_N);
@@ -2059,13 +2173,19 @@ void                              m68k_tas(){
   }else{
     FETCH_TIMING;
     m68k_GET_DEST_B_NOT_A;
+    PREFETCH_IRC;
+#ifdef SS_CPU_TAS // not defined in 3.3
+    if(DEST_IS_REGISTER==0){INSTRUCTION_TIME(6);} 
+#else
     if(DEST_IS_REGISTER==0){INSTRUCTION_TIME(10);} /// Should this be 6?
+#endif
+
     SR_CLEAR(SR_N+SR_Z+SR_V+SR_C);
     SR_CHECK_Z_AND_N_B;
     m68k_DEST_B|=MSB_B;
   }
 }
-// TODO: This should read the memory first
+// TODO: This should read the memory first 
 void                              m68k_move_from_sr(){
   FETCH_TIMING;
   if (DEST_IS_REGISTER){
@@ -2074,10 +2194,13 @@ void                              m68k_move_from_sr(){
     INSTRUCTION_TIME(4);
   }
   m68k_GET_DEST_W_NOT_A;
+  PREFETCH_IRC;
   m68k_DEST_W=sr;
 }
 void                              m68k_move_from_ccr(){
-  ILLEGAL;  //68010 only!!!
+    ILLEGAL;
+  
+  ////ILLEGAL;  //68010 only!!!
 /*
   m68k_GET_DEST_B_NOT_A;
   m68k_DEST_B=LOBYTE(sr);
@@ -2089,6 +2212,7 @@ void                              m68k_move_to_ccr(){
   }else{
     FETCH_TIMING;
     m68k_GET_SOURCE_W;
+    PREFETCH_IRC;
     CCR=LOBYTE(m68k_src_w);
     sr&=SR_VALID_BITMASK;
     INSTRUCTION_TIME(8);
@@ -2100,19 +2224,17 @@ void                              m68k_move_to_sr(){
       m68k_unrecognised();
     }else{
       DEBUG_ONLY( int debug_old_sr=sr; )
-
       FETCH_TIMING;
       INSTRUCTION_TIME(8);
       m68k_GET_SOURCE_W;
       sr=m68k_src_w;
       sr&=SR_VALID_BITMASK;
-
+      PREFETCH_IRC;
       DETECT_CHANGE_TO_USER_MODE;
       DETECT_TRACE_BIT;
       // Interrupts must come after trace exception
       ioaccess|=IOACCESS_FLAG_FOR_CHECK_INTRS;
-//      check_for_interrupts_pending();
-
+//      check_for_interrupts_pending(); // was commented out
       CHECK_STOP_ON_USER_CHANGE;
     }
   }else{
@@ -2123,6 +2245,7 @@ void                              m68k_nbcd(){
   FETCH_TIMING;
   if (DEST_IS_REGISTER){INSTRUCTION_TIME(2);}else {INSTRUCTION_TIME(4);}
   m68k_GET_DEST_B_NOT_A;
+  PREFETCH_IRC;
   int m=m68k_DEST_B,n=0;
   if(m&0xff) n=0xa0;
   if(m&0xf)n=0x9a;
@@ -2134,13 +2257,14 @@ void                              m68k_nbcd(){
   if(m68k_DEST_B){SR_CLEAR(SR_Z);}
 }
 void                              m68k_pea_or_swap(){
-  if((ir&BITS_543)==BITS_543_000){
+  if((ir&BITS_543)==BITS_543_000){ // SWAP
     FETCH_TIMING;
     r[PARAM_M]=MAKELONG(HIWORD(r[PARAM_M]),LOWORD(r[PARAM_M]));
+    PREFETCH_IRC;
     SR_CLEAR(SR_N+SR_Z+SR_V+SR_C);
     if(!r[PARAM_M])SR_SET(SR_Z);
     if(r[PARAM_M]&MSB_L)SR_SET(SR_N);
-  }else{
+  }else{ //PEA
     // pea instruction times table.
     // ad.mode  time  Steem EA time difference
     // (aN)     12    0             12
@@ -2152,23 +2276,42 @@ void                              m68k_pea_or_swap(){
     // D(pc,dM) 22    8             14
     if ((ir & B6_111111)==B6_111011 || (ir & B6_111000)==B6_110000){ INSTRUCTION_TIME(2); } //iriwo
     m68k_get_effective_address();
-
     INSTRUCTION_TIME_ROUND(8); // Round before writing to memory
+#if defined(STEVEN_SEAGAL) && defined(SS_CPU_PREFETCH)
+    if((ir & B6_111111)==B6_111000) 
+      Cpu.PrefetchClass=1; // PEA for absolute short and absolute long addr. modes
+    else
+    {
+      PREFETCH_IRC; 
+      FETCH_TIMING;
+    }
+#endif
     m68k_PUSH_L(effective_address);
-    FETCH_TIMING;
+#if defined(STEVEN_SEAGAL) && defined(SS_CPU_PREFETCH)
+    if(Cpu.PrefetchClass==1)
+    {
+      PREFETCH_IRC;
+      FETCH_TIMING;
+    }
+#else
+    FETCH_TIMING; // <-- Steem authors perceived the 'class 1' behaviour?
+#endif
   }
 }
 void                              m68k_movem_w_from_regs_or_ext_w(){
-  FETCH_TIMING;
-  if((ir&BITS_543)==BITS_543_000){
+  FETCH_TIMING; 
+  if((ir&BITS_543)==BITS_543_000){ //EXT.W
     SR_CLEAR(SR_N+SR_V+SR_Z+SR_C);
     m68k_dest=&(r[PARAM_M]);
+    PREFETCH_IRC;
     m68k_DEST_W=(signed short)((signed char)LOBYTE(r[PARAM_M]));
     SR_CHECK_Z_AND_N_W;
-  }else if ((ir & BITS_543)==BITS_543_100){ //predecrement
+  }else if ((ir & BITS_543)==BITS_543_100){ // MOVEM -(An)
+#if defined(STEVEN_SEAGAL) && defined(SS_CPU_PREFETCH) && defined(SS_DEBUG)
+    Cpu.PrefetchClass=1; 
+#endif
     m68k_src_w=m68k_fetchW();pc+=2;
     INSTRUCTION_TIME(4);
-
     MEM_ADDRESS ad=areg[PARAM_M];
     DWORD areg_hi=(areg[PARAM_M] & 0xff000000);
     short mask=1,BlitterStart=0;
@@ -2190,21 +2333,25 @@ void                              m68k_movem_w_from_regs_or_ext_w(){
     // The register written to memory should be the original one, so
     // predecrement afterwards.
     areg[PARAM_M]=ad | areg_hi;
-  }else{
+    PREFETCH_IRC;
+  }else{ // MOVEM
+#if defined(STEVEN_SEAGAL) && defined(SS_CPU_PREFETCH) && defined(SS_DEBUG)
+    Cpu.PrefetchClass=1; 
+#endif
     m68k_src_w=m68k_fetchW();pc+=2;
     INSTRUCTION_TIME(4);
     MEM_ADDRESS ad;
 
     switch (ir & BITS_543){
-    case BITS_543_010:
+    case BITS_543_010: // (An)
       ad=areg[PARAM_M];
       break;
-    case BITS_543_101:
+    case BITS_543_101: // (d16,An)
       INSTRUCTION_TIME(4);
       ad=areg[PARAM_M]+(signed short)m68k_fetchW();
       pc+=2;
       break;
-    case BITS_543_110:
+    case BITS_543_110: // (d8, An, Xn)
       INSTRUCTION_TIME(6);
       m68k_iriwo=m68k_fetchW();pc+=2;
       if(m68k_iriwo&BIT_b){  //.l
@@ -2251,6 +2398,7 @@ void                              m68k_movem_w_from_regs_or_ext_w(){
       }
       mask<<=1;
     }
+    PREFETCH_IRC;
   }
   if (ioaccess & IOACCESS_FLAG_PSG_BUS_JAM_W){  //oh dear, writing multiple words to the PSG
     int s=count_bits_set_in_word(m68k_src_w);
@@ -2263,12 +2411,15 @@ void                              m68k_movem_l_from_regs_or_ext_l(){
   if((ir&BITS_543)==BITS_543_000){  //ext.l
     SR_CLEAR(SR_N+SR_V+SR_Z+SR_C);
     m68k_dest=&(r[PARAM_M]);
+    PREFETCH_IRC;
     m68k_DEST_L=(signed long)((signed short)LOWORD(r[PARAM_M]));
     SR_CHECK_Z_AND_N_L;
-  }else if((ir&BITS_543)==BITS_543_100){ //predecrement
+  }else if((ir&BITS_543)==BITS_543_100){ //MOVEM predecrement
+#if defined(STEVEN_SEAGAL) && defined(SS_CPU_PREFETCH) && defined(SS_DEBUG)
+    Cpu.PrefetchClass=1; 
+#endif
     m68k_src_w=m68k_fetchW();pc+=2;
     INSTRUCTION_TIME(4);
-
     MEM_ADDRESS ad=areg[PARAM_M];
     DWORD areg_hi=(areg[PARAM_M] & 0xff000000);
     short mask=1;
@@ -2285,11 +2436,14 @@ void                              m68k_movem_l_from_regs_or_ext_l(){
     // The register written to memory should be the original one, so
     // predecrement afterwards.
     areg[PARAM_M]=ad | areg_hi;
-  }else{
+    PREFETCH_IRC;
+  }else{ // MOVEM
+#if defined(STEVEN_SEAGAL) && defined(SS_CPU_PREFETCH) && defined(SS_DEBUG)
+    Cpu.PrefetchClass=1; 
+#endif
     m68k_src_w=m68k_fetchW();pc+=2;
     INSTRUCTION_TIME(4);
     MEM_ADDRESS ad;
-
     switch(ir&BITS_543){
     case BITS_543_010:
       ad=areg[PARAM_M];
@@ -2340,6 +2494,7 @@ void                              m68k_movem_l_from_regs_or_ext_l(){
       }
       mask<<=1;
     }
+    PREFETCH_IRC;
   }
   if (ioaccess & IOACCESS_FLAG_PSG_BUS_JAM_W){  //oh dear, writing multiple longs to the PSG
     int s=count_bits_set_in_word(m68k_src_w)*2; //number of words to write
@@ -2350,9 +2505,8 @@ void                              m68k_movem_l_from_regs_or_ext_l(){
 void                              m68k_movem_l_to_regs(){
   FETCH_TIMING;
   bool postincrement=false;
-  m68k_src_w=m68k_fetchW();pc+=2;
+  m68k_src_w=m68k_fetchW();pc+=2; // SS: TODO what if m68k_src_w=0?
   INSTRUCTION_TIME(4);
-
   MEM_ADDRESS ad;
   switch(ir&BITS_543){
   case BITS_543_010:
@@ -2427,6 +2581,7 @@ void                              m68k_movem_l_to_regs(){
   if (postincrement) areg[PARAM_M]=ad | areg_hi;
   m68k_dpeek(ad); //extra word read (discarded)
   INSTRUCTION_TIME_ROUND(4);
+  PREFETCH_IRC;
   if (ioaccess & IOACCESS_FLAG_PSG_BUS_JAM_R){  //oh dear, reading multiple longs from the PSG
     int s=count_bits_set_in_word(m68k_src_w)*2+1; //number of words read
     if(s>4)BUS_JAM_TIME((s-1)&-4);  //we've already had a bus jam of 4, for s=5..8 want extra bus jam of 4
@@ -2513,6 +2668,7 @@ void                              m68k_movem_w_to_regs(){
   if (postincrement) areg[PARAM_M]=ad | areg_hi;
   m68k_dpeek(ad); //extra word read (discarded)
   INSTRUCTION_TIME_ROUND(4);
+  PREFETCH_IRC;
   if (ioaccess & IOACCESS_FLAG_PSG_BUS_JAM_R){  //oh dear, reading multiple words from the PSG
     int s=count_bits_set_in_word(m68k_src_w)+1; //number of words read
     if(s>4)BUS_JAM_TIME((s-1)&-4);  //we've already had a bus jam of 4, for s=5..8 want extra bus jam of 4
@@ -2526,10 +2682,22 @@ void                              m68k_jsr()
   else {INSTRUCTION_TIME(2);}
 
   m68k_get_effective_address();
+
   INSTRUCTION_TIME_ROUND(8);
+
+#if defined(STEVEN_SEAGAL) && defined(SS_CPU_PREFETCH)
+  // read new PC before pushing current PC; fixes nothing AFAIK
+  Cpu.PrefetchClass=1; 
+  m68k_READ_W(effective_address); // Check for bus/address errors
+  FETCH_TIMING; // Fetch from new address before setting PC
+  Cpu.FetchForCall(effective_address); // fetch before writing stack
+  m68k_PUSH_L(PC32); 
+#else
   m68k_PUSH_L(PC32);
   FETCH_TIMING; // Fetch from new address before setting PC
   m68k_READ_W(effective_address); // Check for bus/address errors
+#endif
+
   SET_PC(effective_address);
   intercept_os();
 }
@@ -2551,7 +2719,7 @@ void                              m68k_jmp()
   m68k_get_effective_address();
   FETCH_TIMING; // Fetch from new address before setting PC
   m68k_READ_W(effective_address); // Check for bus/address errors
-  SET_PC(effective_address);
+  SET_PC(effective_address);  
   intercept_os();
 }
 void                              m68k_chk(){
@@ -2570,8 +2738,13 @@ void                              m68k_chk(){
       m68k_interrupt(LPEEK(BOMBS_CHK*4));
       INSTRUCTION_TIME_ROUND(40);
     }
+#if defined(STEVEN_SEAGAL) && defined(SS_CPU_PREFETCH)
+    else
+      PREFETCH_IRC;
+#endif
   }
 }
+
 void                              m68k_lea(){
   // lea instruction times table.
   // ad.mode  time  Steem EA time difference
@@ -2585,6 +2758,7 @@ void                              m68k_lea(){
 
   if ((ir & B6_111111)==B6_111011 || (ir & B6_111000)==B6_110000){ INSTRUCTION_TIME(2); }
   m68k_get_effective_address();
+  PREFETCH_IRC;
   areg[PARAM_N]=effective_address;
   FETCH_TIMING; /// This seems strange but it is right, it fetches after instruction
 }
@@ -2618,25 +2792,31 @@ void                              m68k_trap(){
 #undef LOGSECTION
 
 void                              m68k_link(){
+#if defined(STEVEN_SEAGAL) && defined(SS_CPU_PREFETCH) && defined(SS_DEBUG)
+  Cpu.PrefetchClass=1; 
+#endif
   FETCH_TIMING;
   INSTRUCTION_TIME(12);
   m68k_GET_IMMEDIATE_W;
   m68k_PUSH_L(areg[PARAM_M]);
   areg[PARAM_M]=r[15];
   r[15]+=(signed short)m68k_src_w;
+  PREFETCH_IRC;
 }
 void                              m68k_unlk(){
   FETCH_TIMING;
   INSTRUCTION_TIME(8);
   r[15]=areg[PARAM_M];
   abus=r[15];m68k_READ_L_FROM_ADDR;
-  r[15]+=4;                                     //This is contrary to the Programmer's reference manual which says
-  areg[PARAM_M]=m68k_src_l;                     //it does move (a7),An then adds 4 to a7, but it fixed Wrath of Demon
+  PREFETCH_IRC;
+  r[15]+=4;    //This is contrary to the Programmer's reference manual which says
+  areg[PARAM_M]=m68k_src_l; //it does move (a7),An then adds 4 to a7, but it fixed Wrath of Demon
 }
 void                              m68k_move_to_usp(){
   FETCH_TIMING;
   if (SUPERFLAG){
     other_sp=areg[PARAM_M];
+    PREFETCH_IRC;
   }else{
     exception(BOMBS_PRIVILEGE_VIOLATION,EA_INST,0);
   }
@@ -2645,6 +2825,7 @@ void                              m68k_move_from_usp(){
   FETCH_TIMING;
   if (SUPERFLAG){
     areg[PARAM_M]=other_sp;
+    PREFETCH_IRC;
   }else{
     exception(BOMBS_PRIVILEGE_VIOLATION,EA_INST,0);
   }
@@ -2654,14 +2835,19 @@ void                              m68k_reset(){
   if (SUPERFLAG){
     reset_peripherals(0);
     INSTRUCTION_TIME(128);
+    PREFETCH_IRC;
   }else{
     exception(BOMBS_PRIVILEGE_VIOLATION,EA_INST,0);
   }
 }
 void                              m68k_nop(){
   FETCH_TIMING;
+#if defined(STEVEN_SEAGAL) && defined(SS_CPU_PREFETCH)
+  PREFETCH_IRC // quite the opposite!
+#else
   prefetched_2=false;
   prefetch_buf[0]=*(lpfetch-MEM_DIR);  //flush prefetch queue
+#endif
 }
 void                              m68k_stop(){
   if (SUPERFLAG){
@@ -2672,17 +2858,17 @@ void                              m68k_stop(){
 
       DEBUG_ONLY( int debug_old_sr=sr; )
 
-      sr=m68k_src_w;
+      sr=m68k_src_w; // SS contains IPL
       sr&=SR_VALID_BITMASK;
       DETECT_CHANGE_TO_USER_MODE;
       cpu_stopped=true;
 
-      SET_PC((pc-4) | pc_high_byte);
+      SET_PC((pc-4) | pc_high_byte); // SS: go back on the stop
 
       DETECT_TRACE_BIT;
       // Interrupts must come after trace exception
       ioaccess|=IOACCESS_FLAG_FOR_CHECK_INTRS;
-//      check_for_interrupts_pending();
+//      check_for_interrupts_pending(); // was commented out
 
       CHECK_STOP_ON_USER_CHANGE;
     }else{
@@ -2703,12 +2889,13 @@ void                              m68k_stop(){
 void                              m68k_rte(){
   bool dont_intercept_os=false;
   if (SUPERFLAG){
-
     DEBUG_ONLY( int debug_old_sr=sr; )
-
     INSTRUCTION_TIME_ROUND(20);
-
+#if defined(STEVEN_SEAGAL) && defined(SS_CPU)
+    m68k_perform_rte();
+#else
     M68K_PERFORM_RTE(;);
+#endif
 
     log_to(LOGSECTION_INTERRUPTS,Str("INTERRUPT: ")+HEXSl(old_pc,6)+" - RTE to "+HEXSl(pc,6)+" sr="+HEXSl(sr,4)+
                                   " at "+ABSOLUTE_CPU_TIME+" idepth="+interrupt_depth);
@@ -2758,7 +2945,7 @@ void                              m68k_rte(){
 //    log(EasyStr("RTE - decreasing interrupt depth from ")+interrupt_depth+" to "+(interrupt_depth-1));
     interrupt_depth--;
     ioaccess|=IOACCESS_FLAG_FOR_CHECK_INTRS;
-//    check_for_interrupts_pending();
+//    check_for_interrupts_pending();// was commented out
     if (!dont_intercept_os) intercept_os();
 
     CHECK_STOP_ON_USER_CHANGE;
@@ -2767,13 +2954,12 @@ void                              m68k_rte(){
   }
 }
 void                              m68k_rtd(){
-//  INSTRUCTION_TIME_ROUND(20);
-//  m68k_GET_IMMEDIATE_W;
+//  INSTRUCTION_TIME_ROUND(20); // was commented out
+//  m68k_GET_IMMEDIATE_W; // was commented out
   m68k_unrecognised();
 }
 void                              m68k_rts(){
   INSTRUCTION_TIME_ROUND(16);
-
   effective_address=m68k_lpeek(r[15]);
   r[15]+=4;
   m68k_READ_W(effective_address); // Check for bus/address errors
@@ -2786,6 +2972,7 @@ void                              m68k_trapv(){
     INSTRUCTION_TIME_ROUND(0); //Round first for interrupts
     INSTRUCTION_TIME_ROUND(34);
   }else{
+    PREFETCH_IRC;
     INSTRUCTION_TIME(4);
   }
 }
@@ -2819,26 +3006,29 @@ void                              m68k_movec(){
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
-
-
 void                              m68k_addq_b(){
   FETCH_TIMING;
   INSTRUCTION_TIME(4);
   m68k_src_b=(BYTE)PARAM_N;if(m68k_src_b==0)m68k_src_b=8;
   m68k_GET_DEST_B_NOT_A_FASTER_FOR_D;
   m68k_old_dest=m68k_DEST_B;
+  PREFETCH_IRC;
   m68k_DEST_B+=m68k_src_b;
+  
   SR_ADD_B;
 }void                             m68k_addq_w(){
   FETCH_TIMING;
   m68k_src_w=(WORD)PARAM_N;if(m68k_src_w==0)m68k_src_w=8;
   if((ir&BITS_543)==BITS_543_001){ //addq.w to address register
     INSTRUCTION_TIME(4);
+    PREFETCH_IRC;
     areg[PARAM_M]+=m68k_src_w;
+    
   }else{
     INSTRUCTION_TIME(4);
     m68k_GET_DEST_W_NOT_A_FASTER_FOR_D;
     m68k_old_dest=m68k_DEST_W;
+    PREFETCH_IRC;
     m68k_DEST_W+=m68k_src_w;
     SR_ADD_W;
   }
@@ -2847,11 +3037,14 @@ void                              m68k_addq_b(){
   m68k_src_l=(LONG)PARAM_N;if(m68k_src_l==0)m68k_src_l=8;
   if((ir&BITS_543)==BITS_543_001){ //addq.l to address register
     INSTRUCTION_TIME(4);
+    PREFETCH_IRC;
     areg[PARAM_M]+=m68k_src_l;
+    
   }else{
     INSTRUCTION_TIME(8);
     m68k_GET_DEST_L_NOT_A_FASTER_FOR_D;
     m68k_old_dest=m68k_DEST_L;
+    PREFETCH_IRC;
     m68k_DEST_L+=m68k_src_l;
     SR_ADD_L;
   }
@@ -2862,6 +3055,7 @@ void                              m68k_subq_b(){
   INSTRUCTION_TIME(4);
   m68k_GET_DEST_B_NOT_A_FASTER_FOR_D;
   m68k_old_dest=m68k_DEST_B;
+  PREFETCH_IRC;
   m68k_DEST_B-=m68k_src_b;
   SR_SUB_B(SR_X);
 }void                             m68k_subq_w(){
@@ -2869,11 +3063,13 @@ void                              m68k_subq_b(){
   m68k_src_w=(WORD)PARAM_N;if(m68k_src_w==0)m68k_src_w=8;
   if((ir&BITS_543)==BITS_543_001){ //subq.w to address register
     INSTRUCTION_TIME(4);
+    PREFETCH_IRC;
     areg[PARAM_M]-=m68k_src_w;
   }else{
     INSTRUCTION_TIME(4);
     m68k_GET_DEST_W_NOT_A_FASTER_FOR_D;
     m68k_old_dest=m68k_DEST_W;
+    PREFETCH_IRC;
     m68k_DEST_W-=m68k_src_w;
     SR_SUB_W(SR_X);
   }
@@ -2883,16 +3079,22 @@ void                              m68k_subq_b(){
   if((ir&BITS_543)==BITS_543_001){ //subq.l to address register
     areg[PARAM_M]-=m68k_src_l;
     INSTRUCTION_TIME(4);
+    PREFETCH_IRC;
   }else{
     INSTRUCTION_TIME(8);
     m68k_GET_DEST_L_NOT_A_FASTER_FOR_D;
     m68k_old_dest=m68k_DEST_L;
+    PREFETCH_IRC;
     m68k_DEST_L-=m68k_src_l;
     SR_SUB_L(SR_X);
   }
 }
 void                              m68k_dbCC_or_sCC(){
-  if ((ir&BITS_543)==BITS_543_001){
+  if ((ir&BITS_543)==BITS_543_001){ // DBCC
+/*
+If Condition False 
+Then (Dn - 1 -> Dn; If Dn  <> -1 Then PC + dn -> PC) 
+*/
     INSTRUCTION_TIME(6);
     m68k_GET_IMMEDIATE_W;
     if (!m68k_CONDITION_TEST){
@@ -2903,16 +3105,23 @@ void                              m68k_dbCC_or_sCC(){
         SET_PC(new_pc);
       }else{
         INSTRUCTION_TIME(4);
+        PREFETCH_IRC;
       }
     }else{
       INSTRUCTION_TIME(2);
+      PREFETCH_IRC;
     }
     FETCH_TIMING;
-  }else{
+  }else{ // SCC
     FETCH_TIMING;
     m68k_GET_DEST_B;
+    PREFETCH_IRC;
     if(m68k_CONDITION_TEST){
+#if defined(STEVEN_SEAGAL)
+      m68k_DEST_B=(char)0xff; // just a warning
+#else
       m68k_DEST_B=0xff;
+#endif
       if(DEST_IS_REGISTER){INSTRUCTION_TIME(2);}else {INSTRUCTION_TIME(4);}
     }else{
       m68k_DEST_B=0;
@@ -2939,6 +3148,7 @@ void                              m68k_dbCC_or_sCC(){
 void                              m68k_or_b_to_dN(){
   FETCH_TIMING;
   m68k_GET_SOURCE_B_NOT_A;
+  PREFETCH_IRC;
   m68k_dest=&(r[PARAM_N]);
   m68k_DEST_B|=m68k_src_b;
   SR_CLEAR(SR_Z+SR_N+SR_V+SR_C);
@@ -2946,6 +3156,7 @@ void                              m68k_or_b_to_dN(){
 }void                             m68k_or_w_to_dN(){
   FETCH_TIMING;
   m68k_GET_SOURCE_W_NOT_A;
+  PREFETCH_IRC;
   m68k_dest=&(r[PARAM_N]);
   m68k_DEST_W|=m68k_src_w;
   SR_CLEAR(SR_Z+SR_N+SR_V+SR_C);
@@ -2953,6 +3164,7 @@ void                              m68k_or_b_to_dN(){
 }void                             m68k_or_l_to_dN(){
   FETCH_TIMING;
   m68k_GET_SOURCE_L_NOT_A;
+  PREFETCH_IRC;
   if (SOURCE_IS_REGISTER_OR_IMMEDIATE){INSTRUCTION_TIME(4);}
   else {INSTRUCTION_TIME(2);}
   m68k_dest=&(r[PARAM_N]);
@@ -2960,6 +3172,9 @@ void                              m68k_or_b_to_dN(){
   SR_CLEAR(SR_Z+SR_N+SR_V+SR_C);
   SR_CHECK_Z_AND_N_L;
 }
+#if defined(SS_CPU_DIV)
+void m68k_divu();
+#else
 void                              m68k_divu(){
   DEBUG_ONLY(
     log_to(LOGSECTION_DIV,Str("DIV: ")+HEXSl(old_pc,6)+" - "+disa_d2(old_pc));
@@ -2982,8 +3197,9 @@ void                              m68k_divu(){
       r[PARAM_N]=((((unsigned long)r[PARAM_N])%((unsigned short)m68k_src_w))<<16)+q;
     }
   }
-
 }
+#endif
+
 void                              m68k_or_b_from_dN_or_sbcd(){
   FETCH_TIMING;
   switch(ir&BITS_543){
@@ -3008,13 +3224,15 @@ void                              m68k_or_b_from_dN_or_sbcd(){
     if(n<100)SR_SET(SR_X+SR_C); //if a carry occurs
     n%=100;
     if(n)SR_CLEAR(SR_Z);
+    PREFETCH_IRC;
     m68k_DEST_B=(BYTE)( (((n/10)%10)<<4)+(n%10) );
     break;
-  }default:
+  }default://or.b
     INSTRUCTION_TIME(4);
-    EXTRA_PREFETCH;
+    EXTRA_PREFETCH; 
     m68k_GET_DEST_B_NOT_A;
-    m68k_src_b=LOBYTE(r[PARAM_N]);
+    m68k_src_b=LOBYTE(r[PARAM_N]);  
+    PREFETCH_IRC;
     m68k_DEST_B|=m68k_src_b;
     SR_CLEAR(SR_Z+SR_N+SR_V+SR_C);
     SR_CHECK_Z_AND_N_B;
@@ -3028,9 +3246,10 @@ void                              m68k_or_b_from_dN_or_sbcd(){
     break;
   default:
     INSTRUCTION_TIME(4);
-    EXTRA_PREFETCH;
+    EXTRA_PREFETCH; 
     m68k_GET_DEST_W_NOT_A;
     m68k_src_w=LOWORD(r[PARAM_N]);
+    PREFETCH_IRC;
     m68k_DEST_W|=m68k_src_w;
     SR_CLEAR(SR_Z+SR_N+SR_V+SR_C);
     SR_CHECK_Z_AND_N_W;
@@ -3044,14 +3263,19 @@ void                              m68k_or_b_from_dN_or_sbcd(){
     break;
   default:
     INSTRUCTION_TIME(8);
-    EXTRA_PREFETCH;
+    EXTRA_PREFETCH; 
     m68k_GET_DEST_L_NOT_A;
     m68k_src_l=r[PARAM_N];
+    PREFETCH_IRC;
     m68k_DEST_L|=m68k_src_l;
     SR_CLEAR(SR_Z+SR_N+SR_V+SR_C);
     SR_CHECK_Z_AND_N_L;
   }
 }
+
+#if defined(SS_CPU_DIV)
+void m68k_divs();
+#else
 void                              m68k_divs(){
   DEBUG_ONLY(
     log_to(LOGSECTION_DIV,Str("DIV: ")+HEXSl(old_pc,6)+" - "+disa_d2(old_pc));
@@ -3075,7 +3299,7 @@ void                              m68k_divs(){
     }
   }
 }
-
+#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -3096,6 +3320,7 @@ void                              m68k_sub_b_to_dN(){
   m68k_GET_SOURCE_B_NOT_A;
   m68k_dest=&r[PARAM_N];
   m68k_old_dest=m68k_DEST_B;
+  PREFETCH_IRC;
   m68k_DEST_B-=m68k_src_b;
   SR_SUB_B(SR_X);
   INSTRUCTION_TIME_ROUND(0);
@@ -3105,6 +3330,7 @@ void                             m68k_sub_w_to_dN(){
   m68k_GET_SOURCE_W;   //A is allowed
   m68k_dest=&r[PARAM_N];
   m68k_old_dest=m68k_DEST_W;
+  PREFETCH_IRC;
   m68k_DEST_W-=m68k_src_w;
   SR_SUB_W(SR_X);
   INSTRUCTION_TIME_ROUND(0);
@@ -3116,6 +3342,7 @@ void                             m68k_sub_l_to_dN(){
   else {INSTRUCTION_TIME(2);}
   m68k_dest=&r[PARAM_N];
   m68k_old_dest=m68k_DEST_L;
+  PREFETCH_IRC;
   m68k_DEST_L-=m68k_src_l;
   SR_SUB_L(SR_X);
   INSTRUCTION_TIME_ROUND(0);
@@ -3123,8 +3350,8 @@ void                             m68k_sub_l_to_dN(){
   INSTRUCTION_TIME(4);
   m68k_GET_SOURCE_W;
   INSTRUCTION_TIME(4);
-
   m68k_src_l=(signed long)((signed short)m68k_src_w);
+  PREFETCH_IRC;
   areg[PARAM_N]-=m68k_src_l;
   INSTRUCTION_TIME_ROUND(0);
 }
@@ -3144,16 +3371,18 @@ void                              m68k_sub_b_from_dN(){
       m68k_SET_DEST_B(areg[PARAM_N]);
     }
     m68k_old_dest=m68k_DEST_B;
+    PREFETCH_IRC;
     m68k_DEST_B-=m68k_src_b;
     if(sr&SR_X)m68k_DEST_B--;
     SR_SUBX_B;
     break;
   default:
     INSTRUCTION_TIME(4);
-    EXTRA_PREFETCH;
+    EXTRA_PREFETCH; 
     m68k_src_b=LOBYTE(r[PARAM_N]);
     m68k_GET_DEST_B_NOT_A;
     m68k_old_dest=m68k_DEST_B;
+    PREFETCH_IRC;
     m68k_DEST_B-=m68k_src_b;
     SR_SUB_B(SR_X);
   }
@@ -3173,16 +3402,18 @@ void                              m68k_sub_w_from_dN(){
       areg[PARAM_N]-=2;m68k_SET_DEST_W(areg[PARAM_N]);
     }
     m68k_old_dest=m68k_DEST_W;
+    PREFETCH_IRC;
     m68k_DEST_W-=m68k_src_w;
     if(sr&SR_X)m68k_DEST_W--;
     SR_SUBX_W;
     break;
   default: //to memory
     INSTRUCTION_TIME(4);
-    EXTRA_PREFETCH;
+    EXTRA_PREFETCH; 
     m68k_src_w=LOWORD(r[PARAM_N]);
     m68k_GET_DEST_W_NOT_A;
     m68k_old_dest=m68k_DEST_W;
+    PREFETCH_IRC;
     m68k_DEST_W-=m68k_src_w;
     SR_SUB_W(SR_X);
   }
@@ -3203,16 +3434,18 @@ void                              m68k_sub_l_from_dN(){
       areg[PARAM_N]-=4;m68k_SET_DEST_L(areg[PARAM_N]);
     }
     m68k_old_dest=m68k_DEST_L;
+    PREFETCH_IRC;
     m68k_DEST_L-=m68k_src_l;
     if(sr&SR_X)m68k_DEST_L--;
     SR_SUBX_L;
     break;
   default:
     INSTRUCTION_TIME(8);
-    EXTRA_PREFETCH;
+    EXTRA_PREFETCH; 
     m68k_src_l=r[PARAM_N];
     m68k_GET_DEST_L_NOT_A;
     m68k_old_dest=m68k_DEST_L;
+    PREFETCH_IRC;
     m68k_DEST_L-=m68k_src_l;
     SR_SUB_L(SR_X);
   }
@@ -3222,6 +3455,7 @@ void                              m68k_sub_l_from_dN(){
   m68k_GET_SOURCE_L;
   if (SOURCE_IS_REGISTER_OR_IMMEDIATE){INSTRUCTION_TIME(4);}
   else {INSTRUCTION_TIME(2);}
+  PREFETCH_IRC;
   areg[PARAM_N]-=m68k_src_l;
   INSTRUCTION_TIME_ROUND(0);
 }
@@ -3247,6 +3481,7 @@ void                              m68k_cmp_b(){
   m68k_old_dest=LOBYTE(r[PARAM_N]);
   compare_buffer=m68k_old_dest;
   m68k_dest=&compare_buffer;
+  PREFETCH_IRC;
   m68k_DEST_B-=m68k_src_b;
   SR_SUB_B(0);
 }void                             m68k_cmp_w(){
@@ -3255,6 +3490,7 @@ void                              m68k_cmp_b(){
   m68k_old_dest=LOWORD(r[PARAM_N]);
   compare_buffer=m68k_old_dest;
   m68k_dest=&compare_buffer;
+  PREFETCH_IRC;
   m68k_DEST_W-=m68k_src_w;
   SR_SUB_W(0);
 }void                             m68k_cmp_l(){
@@ -3264,6 +3500,7 @@ void                              m68k_cmp_b(){
   m68k_old_dest=r[PARAM_N];
   compare_buffer=m68k_old_dest;
   m68k_dest=&compare_buffer;
+  PREFETCH_IRC;
   m68k_DEST_L-=m68k_src_l;
   SR_SUB_L(0);
 }void                             m68k_cmpa_w(){
@@ -3274,6 +3511,7 @@ void                              m68k_cmp_b(){
   m68k_old_dest=areg[PARAM_N];
   compare_buffer=m68k_old_dest;
   m68k_dest=&compare_buffer;
+  PREFETCH_IRC;
   m68k_DEST_L-=m68k_src_l;
   SR_SUB_L(0);
 }
@@ -3285,11 +3523,13 @@ void                              m68k_eor_b(){
     m68k_old_dest=m68k_peek(areg[PARAM_N]);areg[PARAM_N]++; if(PARAM_N==7)areg[PARAM_N]++;
     compare_buffer=m68k_old_dest;
     m68k_dest=&compare_buffer;
+    PREFETCH_IRC;
     m68k_DEST_B-=m68k_src_b;
     SR_SUB_B(0);
   }else{
     INSTRUCTION_TIME(4);
     m68k_GET_DEST_B_NOT_A_FASTER_FOR_D;
+    PREFETCH_IRC;
     m68k_DEST_B^=LOBYTE(r[PARAM_N]);
     SR_CLEAR(SR_Z+SR_N+SR_V+SR_C);
     SR_CHECK_Z_AND_N_B;
@@ -3302,11 +3542,13 @@ void                              m68k_eor_b(){
     m68k_old_dest=m68k_dpeek(areg[PARAM_N]);areg[PARAM_N]+=2;
     compare_buffer=m68k_old_dest;
     m68k_dest=&compare_buffer;
+    PREFETCH_IRC;
     m68k_DEST_W-=m68k_src_w;
     SR_SUB_W(0);
   }else{
     INSTRUCTION_TIME(4);
     m68k_GET_DEST_W_NOT_A_FASTER_FOR_D;
+    PREFETCH_IRC;
     m68k_DEST_W^=LOWORD(r[PARAM_N]);
     SR_CLEAR(SR_Z+SR_N+SR_V+SR_C);
     SR_CHECK_Z_AND_N_W;
@@ -3319,11 +3561,13 @@ void                              m68k_eor_b(){
     m68k_old_dest=m68k_lpeek(areg[PARAM_N]);areg[PARAM_N]+=4;
     compare_buffer=m68k_old_dest;
     m68k_dest=&compare_buffer;
+    PREFETCH_IRC;
     m68k_DEST_L-=m68k_src_l;
     SR_SUB_L(0);
   }else{
     INSTRUCTION_TIME(8);
     m68k_GET_DEST_L_NOT_A_FASTER_FOR_D;
+    PREFETCH_IRC;
     m68k_DEST_L^=r[PARAM_N];
     SR_CLEAR(SR_Z+SR_N+SR_V+SR_C);
     SR_CHECK_Z_AND_N_L;
@@ -3336,6 +3580,7 @@ void                             m68k_cmpa_l(){
   m68k_old_dest=areg[PARAM_N];
   compare_buffer=m68k_old_dest;
   m68k_dest=&compare_buffer;
+  PREFETCH_IRC;
   m68k_DEST_L-=m68k_src_l;
   SR_SUB_L(0);
 }
@@ -3359,6 +3604,7 @@ void                              m68k_and_b_to_dN(){
   FETCH_TIMING;
   m68k_GET_SOURCE_B_NOT_A;
   m68k_dest=&(r[PARAM_N]);
+  PREFETCH_IRC;
   m68k_DEST_B&=m68k_src_b;
   SR_CLEAR(SR_Z+SR_N+SR_V+SR_C);
   SR_CHECK_Z_AND_N_B;
@@ -3366,6 +3612,7 @@ void                              m68k_and_b_to_dN(){
   FETCH_TIMING;
   m68k_GET_SOURCE_W_NOT_A;
   m68k_dest=&(r[PARAM_N]);
+  PREFETCH_IRC;
   m68k_DEST_W&=m68k_src_w;
   SR_CLEAR(SR_Z+SR_N+SR_V+SR_C);
   SR_CHECK_Z_AND_N_W;
@@ -3375,22 +3622,21 @@ void                              m68k_and_b_to_dN(){
   if(SOURCE_IS_REGISTER_OR_IMMEDIATE){INSTRUCTION_TIME(4);}
   else {INSTRUCTION_TIME(2);}
   m68k_dest=&(r[PARAM_N]);
+  PREFETCH_IRC;
   m68k_DEST_L&=m68k_src_l;
   SR_CLEAR(SR_Z+SR_N+SR_V+SR_C);
   SR_CHECK_Z_AND_N_L;
 }
 void                              m68k_mulu(){
   FETCH_TIMING;
-
   m68k_GET_SOURCE_W_NOT_A;
   INSTRUCTION_TIME(34);
-
   ///// Hey, this is right apparently
   for (WORD Val=m68k_src_w;Val;Val>>=1){
     if (Val & 1) INSTRUCTION_TIME(2);
   }
-
   m68k_dest=&(r[PARAM_N]);
+  PREFETCH_IRC;
   m68k_DEST_L=(unsigned long)LOWORD(r[PARAM_N])*(unsigned long)((unsigned short)m68k_src_w);
   SR_CLEAR(SR_Z+SR_N+SR_C+SR_V);
   SR_CHECK_Z_AND_N_L;
@@ -3420,13 +3666,15 @@ void                              m68k_and_b_from_dN_or_abcd(){
     if(n>=100)SR_SET(SR_X+SR_C); //if a carry occurs
     n%=100;
     if(n)SR_CLEAR(SR_Z);
+    PREFETCH_IRC;
     m68k_DEST_B=(BYTE)( (((n/10)%10)<<4)+(n%10) );
     break;
   }default:
     INSTRUCTION_TIME(4);
-    EXTRA_PREFETCH;
+    EXTRA_PREFETCH; 
     m68k_GET_DEST_B_NOT_A;
     m68k_src_b=LOBYTE(r[PARAM_N]);
+    PREFETCH_IRC;
     m68k_DEST_B&=m68k_src_b;
     SR_CLEAR(SR_Z+SR_N+SR_V+SR_C);
     SR_CHECK_Z_AND_N_B;
@@ -3437,20 +3685,23 @@ void                              m68k_and_b_from_dN_or_abcd(){
   case BITS_543_000:
     INSTRUCTION_TIME(2);
     compare_buffer=r[PARAM_N];
+    PREFETCH_IRC;
     r[PARAM_N]=r[PARAM_M];
     r[PARAM_M]=compare_buffer;
     break;
   case BITS_543_001:
     INSTRUCTION_TIME(2);
     compare_buffer=areg[PARAM_N];
+    PREFETCH_IRC;
     areg[PARAM_N]=areg[PARAM_M];
     areg[PARAM_M]=compare_buffer;
     break;
   default:
     INSTRUCTION_TIME(4);
-    EXTRA_PREFETCH;
+    EXTRA_PREFETCH; 
     m68k_GET_DEST_W_NOT_A;
     m68k_src_w=LOWORD(r[PARAM_N]);
+    PREFETCH_IRC;
     m68k_DEST_W&=m68k_src_w;
     SR_CLEAR(SR_Z+SR_N+SR_V+SR_C);
     SR_CHECK_Z_AND_N_W;
@@ -3468,13 +3719,15 @@ void                              m68k_and_b_from_dN_or_abcd(){
     INSTRUCTION_TIME(2);
     compare_buffer=areg[PARAM_M];
     areg[PARAM_M]=r[PARAM_N];
+    PREFETCH_IRC;
     r[PARAM_N]=compare_buffer;
     break;
   default:
     INSTRUCTION_TIME(8);
-    EXTRA_PREFETCH;
+    EXTRA_PREFETCH; 
     m68k_GET_DEST_L_NOT_A;
     m68k_src_l=r[PARAM_N];
+    PREFETCH_IRC;
     m68k_DEST_L&=m68k_src_l;
     SR_CLEAR(SR_Z+SR_N+SR_V+SR_C);
     SR_CHECK_Z_AND_N_L;
@@ -3482,9 +3735,7 @@ void                              m68k_and_b_from_dN_or_abcd(){
 }
 void                              m68k_muls(){
   FETCH_TIMING;
-
   m68k_GET_SOURCE_W_NOT_A;
-
   INSTRUCTION_TIME(34);
   ///// Hey, this is right apparently
   int LastLow=0;
@@ -3495,6 +3746,7 @@ void                              m68k_muls(){
     Val>>=1;
   }
   m68k_dest=&(r[PARAM_N]);
+  PREFETCH_IRC;
   m68k_DEST_L=((signed long)((signed short)LOWORD(r[PARAM_N])))*((signed long)((signed short)m68k_src_w));
   SR_CLEAR(SR_Z+SR_N+SR_C+SR_V);
   SR_CHECK_Z_AND_N_L;
@@ -3522,6 +3774,7 @@ void                              m68k_add_b_to_dN(){
   m68k_GET_SOURCE_B_NOT_A;
   m68k_dest=&r[PARAM_N];
   m68k_old_dest=m68k_DEST_B;
+  PREFETCH_IRC;
   m68k_DEST_B+=m68k_src_b;
   SR_ADD_B;
   INSTRUCTION_TIME_ROUND(0);
@@ -3530,6 +3783,7 @@ void                              m68k_add_b_to_dN(){
   m68k_GET_SOURCE_W;   //A is allowed
   m68k_dest=&r[PARAM_N];
   m68k_old_dest=m68k_DEST_W;
+  PREFETCH_IRC;
   m68k_DEST_W+=m68k_src_w;
   SR_ADD_W;
   INSTRUCTION_TIME_ROUND(0);
@@ -3540,6 +3794,7 @@ void                              m68k_add_b_to_dN(){
   else {INSTRUCTION_TIME(2);}
   m68k_dest=&r[PARAM_N];
   m68k_old_dest=m68k_DEST_L;
+  PREFETCH_IRC;
   m68k_DEST_L+=m68k_src_l;
   SR_ADD_L;
   INSTRUCTION_TIME_ROUND(0);
@@ -3548,6 +3803,7 @@ void                              m68k_add_b_to_dN(){
   m68k_GET_SOURCE_W;
   INSTRUCTION_TIME(4);
   m68k_src_l=(signed long)((signed short)m68k_src_w);
+  PREFETCH_IRC;
   areg[PARAM_N]+=m68k_src_l;
   INSTRUCTION_TIME_ROUND(0);
 }
@@ -3569,17 +3825,21 @@ void                              m68k_add_b_from_dN(){
       m68k_SET_DEST_B(areg[PARAM_N]);
     }
     m68k_old_dest=m68k_DEST_B;
+    PREFETCH_IRC;
     m68k_DEST_B+=m68k_src_b;
     if(sr&SR_X)m68k_DEST_B++;
+    
     SR_ADDX_B;
     break;
   default:
     INSTRUCTION_TIME(4);
-    EXTRA_PREFETCH;
+    EXTRA_PREFETCH; 
     m68k_src_b=LOBYTE(r[PARAM_N]);
     m68k_GET_DEST_B_NOT_A;
     m68k_old_dest=m68k_DEST_B;
+    PREFETCH_IRC;
     m68k_DEST_B+=m68k_src_b;
+    
     SR_ADD_B;
   }
   INSTRUCTION_TIME_ROUND(0);
@@ -3598,16 +3858,20 @@ void                              m68k_add_w_from_dN(){
       areg[PARAM_N]-=2;m68k_SET_DEST_W(areg[PARAM_N]);
     }
     m68k_old_dest=m68k_DEST_W;
+    PREFETCH_IRC;
     m68k_DEST_W+=m68k_src_w;
+
     if(sr&SR_X)m68k_DEST_W++;
+    
     SR_ADDX_W;
     break;
   default:
     INSTRUCTION_TIME(4);
-    EXTRA_PREFETCH
+    EXTRA_PREFETCH; 
     m68k_src_w=LOWORD(r[PARAM_N]);
     m68k_GET_DEST_W_NOT_A;
     m68k_old_dest=m68k_DEST_W;
+    PREFETCH_IRC;
     m68k_DEST_W+=m68k_src_w;
     SR_ADD_W;
   }
@@ -3628,16 +3892,19 @@ void                              m68k_add_l_from_dN(){
       areg[PARAM_N]-=4;m68k_SET_DEST_L(areg[PARAM_N]);
     }
     m68k_old_dest=m68k_DEST_L;
+    PREFETCH_IRC;
     m68k_DEST_L+=m68k_src_l;
     if(sr&SR_X)m68k_DEST_L++;
+    
     SR_ADDX_L;
     break;
   default:
     INSTRUCTION_TIME(8);
-    EXTRA_PREFETCH;
+    EXTRA_PREFETCH; 
     m68k_src_l=r[PARAM_N];
     m68k_GET_DEST_L_NOT_A;
     m68k_old_dest=m68k_DEST_L;
+    PREFETCH_IRC;
     m68k_DEST_L+=m68k_src_l;
     SR_ADD_L;
   }
@@ -3651,6 +3918,7 @@ void                             m68k_adda_l(){
   }else{
     INSTRUCTION_TIME(2);
   }
+  PREFETCH_IRC;
   areg[PARAM_N]+=m68k_src_l;
   INSTRUCTION_TIME_ROUND(0);
 }
@@ -3684,6 +3952,7 @@ void                              m68k_asr_b_to_dM(){
       SR_CLEAR(SR_C+SR_X);
     }
   }
+  PREFETCH_IRC;
   *((signed char*)m68k_dest)>>=m68k_src_w;
   SR_CHECK_Z_AND_N_B;
 }void                             m68k_lsr_b_to_dM(){
@@ -3704,6 +3973,7 @@ void                              m68k_asr_b_to_dM(){
       }
     }
   }
+  PREFETCH_IRC;
   *((unsigned char*)m68k_dest)>>=m68k_src_w;
   SR_CHECK_Z_AND_N_B;
 }void                             m68k_roxr_b_to_dM(){ //okay
@@ -3712,6 +3982,7 @@ void                              m68k_asr_b_to_dM(){
   INSTRUCTION_TIME(2+2*m68k_src_w);
   m68k_dest=&(r[PARAM_M]);
   SR_CLEAR(SR_N+SR_V+SR_Z+SR_C);if(sr&SR_X)SR_SET(SR_C);
+  PREFETCH_IRC;
   for(int n=0;n<m68k_src_w;n++){
     bool old_x=(sr&SR_X);
     if(m68k_DEST_B&1){
@@ -3728,6 +3999,7 @@ void                              m68k_asr_b_to_dM(){
   INSTRUCTION_TIME(2+2*m68k_src_w);
   m68k_dest=&(r[PARAM_M]);
   SR_CLEAR(SR_N+SR_V+SR_Z+SR_C);
+  PREFETCH_IRC;
   for(int n=0;n<m68k_src_w;n++){
     bool old_x=m68k_DEST_B&1;
     if(old_x){
@@ -3746,6 +4018,7 @@ void                              m68k_asr_w_to_dM(){
   if(m68k_src_w>31)m68k_src_w=31;
   m68k_dest=&(r[PARAM_M]);
   SR_CLEAR(SR_N+SR_V+SR_Z+SR_C);
+  PREFETCH_IRC;
   if(m68k_src_w){
     if( m68k_DEST_W&(WORD)( 1<<min(m68k_src_w-1,15) )  ){
       SR_SET(SR_C+SR_X);
@@ -3773,6 +4046,7 @@ void                              m68k_asr_w_to_dM(){
       }
     }
   }
+  PREFETCH_IRC;
   *((unsigned short*)m68k_dest)>>=m68k_src_w;
   SR_CHECK_Z_AND_N_W;
 }void                             m68k_roxr_w_to_dM(){          //okay
@@ -3781,6 +4055,7 @@ void                              m68k_asr_w_to_dM(){
   INSTRUCTION_TIME(2+2*m68k_src_w);
   m68k_dest=&(r[PARAM_M]);
   SR_CLEAR(SR_N+SR_V+SR_Z+SR_C);if(sr&SR_X)SR_SET(SR_C);
+  PREFETCH_IRC;
   for(int n=0;n<m68k_src_w;n++){
     bool old_x=(sr&SR_X);
     if(m68k_DEST_W&1){
@@ -3797,6 +4072,7 @@ void                              m68k_asr_w_to_dM(){
   INSTRUCTION_TIME(2+2*m68k_src_w);
   m68k_dest=&(r[PARAM_M]);
   SR_CLEAR(SR_N+SR_V+SR_Z+SR_C);
+  PREFETCH_IRC;
   for(int n=0;n<m68k_src_w;n++){
     bool old_x=m68k_DEST_W&1;
     if(old_x){
@@ -3815,6 +4091,7 @@ void                              m68k_asr_l_to_dM(){
   m68k_dest=&(r[PARAM_M]);
 
   SR_CLEAR(SR_N+SR_V+SR_Z+SR_C);
+  PREFETCH_IRC;
   if (m68k_src_w){
     // If shift by 31 or more then test MSB as this is copied to the whole long
     if ( m68k_DEST_L & (1 << min(m68k_src_w-1,31)) ){
@@ -3846,6 +4123,7 @@ void                             m68k_lsr_l_to_dM(){
       }
     }
   }
+  PREFETCH_IRC;
   *((unsigned long*)m68k_dest)>>=m68k_src_w;
   if(m68k_src_w>31)m68k_DEST_L=0;
   SR_CHECK_Z_AND_N_L;
@@ -3855,6 +4133,7 @@ void                             m68k_lsr_l_to_dM(){
   INSTRUCTION_TIME(4+2*m68k_src_w);
   m68k_dest=&(r[PARAM_M]);
   SR_CLEAR(SR_N+SR_V+SR_Z+SR_C);if(sr&SR_X)SR_SET(SR_C);
+  PREFETCH_IRC;
   for(int n=0;n<m68k_src_w;n++){
     bool old_x=(sr&SR_X);
     if(m68k_DEST_L&1){
@@ -3871,6 +4150,7 @@ void                             m68k_lsr_l_to_dM(){
   INSTRUCTION_TIME(4+2*m68k_src_w);
   m68k_dest=&(r[PARAM_M]);
   SR_CLEAR(SR_N+SR_V+SR_Z+SR_C);
+  PREFETCH_IRC;
   for(int n=0;n<m68k_src_w;n++){
     bool old_x=m68k_DEST_L&1;
     if(old_x){
@@ -3908,6 +4188,7 @@ void                              m68k_asl_b_to_dM(){
       SR_SET(SR_V);
     }
   }
+  PREFETCH_IRC;
   *((signed char*)m68k_dest)<<=m68k_src_w;
   SR_CHECK_Z_AND_N_B;
 }void                             m68k_lsl_b_to_dM(){
@@ -3925,6 +4206,7 @@ void                              m68k_asl_b_to_dM(){
       }
     }
   }
+  PREFETCH_IRC;
   *((unsigned char*)m68k_dest)<<=m68k_src_w;
   SR_CHECK_Z_AND_N_B;
 }void                             m68k_roxl_b_to_dM(){
@@ -3934,6 +4216,7 @@ void                              m68k_asl_b_to_dM(){
   INSTRUCTION_TIME(2+2*m68k_src_w);
   m68k_dest=&(r[PARAM_M]);
   SR_CLEAR(SR_N+SR_V+SR_Z+SR_C);if(sr&SR_X)SR_SET(SR_C);
+  PREFETCH_IRC;
   for(int n=0;n<m68k_src_w;n++){
     bool old_x=(sr&SR_X);
     if(m68k_DEST_B&MSB_B){
@@ -3950,6 +4233,7 @@ void                              m68k_asl_b_to_dM(){
   INSTRUCTION_TIME(2+2*m68k_src_w);
   m68k_dest=&(r[PARAM_M]);
   SR_CLEAR(SR_N+SR_V+SR_Z+SR_C);
+  PREFETCH_IRC;
   for(int n=0;n<m68k_src_w;n++){
     bool old_x=m68k_DEST_B&MSB_B;
     if(old_x){
@@ -3984,6 +4268,7 @@ void                              m68k_asl_w_to_dM(){       //okay!
       SR_SET(SR_V);
     }
   }
+  PREFETCH_IRC;
   *((signed short*)m68k_dest)<<=m68k_src_w;
   SR_CHECK_Z_AND_N_W;
 }void                             m68k_lsl_w_to_dM(){
@@ -4001,6 +4286,7 @@ void                              m68k_asl_w_to_dM(){       //okay!
       }
     }
   }
+  PREFETCH_IRC;
   *((unsigned short*)m68k_dest)<<=m68k_src_w;
 
   SR_CHECK_Z_AND_N_W;
@@ -4011,6 +4297,7 @@ void                             m68k_roxl_w_to_dM(){
   INSTRUCTION_TIME(2+2*m68k_src_w);
   m68k_dest=&(r[PARAM_M]);
   SR_CLEAR(SR_N+SR_V+SR_Z+SR_C);if(sr&SR_X)SR_SET(SR_C);
+  PREFETCH_IRC;
   for(int n=0;n<m68k_src_w;n++){
     bool old_x=(sr&SR_X);
     if(m68k_DEST_W&MSB_W){
@@ -4027,6 +4314,7 @@ void                             m68k_roxl_w_to_dM(){
   INSTRUCTION_TIME(2+2*m68k_src_w);
   m68k_dest=&(r[PARAM_M]);
   SR_CLEAR(SR_N+SR_V+SR_Z+SR_C);
+  PREFETCH_IRC;
   for(int n=0;n<m68k_src_w;n++){
     bool old_x=m68k_DEST_W&MSB_W;
     if(old_x){
@@ -4060,6 +4348,7 @@ void                              m68k_asl_l_to_dM(){    //okay!
       SR_SET(SR_V);
     }
   }
+  PREFETCH_IRC;
   *((signed long*)m68k_dest)<<=m68k_src_w;
   if(m68k_src_w>31)m68k_DEST_L=0;
   SR_CHECK_Z_AND_N_L;
@@ -4077,6 +4366,7 @@ void                              m68k_asl_l_to_dM(){    //okay!
       }
     }
   }
+  PREFETCH_IRC;
   *((unsigned long*)m68k_dest)<<=m68k_src_w;
   if(m68k_src_w>31)m68k_DEST_L=0;
   SR_CHECK_Z_AND_N_L;
@@ -4086,6 +4376,7 @@ void                              m68k_asl_l_to_dM(){    //okay!
   INSTRUCTION_TIME(4+2*m68k_src_w);
   m68k_dest=&(r[PARAM_M]);
   SR_CLEAR(SR_N+SR_V+SR_Z+SR_C);if(sr&SR_X)SR_SET(SR_C);
+  PREFETCH_IRC;
   for(int n=0;n<m68k_src_w;n++){
     bool old_x=(sr&SR_X);
     if(m68k_DEST_L&MSB_L){
@@ -4102,6 +4393,7 @@ void                              m68k_asl_l_to_dM(){    //okay!
   INSTRUCTION_TIME(4+2*m68k_src_w);
   m68k_dest=&(r[PARAM_M]);
   SR_CLEAR(SR_N+SR_V+SR_Z+SR_C);
+  PREFETCH_IRC;
   for(int n=0;n<m68k_src_w;n++){
     bool old_x=m68k_DEST_L&MSB_L;
     if(old_x){
@@ -4117,6 +4409,7 @@ void                              m68k_bit_shift_right_to_mem(){
   FETCH_TIMING;
   INSTRUCTION_TIME(4);
   m68k_GET_DEST_W_NOT_A_OR_D;
+  PREFETCH_IRC;
   switch(ir&BITS_ba9){
   case BITS_ba9_000:
     SR_CLEAR(SR_N+SR_V+SR_Z+SR_C+SR_X);
@@ -4159,7 +4452,7 @@ void                              m68k_bit_shift_right_to_mem(){
     break;
 
   }default:
-    m68k_unrecognised();
+    m68k_unrecognised(); // SS it doesn't pay to crash before
     break;
   }
 }
@@ -4167,6 +4460,7 @@ void                              m68k_bit_shift_left_to_mem(){
   FETCH_TIMING;
   INSTRUCTION_TIME(4);
   m68k_GET_DEST_W_NOT_A_OR_D;
+  PREFETCH_IRC;
   switch(ir&BITS_ba9){
   case BITS_ba9_000: //asl
     SR_CLEAR(SR_N+SR_V+SR_Z+SR_C+SR_X);
@@ -4219,8 +4513,6 @@ void                              m68k_bit_shift_left_to_mem(){
 
 
 
-
-
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
@@ -4239,6 +4531,14 @@ void                              m68k_bit_shift_left_to_mem(){
 extern "C" void m68k_0000(){ //immediate stuff
   m68k_jump_line_0[(ir&(BITS_876|BITS_ba9))>>6]();
 }
+
+// Note the INSTRUCTION_TIME were commented out by Steem authors, and
+// the other comments are theirs too. We define our versions of the MOVE
+// instructions in SSECpu.cpp.
+
+#if defined(STEVEN_SEAGAL) && defined(SS_CPU_MOVE_B)
+void m68k_0001();
+#else
 
 void m68k_0001(){  //move.b
   INSTRUCTION_TIME(4); // I don't think this should be here, does move read on cycle 0?
@@ -4314,6 +4614,12 @@ void m68k_0001(){  //move.b
   }
 }
 
+#endif
+
+#if defined(STEVEN_SEAGAL) && defined(SS_CPU_MOVE_L)
+void m68k_0010();
+#else
+
 void m68k_0010()  //move.l
 {
   INSTRUCTION_TIME(4);
@@ -4387,6 +4693,12 @@ void m68k_0010()  //move.l
     if (refetch) prefetch_buf[0]=*(lpfetch-MEM_DIR);
   }
 }
+
+#endif
+
+#if defined(STEVEN_SEAGAL) && defined(SS_CPU_MOVE_W)
+void m68k_0011();
+#else
 
 void m68k_0011() //move.w
 {
@@ -4463,6 +4775,8 @@ void m68k_0011() //move.w
   }
 }
 
+#endif
+
 extern "C" void m68k_0100(){
   m68k_jump_line_4[(ir&(BITS_ba9|BITS_876))>>6]();
 }
@@ -4471,42 +4785,50 @@ extern "C" void m68k_0101(){
   m68k_jump_line_5[(ir&BITS_876)>>6]();
 }
 
-extern "C" void m68k_0110(){  //bCC
+extern "C" void m68k_0110(){  //Bcc + BSR
   if (LOBYTE(ir)){
+    // 8-bit displacement
     MEM_ADDRESS new_pc=(pc+(signed long)((signed char)LOBYTE(ir))) | pc_high_byte;
-    if ((ir & 0xf00)==0x100){ //bsr
+    if ((ir & 0xf00)==0x100){ //BSR
+#if defined(SS_CPU_PREFETCH)
+      Cpu.PrefetchClass=2;
+#endif
       m68k_PUSH_L(PC32);
       m68k_READ_W(new_pc); // Check for bus/address errors
       SET_PC(new_pc);
       INSTRUCTION_TIME_ROUND(18); // round for fetch
-    }else{
-      if (m68k_CONDITION_TEST){
+    }else{ // Bcc
+      if (m68k_CONDITION_TEST){ // branch taken
         m68k_READ_W(new_pc); // Check for bus/address errors
         SET_PC(new_pc);
         INSTRUCTION_TIME_ROUND(10); // round for fetch
-      }else{
-        INSTRUCTION_TIME_ROUND(8);
+      }else{ // branch not taken
+        INSTRUCTION_TIME_ROUND(8); // round for fetch
+        PREFETCH_IRC;
       }
     }
   }else{
-    if ((ir & 0xf00)==0x100){ //bsr.l
+    if ((ir & 0xf00)==0x100){ //BSR.L  //.W
+#if defined(SS_CPU_PREFETCH)
+      Cpu.PrefetchClass=2;
+#endif
       m68k_PUSH_L(PC32+2);
-
       MEM_ADDRESS new_pc=(pc+(signed long)((signed short)m68k_fetchW())) | pc_high_byte;
       // stacked pc is always instruction pc+2 due to prefetch (pc doesn't increase before new_pc is read)
       m68k_READ_W(new_pc); // Check for bus/address errors
-      SET_PC(new_pc);
+      SET_PC(new_pc);      
       INSTRUCTION_TIME_ROUND(18); // round for fetch
-    }else{ // Bcc.l
+    }else{ // Bcc.l // .W
       MEM_ADDRESS new_pc=(pc+(signed long)((signed short)m68k_fetchW())) | pc_high_byte;
       if (m68k_CONDITION_TEST){
         // stacked pc is always instruction pc+2 due to prefetch (pc doesn't increase before new_pc is read)
         m68k_READ_W(new_pc); // Check for bus/address errors
         SET_PC(new_pc);
-        INSTRUCTION_TIME_ROUND(10);
+        INSTRUCTION_TIME_ROUND(10); // round for fetch
       }else{
         pc+=2;
-        INSTRUCTION_TIME_ROUND(12);
+        INSTRUCTION_TIME_ROUND(12); // round for fetch
+        PREFETCH_IRC;
       }
     }
   }
@@ -4516,11 +4838,15 @@ extern "C" void m68k_0111(){  //moveq
   if(ir&BIT_8){
     m68k_unrecognised();
   }else{
+#if defined(SS_CPU_PREFETCH)
+    Cpu.PrefetchClass=1;
+#endif
     FETCH_TIMING;
     m68k_dest=&(r[PARAM_N]);
     m68k_DEST_L=(signed long)((signed char)LOBYTE(ir));
     SR_CLEAR(SR_Z+SR_N+SR_C+SR_V);
     SR_CHECK_Z_AND_N_L;
+    PREFETCH_IRC;
   }
 }
 
@@ -4575,11 +4901,13 @@ extern "C" void m68k_1111(){  //line-f emulator
   INSTRUCTION_TIME_ROUND(34);
   m68k_interrupt(LPEEK(BOMBS_LINE_F*4));
   m68k_do_trace_exception=0;
+
   debug_check_break_on_irq(BREAK_IRQ_LINEF_IDX);
 }
-//       check PC-relative addressing
+//       check PC-relative addressing  // SS: gulp
 
+#include "cpuinit.cpp"	
 
-#include "cpuinit.cpp"
-
-
+#if defined(SS_CPU)
+#include "SSECpu.cpp"
+#endif

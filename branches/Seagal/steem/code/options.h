@@ -23,6 +23,7 @@ private:
   ScrollControlWin Scroller;
   WNDPROC Old_GroupBox_WndProc;
   static DirectoryTree DTree;
+  //WIN32
 #elif defined(UNIX)
   static int WinProc(TOptionBox*,Window,XEvent*);
 	static int listview_notify_proc(hxc_listview*,int,int);
@@ -63,12 +64,21 @@ private:
   hxc_button FileGroup[3],FileDisplay[3],FileChooseBut[3],FileEmptyBut[3];
   
   hxc_button high_priority_but,start_click_but;
+#if defined(STEVEN_SEAGAL) && defined(SS_VARIOUS)
+  hxc_button specific_hacks_but;
+#endif
   hxc_button FFMaxSpeedLabel,SMSpeedLabel,RunSpeedLabel;
   hxc_scrollbar FFMaxSpeedSB,SMSpeedSB,RunSpeedSB;
   hxc_button ff_on_fdc_but;
 
   hxc_button fs_label;hxc_dropdown frameskip_dd;
   hxc_button bo_label;hxc_dropdown border_dd;
+#if defined(STEVEN_SEAGAL) && defined(SS_STF)
+  hxc_button st_type_label;hxc_dropdown st_type_dd;
+#endif
+#if defined(STEVEN_SEAGAL) && defined(SS_VID_BORDERS)
+  hxc_button border_size_label; hxc_dropdown border_size_dd;
+#endif
   hxc_button size_group,reschangeresize_but;
   hxc_button lowres_doublesize_but,medres_doublesize_but;
   hxc_button screenshots_group,screenshots_fol_display;
@@ -100,7 +110,7 @@ private:
   hxc_listview drop_lv;
 
   static hxc_dir_lv dir_lv;
-#endif
+#endif//UNIX
   void FullscreenBrightnessBitmap();
 
   EasyStr WAVOutputDir;
@@ -158,10 +168,19 @@ public:
   void UpdateParallel();
 
   HWND BorderOption;
+#if defined(STEVEN_SEAGAL) && defined(SS_STF)
+  HWND STTypeOption;
+#endif
+#if defined(STEVEN_SEAGAL) && defined(SS_VID_BORDERS)
+  HWND BorderSizeOption;
+#endif
 #elif defined(UNIX)
   void UpdatePortDisplay(int);
 
   hxc_button internal_speaker_but; // changed in Sound_Start
+#if defined(STEVEN_SEAGAL) && defined(SS_VARIOUS)
+  hxc_button keyboard_click_but; 
+#endif
 #endif
 
   void MachineUpdateIfVisible();

@@ -5,6 +5,10 @@ DESCRIPTION: Alternative C++ drawing routines for systems that don't support
 Steem's faster x86 assembler versions.
 ---------------------------------------------------------------------------*/
 
+// SS a good idea to check here to understand what's going on
+// as opposed to assembly Chinese
+// Pb: it's Chinese too
+
 #include "pch.h"
 #pragma hdrstop
 

@@ -37,7 +37,11 @@ EXT bool mmu_confused;        //144
 EXT unsigned long hbl_count INIT(0);
 
 // Don't forget to update this in the resource file too!
+#if defined(STEVEN_SEAGAL)
+EXT const char *stem_version_text INIT("SSE 3.3.0");
+#else
 EXT const char *stem_version_text INIT("3.2");
+#endif
 
 #define STEEM_EMAIL "steem@gmx.net"
 #define STEEM_WEB "http:/""/steem.atari.st/"
@@ -148,9 +152,11 @@ DWORD* lpCART_LPEEK(DWORD ad){ RANGE_CHECK_MESSAGE(128*1024,3,0);return LPDWORD(
 #else
 
 #ifndef BIG_ENDIAN_PROCESSOR
-//little endian version
+//little endian version 
+//SS: like PC
 
 #define PEEK(l)    *(BYTE*)(Mem_End_minus_1-(l))
+#define DPEEK(l)   *(WORD*)(Mem_End_minus_2-(l))
 #define DPEEK(l)   *(WORD*)(Mem_End_minus_2-(l))
 #define LPEEK(l)   *(DWORD*)(Mem_End_minus_4-(l))
 #define lpPEEK(l)  (BYTE*)(Mem_End_minus_1-(l))
@@ -224,6 +230,7 @@ EXT long m68k_old_dest;
 EXT MEM_ADDRESS effective_address;
 
 EXT int cpu_timer;
+
 EXT WORD m68k_ap,m68k_iriwo;
 EXT short m68k_src_w;
 EXT long m68k_src_l;

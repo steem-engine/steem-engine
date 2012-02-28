@@ -23,12 +23,25 @@ other files that make up the Steem module.
 ------------------------------------------------------------------
 */
 #define IN_MAIN
-#include "conditions.h"
 
+#if defined(STEVEN_SEAGAL)
+#pragma message("Steven Seagal build")
+#else
+#pragma message("Original 3.2 build")
+#endif
+
+#ifndef _VC_BUILD
+#include "conditions.h"	
+#endif
+#include "SSE.h"
 const char *stem_version_date_text=__DATE__ " - " __TIME__;
 
 #ifndef ONEGAME
+#if defined(STEVEN_SEAGAL) && defined(SS_VARIOUS)
+const char *stem_window_title=WINDOW_TITLE; // in SSE.h
+#else
 const char *stem_window_title="Steem Engine";
+#endif
 #else
 const char *stem_window_title=ONEGAME;
 #endif
@@ -48,8 +61,7 @@ TOptionBox OptionBox;
 TShortcutBox ShortcutBox;
 TPatchesBox PatchesBox;
 
-#include "controls.cpp"
-
+#include "controls.cpp"	
 #include "stemdialogs.cpp"
 
 #include "floppy_drive.cpp"
@@ -70,7 +82,6 @@ TPatchesBox PatchesBox;
 
 #include "display.cpp"
 #include "init_sound.cpp"
-
 #include "acc.cpp"
 #ifdef _DEBUG_BUILD
   #include "d2.cpp"
@@ -96,11 +107,14 @@ TPatchesBox PatchesBox;
 #include "macros.cpp"
 #include <wordwrapper.cpp>
 #include "screen_saver.cpp"
-
+#include "SSE.cpp"
 #ifdef ONEGAME
 #define _USE_MEMORY_TO_MEMORY_DECOMPRESSION
-#include <urarlib/urarlib.h>
-#include <urarlib/urarlib.c>
+//#include <urarlib/urarlib.h>
+//#include <urarlib/urarlib.c>	//SS
+#include <unrarlib/unrarlib/unrarlib.h>
+#include <unrarlib/unrarlib/unrarlib.c>
+
 #include "onegame.cpp"
 #endif
 //---------------------------------------------------------------------------
@@ -113,7 +127,7 @@ int WINAPI WinMain(HINSTANCE Instance,HINSTANCE,char *,int)
 {
   Inst=Instance;
   RunDir=GetEXEDir();
-
+	
   InitializeCriticalSection(&agenda_cs);
 
 #elif defined(UNIX)
@@ -124,7 +138,7 @@ int main(int argc,char *argv[])
   _argc=argc;
 
   for (int n=0;n<_argc-1;n++){
-    EasyStr butt;
+    EasyStr butt; // SS: butt?
     int Type=GetComLineArgType(_argv[1+n],butt);
     if (Type==ARG_HELP){
       PrintHelpToStdout();
@@ -162,11 +176,18 @@ int main(int argc,char *argv[])
 
   InitColoursAndIcons();
 
-#endif
+#endif//UNIX
 
   NO_SLASH(RunDir);
 
+#if defined(STEVEN_SEAGAL) // strange, check this again
+
+#elif defined(WIN32) && !defined(_DEBUG_BUILD) && !defined(_MINGW_BUILD) && !defined(ONEGAME)
+  __try{	// the old try - compile with GX- note: just to make compile
+		// I don't know the use of this
+#else
   try{
+#endif
     if (Initialise()==0){
       CleanUpSteem();
       if (CrashFile.NotEmpty()) DeleteFile(CrashFile);
@@ -188,7 +209,7 @@ int main(int argc,char *argv[])
     if (DWin) ShowWindow(DWin,SW_HIDE);
     if (trace_window_handle) ShowWindow(trace_window_handle,SW_HIDE);
 #endif
-
+//WIN32
 #elif defined(UNIX)
     XEvent Ev;
     LOOP{
@@ -209,7 +230,7 @@ int main(int argc,char *argv[])
     }
     XUnmapWindow(XD,StemWin);
     XFlush(XD);
-#endif
+#endif//UNIX
 
     if (SnapShotGetLastBackupPath().NotEmpty()){
       log("SHUTDOWN: Deleting last memory snapshot backup");
@@ -217,7 +238,9 @@ int main(int argc,char *argv[])
     }
     PerformCleanShutdown();
   	return EXIT_SUCCESS;
-#if defined(WIN32) && !defined(_DEBUG_BUILD) && !defined(_MINGW_BUILD) && !defined(ONEGAME)
+#if defined(STEVEN_SEAGAL)
+
+#elif defined(WIN32) && !defined(_DEBUG_BUILD) && !defined(_MINGW_BUILD) && !defined(ONEGAME)
   }__except(EXCEPTION_EXECUTE_HANDLER){
     if (AutoLoadSnapShot){
       MoveFileEx(WriteDir+SLASH+AutoSnapShotName+".sts",
@@ -422,11 +445,16 @@ UNIX_ONLY( hxc::font_sl.Insert(0,0,Path,NULL); )
     bool CrashedLastTime=CleanupTempFiles();
     if (TwoSteems==0){
       if (CrashedLastTime){
+#if defined (STEVEN_SEAGAL) && defined(SS_DEBUG)
+        // Crashes are common while testing
+        StepByStepInit=0;
+#else
         StepByStepInit=Alert(T("It seems that Steem did not close properly. If it crashed we are terribly sorry, it shouldn't happen. If you can get Steem to crash 2 or more times when doing the same thing then please tell us, it would be a massive help.")+
                 "\n\nE-mail: " STEEM_EMAIL "\n\n"+
               T("Please send as much detail as you can and we'll look into it as soon as possible. ")+
               "\n\n"+T("If you are having trouble starting Steem, you might want to step carefully through the initialisation process.  Would you like to do a step-by-step confirmation?"),
               T("Step-By-Step Initialisation"),MB_ICONQUESTION | MB_YESNO)==IDYES;
+#endif
       }
 
       CrashFile.SetLength(MAX_PATH);
@@ -778,7 +806,9 @@ UNIX_ONLY( hxc::font_sl.Insert(0,0,Path,NULL); )
       EasyStr Online=LPSTR(CSF.GetInt("Update","AlwaysOnline",0) ? " online":"");
       EasyStr NoPatch=LPSTR(CSF.GetInt("Update","PatchDownload",true)==0 ? " nopatchcheck":"");
       EasyStr AskPatch=LPSTR(CSF.GetInt("Update","AskPatchInstall",0) ? " askpatchinstall":"");
+#if !defined(STEVEN_SEAGAL) && !defined(STEVEN_SEAGAL_)
       WinExec(EasyStr("\"")+RunDir+"\\SteemUpdate.exe\" silent"+Online+NoPatch+AskPatch,SW_SHOW);
+#endif
     }
   }
 #endif
@@ -819,7 +849,11 @@ UNIX_ONLY( hxc::font_sl.Insert(0,0,Path,NULL); )
         }
       }
       if (BootPasti!=BOOT_PASTI_DEFAULT){
+#if defined(STEVEN_SEAGAL)
+        BOOL old_pasti=pasti_active;
+#else
         bool old_pasti=pasti_active;
+#endif
         pasti_active=BootPasti==BOOT_PASTI_ON;
         if (DiskMan.IsVisible() && old_pasti!=pasti_active) DiskMan.RefreshDiskView();
       }
@@ -904,7 +938,7 @@ void make_Mem(BYTE conf0,BYTE conf1)
 
   mem_len=bank_length[0]+bank_length[1];
 
-  Mem=new BYTE[mem_len+MEM_EXTRA_BYTES];
+  Mem=new BYTE[mem_len+MEM_EXTRA_BYTES]; // SS check delete
 
   for (int y=0;y<MEM_EXTRA_BYTES;y++) Mem[y]=255;
   Mem_End=Mem+mem_len+MEM_EXTRA_BYTES;
@@ -1004,6 +1038,7 @@ void PerformCleanShutdown()
   CleanUpSteem();
   if (CrashFile.NotEmpty()) DeleteFile(CrashFile);
   CrashFile="";
+
 }
 //---------------------------------------------------------------------------
 void CleanUpSteem()

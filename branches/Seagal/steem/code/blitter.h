@@ -1,3 +1,4 @@
+
 extern "C" void ASMCALL Blitter_Start_Now();
 extern void Blitter_Draw();
 
@@ -36,7 +37,8 @@ struct _BLITTER_STRUCT{
 
   bool NeedDestRead; //from Op
 
-  bool InBlitter_Draw; //are we in the routine?
+
+  bool InBlitter_Draw; //are we in the routine?
 
 }Blit;
 

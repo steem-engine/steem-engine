@@ -51,13 +51,17 @@ EXT int cpu_timer_at_start_of_hbl;
 
 #define CYCLES_FROM_START_OF_HBL_IRQ_TO_WHEN_PEND_IS_CLEARED 28
 
-#define INTERRUPT_START_TIME_WOBBLE  \
-          INSTRUCTION_TIME_ROUND(0); \
-          INSTRUCTION_TIME((8000000-(ABSOLUTE_CPU_TIME-shifter_cycle_base)) % 10);
 
 //          INSTRUCTION_TIME(8-((ABSOLUTE_CPU_TIME-shifter_cycle_base) % 12));
 
 
+#if defined(STEVEN_SEAGAL) && defined(SS_INTERRUPT)
+// see SSECpu.h
+#else
+
+#define INTERRUPT_START_TIME_WOBBLE  \
+          INSTRUCTION_TIME_ROUND(0); \
+          INSTRUCTION_TIME((8000000-(ABSOLUTE_CPU_TIME-shifter_cycle_base)) % 10);
 
 #define HBL_INTERRUPT  \
   {                  \
@@ -83,6 +87,8 @@ EXT int cpu_timer_at_start_of_hbl;
             sr=(sr&WORD(~SR_IPL))|WORD(SR_IPL_4);                         \
             debug_check_break_on_irq(BREAK_IRQ_VBL_IDX);    \
           }
+#endif
+
 
 #define CHECK_AGENDA                                              \
   if ((hbl_count++)==agenda_next_time){                           \
@@ -111,6 +117,7 @@ EXT int cpu_timer_at_start_of_hbl;
               case 60:      shifter_freq_idx=1; break;   \
               default:      shifter_freq_idx=2;   \
             }
+
 
 #define PREPARE_EVENT_CHECK_FOR_TIMER_TIMEOUTS(tn)      \
     if (mfp_timer_enabled[tn] || mfp_timer_period_change[tn]){                           \
@@ -160,6 +167,9 @@ EXT int cpu_timer_at_start_of_hbl;
 #define PREPARE_EVENT_CHECK_FOR_PASTI
 #endif
 
+
+
+
 typedef void(*EVENTPROC)();
 typedef struct{
   int time;
@@ -184,7 +194,9 @@ void event_timer_b();
 void event_start_vbl();
 void event_vbl_interrupt();
 void event_hbl(); //just HBL, don't draw yet, don't increase scan_y
+#ifndef STEVEN_SEAGAL	//unused
 void event_scanline_last_line_of_60Hz(),event_scanline_last_line_of_70Hz();
+#endif
 EVENTPROC event_mfp_timer_timeout[4]={event_timer_a_timeout,event_timer_b_timeout,
                           event_timer_c_timeout,event_timer_d_timeout};
 int time_of_next_event;
@@ -218,7 +230,6 @@ int cpu_timer_at_res_change;
 #if USE_PASTI
 void event_pasti_update();
 #endif
-
 
 #undef EXT
 #undef INIT

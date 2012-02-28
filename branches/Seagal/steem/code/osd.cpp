@@ -5,6 +5,9 @@ DESCRIPTION: Functions to create and draw Steem's on screen display that
 appears when the emulator begins to run to give useful information.
 ---------------------------------------------------------------------------*/
 
+
+
+
 void ASMCALL osd_draw_char_dont(long*,BYTE*,long,long,int,long,long) {}
 
 void ASMCALL osd_draw_char_clipped_dont(long*,BYTE*,long,long,int,long,long,RECT*) {}
@@ -46,6 +49,16 @@ void osd_draw_begin()
   col_green=colour_convert(0,255,0);
   col_white=colour_convert(255,255,255);
 //  col_backblue=colour_convert(FUJI_COL);
+
+
+#if defined(STEVEN_SEAGAL) && defined(SS_OSD)
+  col_fd_green[0]=colour_convert(0,255,0);
+  col_fd_green[1]=colour_convert(0,200,0);
+  col_fd_red[0]=colour_convert(255,0,0);
+  col_fd_red[1]=colour_convert(200,0,0);
+#endif
+
+
 }
 //---------------------------------------------------------------------------
 void osd_draw_end()
@@ -79,12 +92,12 @@ void osd_init_draw_static()
 //---------------------------------------------------------------------------
 EasyStr get_osd_scroller_text(int n) {
   EasyStr ret = osd_scroller_array[n].String;
-  char *p=strchr(ret.Text,'§'),c;
+  char *p=strchr(ret.Text,'§'),c;	// look for §
   int ic;
-  while (p){
+  while (p){	// found
     ic=(int)(p-ret.Text);
     c=ret[ic+1];
-    switch (c){
+    switch (c){	// translate special code that follows
       case 'V':case 'v':
         ret=ret.Lefts(ic)+"Steem Engine v"+(char*)stem_version_text+(ret.Text+ic+2);
         break;
@@ -210,8 +223,13 @@ void osd_draw()
     int frame=14;
     if (osd_old_pos) start_y=25;
     if (BytesPerPixel==1){
+
+#ifndef SS_OSD
+      // not sure, haven't seen it in action
       osd_black_box(draw_mem,x-1,start_y,PLASMA_W+2,PLASMA_H+2,draw_line_length);
       for (int y=start_y+1;y<start_y+1+PLASMA_H;y++) osd_blueize_line(x,y,PLASMA_W);
+#endif
+
     }else{
       if (osd_plasma_pal==NULL){
         osd_plasma_pal=new DWORD[PLASMA_MAX*2];
@@ -220,10 +238,10 @@ void osd_draw()
 
         for (int y=0;y<PLASMA_H;y++){
           for (int x=0;x<PLASMA_W;x++){
-            *(p++) = BYTE(PLASMA_MAX/2 + double(PLASMA_MAX/2-1)*sin(hypot(x+PLASMA_W/8,(PLASMA_H/2-y)*4)/16));
-          }
-        }
-      }
+            *(p++) = (BYTE)(PLASMA_MAX/2 + double(PLASMA_MAX/2-1)*sin(hypot(x+PLASMA_W/8,(PLASMA_H/2-y)*4)/16));
+          }//nxt
+        }//nxt
+      }//if
 
       DWORD end_time=osd_start_time + osd_show_plasma*1000 - 500;
       if (osd_show_plasma==OSD_SHOW_ALWAYS) end_time=timer+20;
@@ -232,21 +250,57 @@ void osd_draw()
       }else{
         frame=min(int(timer-(osd_start_time+200))/20,14);
       }
-      if (frame>=0) osd_draw_plasma(x,start_y,frame);
+
+#ifndef SS_OSD
+      // Drawing the rectangle where the STEEM ENIGINE logo will be written
+      // Just suppress it for the "new" logo
+      if (frame>=0) 
+        osd_draw_plasma(x,start_y,frame);
+#endif
     }
     if (frame==14){
       x=x1/2-OSD_LOGO_W/2;
+
+#if defined(STEVEN_SEAGAL) && defined(SS_OSD)
+// hack to display correct version number (temp)
+#define THE_LEFT (0)
+#define THE_RIGHT ((x1))
+#define BUFFER_LENGTH 35
+      RECT cliprect={THE_LEFT,0,THE_RIGHT,y1};
+      // must be CAPS for the scroller font
+      char tmp_buffer[BUFFER_LENGTH];
+      strcpy(tmp_buffer,"Steem Engine ");	
+      // note it's STEem Engine anyway, not STeem Engine
+      size_t buffer_length = strlen(tmp_buffer);
+      ASSERT( buffer_length == 13);
+      size_t version_length = strlen(stem_version_text);
+      ASSERT ( buffer_length + version_length <BUFFER_LENGTH );
+      strncat(tmp_buffer,stem_version_text,BUFFER_LENGTH-buffer_length);
+      size_t logo_length=strlen(tmp_buffer);
+      ASSERT( buffer_length != logo_length ); // though we never know
+      x=x1/2 - logo_length*16/2;
+      for(unsigned int i=0;i<logo_length;i++)
+      {
+        int n=(int)(toupper(tmp_buffer[i]))+(60-33);	// need macro?
+        if (n>=60 && n<120)
+        osd_draw_char_clipped(osd_font+(n*64),draw_mem,x,start_y+PLASMA_H/2-OSD_LOGO_H/2,draw_line_length,col_white,32,&cliprect);
+        x+=16;
+      }//nxt i
+#else
       for (int c=0;c<OSD_LOGO_W/32 + 1;c++){
         osd_draw_char(osd_font+((50+c)*64),draw_mem,x,start_y+PLASMA_H/2-OSD_LOGO_H/2,draw_line_length,col_white,OSD_LOGO_H);
         x+=32;
       }
-    }
+#endif
+
+	}
     if (draw_grille_black<4) draw_grille_black=4;
   }else if (osd_plasma_pal){
     delete[] osd_plasma_pal; osd_plasma_pal=NULL;
     delete[] osd_plasma;     osd_plasma=NULL;
   }
 
+	//return;
   if (seconds<osd_show_speed){
     if (avg_frame_time && runstate==RUNSTATE_RUNNING){
       can_have_scroller=0;
@@ -275,11 +329,19 @@ void osd_draw()
   }
 
   if (seconds<osd_show_cpu){
+#if defined(STEVEN_SEAGAL) && defined(SS_MFP_RATIO)
+    if (n_cpu_cycles_per_second>CpuNormalHz){
+#else
     if (n_cpu_cycles_per_second>8000000){
+#endif
       can_have_scroller=0;
       int bar_w=120, bar_x=5, cpu_y=y1-5-12+6-15;
       if (osd_old_pos) bar_w=100, bar_x=20, cpu_y=y1-18-32;
+#if defined(STEVEN_SEAGAL) && defined(SS_MFP_RATIO)
+      int x=n_cpu_cycles_per_second/CpuNormalHz;
+#else
       int x=n_cpu_cycles_per_second/8000000;
+#endif
       x=bar_x+bar_w+10-x+((timer & 15)*x)/int(osd_old_pos ? 8:16);
       osd_draw_char(osd_font+(int(osd_old_pos ? 40:41)*64),draw_mem,(x),cpu_y,draw_line_length,col_red,20);
 
@@ -322,7 +384,31 @@ void osd_draw()
       }
     }
   }
-
+  
+  
+#if defined(STEVEN_SEAGAL) && defined(SS_OSD)
+  // Green led for floppy disk read; red for write.
+  if(osd_show_disk_light)
+  {
+    if((psg_reg[PSGR_PORT_A] & b0110)==BIT_1 // drive A?
+      || (psg_reg[PSGR_PORT_A] & b0110)==BIT_2  // drive B?
+      || FDCCantWriteDisplayTimer>timer
+      || FDCWritingTimer>timer
+      || FDCWriting)
+    {
+      if(disk_light_off_time>timer 
+        || DisableDiskLightAfter==0 
+        || FDCCantWriteDisplayTimer>timer
+        || FDCWritingTimer>timer
+        || FDCWriting)
+      {
+        int idx=32,w=20;
+        if(draw_blit_source_rect.bottom>200+BORDER_TOP+BORDER_BOTTOM)
+          idx=37,w=32;
+        DWORD col;
+        col= (FDCWriting || (FDCWritingTimer>timer)) 
+          ? col_fd_red[(hbl_count/512) & 1] : col_fd_green[(hbl_count/512) & 1];
+#else
   if (osd_show_disk_light){
     if ((psg_reg[PSGR_PORT_A] & b0110)==BIT_1 || (psg_reg[PSGR_PORT_A] & b0110)==BIT_2 || FDCCantWriteDisplayTimer>timer){
       if (disk_light_off_time>timer || DisableDiskLightAfter==0 || FDCCantWriteDisplayTimer>timer){
@@ -330,7 +416,8 @@ void osd_draw()
         if (draw_blit_source_rect.bottom>200+BORDER_TOP+BORDER_BOTTOM){
           idx=37,w=32;
         }
-        DWORD col=col_yellow[(hbl_count/512) & 1];
+	    	DWORD col=col_yellow[(hbl_count/512) & 1];
+#endif
         if (FDCCantWriteDisplayTimer>timer){
           col=col_red;
           osd_draw_char(osd_font+(38*64),draw_mem,(x1-w)-24,1,draw_line_length,col_red,16);
@@ -343,7 +430,21 @@ void osd_draw()
         if (draw_grille_black<4) draw_grille_black=4;
       }
     }
+
+#if defined(STEVEN_SEAGAL) && defined(SS_OSD)
+    // Hard disk activity
+    else if(HDDisplayTimer>timer)
+    {
+      int idx=32,w=20;
+      if (draw_blit_source_rect.bottom>200+BORDER_TOP+BORDER_BOTTOM)
+        idx=37,w=32;
+      DWORD col=col_yellow[(hbl_count/512) & 1];
+      osd_draw_char(osd_font+(idx*64),draw_mem,(x1-w)-4,4,
+        draw_line_length,col,8);
+    }
+#endif
   }
+
 
   if (can_have_scroller && osd_shown_scroller==0){
     osd_shown_scroller=true;
@@ -364,6 +465,7 @@ void osd_draw()
       while (x > (THE_LEFT-BORDER_SIDE)){
         if (i<scroll_len){
           int n=int(osd_scroller[i])+(60-33);
+		  TRACE("%c",n);
           if (n>=60 && n<120){
             if (x>=THE_LEFT && x < THE_RIGHT-BORDER_SIDE){
               osd_draw_char_transparent(osd_font+(n*64),draw_mem,x,y1-24-5,draw_line_length,col_white,32);
@@ -468,6 +570,9 @@ void osd_get_reset_info(EasyStringList *sl)
   sl->Sort=eslNoSort;
 
   Str t;
+#if defined(STEVEN_SEAGAL) && defined(SS_STF)
+    sl->Add( Str("Machine: ") + Str((ST_type==STF) ? "STF" : "STE" ));
+#endif
   if (tos_version){
     sl->Add(Str("TOS: v")+HEXSl(tos_version,3).Insert(".",1));
   }
@@ -592,8 +697,13 @@ void osd_draw_reset_info(int win_x,int win_y,int win_w,int win_h)
       if (FlagIdx>=0){
         HDC TempDC=CreateCompatibleDC(dc);
         HANDLE OldBmp=SelectObject(TempDC,LoadBitmap(Inst,"TOSFLAGS"));
-        BitBlt(osd_ri_dc,x+tw-RC_FLAG_WIDTH,y + max(th-RC_FLAG_HEIGHT,0)/2,
+#if defined(STEVEN_SEAGAL) && defined(SS_STF)
+        BitBlt(osd_ri_dc,x+tw-RC_FLAG_WIDTH,y + max(th-RC_FLAG_HEIGHT  +30 ,0)/2 ,
                   RC_FLAG_WIDTH,RC_FLAG_HEIGHT,TempDC,FlagIdx*RC_FLAG_WIDTH,0,SRCCOPY);
+#else
+        BitBlt(osd_ri_dc,x+tw-RC_FLAG_WIDTH,y + max(th-RC_FLAG_HEIGHT,0)/2 ,
+                  RC_FLAG_WIDTH,RC_FLAG_HEIGHT,TempDC,FlagIdx*RC_FLAG_WIDTH,0,SRCCOPY);
+#endif
         DeleteObject(SelectObject(TempDC,OldBmp));
         DeleteDC(TempDC);
       }
@@ -734,4 +844,5 @@ void osd_routines_init()
   }
   osd_start_time=0;
 }
+
 

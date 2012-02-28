@@ -93,7 +93,14 @@ void TDiskManager::PerformInsertAction(int Action,EasyStr Name,EasyStr Path,Easy
     if (runstate!=RUNSTATE_RUNNING){
       PostRunMessage();
     }else{
+#if defined(STEVEN_SEAGAL) && defined(SS_VAR_MOUSE_CAPTURE)
+      if(CaptureMouse)
+        SetStemMouseMode(STEM_MOUSEMODE_WINDOW);
+      else
+        SetStemMouseMode(STEM_MOUSEMODE_DISABLED);
+#else
       SetStemMouseMode(STEM_MOUSEMODE_WINDOW);
+#endif
       osd_init_run(true);
     }
   }
@@ -127,7 +134,7 @@ void TDiskManager::SetNumFloppies(int NewNum)
   CheckResetDisplay();
 }
 //---------------------------------------------------------------------------
-#ifdef WIN32
+#ifdef WIN32 // SS: big block
 
 //#define LVS_SMALLVIEW LVS_SMALLICON
 #define LVS_SMALLVIEW LVS_LIST
@@ -816,10 +823,30 @@ void TDiskManager::AddFoldersToMenu(HMENU Pop,int StartID,EasyStr NoAddFol,bool 
 Str TDiskManager::GetMSAConverterPath()
 {
   if (MSAConvPath.NotEmpty()){
-    if (Exists(MSAConvPath)) return MSAConvPath;
+    //if (Exists(MSAConvPath)) return MSAConvPath;
   }
 
-  int i=Alert(T("Have you installed MSA Converter on this computer?"),T("Run MSA Converter"),MB_ICONQUESTION | MB_YESNO);
+#if defined(STEVEN_SEAGAL) && defined(SS_VARIOUS)
+#if defined(_DEBUG)
+  BRK(Auto MSA path wont work in _DEBUG);
+#else
+	// We don't prompt player if Msa.exe is in Steem's folder.
+	// We are in a WIN32 block.
+	
+	// First check is msa.exe is on the steem path,
+	// if yes, no need to ask player
+
+	EasyStr str(RunDir);	// RunDir contains the app folder
+	str+="\\msa.exe";	// notice double \    <- this was a stupid bug!///
+	if(Exists(str))
+	{
+		MSAConvPath=str;	// MSAConvParth is an "EasyStr"
+		return MSAConvPath;
+	}
+#endif	// NDBG
+#endif	// SS
+
+  int i=Alert(T("Have you installed MSA Converter elsewhere on this computer?"),T("Run MSA Converter"),MB_ICONQUESTION | MB_YESNO);
   if (i==IDYES){
     Str Fol=MSAConvPath;
     if (Fol.NotEmpty()){
@@ -2542,7 +2569,7 @@ void TDiskManager::SetDriveViewEnable(int Drive,bool EnableIt)
 
   InvalidateRect(LV,NULL,true);
 }
-#endif
+#endif//WIN32
 //---------------------------------------------------------------------------
 #ifdef UNIX
 #include "x/x_diskman.cpp"

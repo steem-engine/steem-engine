@@ -52,19 +52,30 @@ void ASMCALL io_write_b(MEM_ADDRESS addr,BYTE io_src_b)
     return;
   }
 #endif
+
+#if defined(STEVEN_SEAGAL) && defined(SS_VID_HATARI) && defined(SS_DEBUG)
+  int FrameCycles, HblCounterVideo, LineCycles;
+#endif
+
+  // SS: big switch
   switch (addr & 0xffff00){   //0xfffe00
     case 0xfffc00:{  //--------------------------------------- ACIAs
       // Only cause bus jam once per word
       DEBUG_ONLY( if (mode==STEM_MODE_CPU) )
       {
         if (io_word_access==0 || (addr & 1)==0){
+//SS: the // below are not mine
 //          if (passed VBL or HBL point){
 //            BUS_JAM_TIME(4);
 //          }else{
 //          int waitTable[10]={0,9,8,7,6,5,4,3,2,1};
 //          BUS_JAM_TIME(waitTable[ABSOLUTE_CPU_TIME % 10]+6);
           int rel_cycle=ABSOLUTE_CPU_TIME-shifter_cycle_base;
+#if defined(STEVEN_SEAGAL) && defined(SS_MFP_RATIO)
+          rel_cycle=CpuNormalHz-rel_cycle;
+#else
           rel_cycle=8000000-rel_cycle;
+#endif
           rel_cycle%=10;
           BUS_JAM_TIME(rel_cycle+6);
 //          BUS_JAM_TIME(8);
@@ -77,12 +88,54 @@ void ASMCALL io_write_b(MEM_ADDRESS addr,BYTE io_src_b)
       case 0xfffc00:  //control
         if ((io_src_b & 3)==3){
           log_to(LOGSECTION_IKBD,Str("IKBD: ")+HEXSl(old_pc,6)+" - ACIA reset"); 
+          //TRACE("IKBD - ACIA reset\n");
           ACIA_Reset(NUM_ACIA_IKBD,0);
         }else{
+          //TRACE("ACIA KBD write %X\n",io_src_b);
           ACIA_SetControl(NUM_ACIA_IKBD,io_src_b);
         }
         break;
+
       case 0xfffc02:  //data
+#if defined(STEVEN_SEAGAL) && defined(SS_IKBD) // TODO check this
+        // 1. Ignore when a byte is already in transit
+        // 2. Shorten delay to +- 1000 cycles
+        if(!ACIA_IKBD.tx_flag)
+        {
+          bool TXEmptyAgenda=(agenda_get_queue_pos(agenda_acia_tx_delay_IKBD)>=0);
+          if(TXEmptyAgenda==0)
+          {
+            if(ACIA_IKBD.tx_irq_enabled)
+            {
+              ACIA_IKBD.irq=false;
+              mfp_gpip_set_bit(MFP_GPIP_ACIA_BIT,!(ACIA_IKBD.irq || ACIA_MIDI.irq));
+            }
+            agenda_add(agenda_acia_tx_delay_IKBD,2 /*ACIAClockToHBLS(ACIA_IKBD.clock_divide)*/,0);
+          }
+          ACIA_IKBD.tx_flag=true; //flag for transmitting
+
+          // If send new byte before last one has finished being sent
+          if(abs(ABSOLUTE_CPU_TIME-ACIA_IKBD.last_tx_write_time)<ACIA_CYCLES_NEEDED_TO_START_TX)
+          {
+            // replace old byte with new one
+            int n=agenda_get_queue_pos(agenda_ikbd_process);
+            if(n>=0)
+            {
+              log_to(LOGSECTION_IKBD,Str("IKBD: ")+HEXSl(old_pc,6)+" - Received new command before old one was sent, replacing "+
+                                      HEXSl(agenda[n].param,2)+" with "+HEXSl(io_src_b,2));
+              agenda[n].param=io_src_b;
+            }
+          }
+          else
+          {
+            // there is a delay before the data gets to the IKBD
+            ACIA_IKBD.last_tx_write_time=ABSOLUTE_CPU_TIME;
+            agenda_add(agenda_ikbd_process,
+              IKBD_HBLS_FROM_COMMAND_WRITE_TO_PROCESS_ALT+rand()%2,io_src_b);
+          }
+        }
+        break;
+#else // Steem 3.2
       {
         bool TXEmptyAgenda=(agenda_get_queue_pos(agenda_acia_tx_delay_IKBD)>=0);
         if (TXEmptyAgenda==0){
@@ -109,9 +162,9 @@ void ASMCALL io_write_b(MEM_ADDRESS addr,BYTE io_src_b)
         }
         break;
       }
+#endif
 
     /******************** MIDI ACIA *********************************/
-
       case 0xfffc04:  //control
         if ((io_src_b & 3)==3){ // Reset
           log_to(LOGSECTION_IKBD,Str("MIDI: ")+HEXSl(old_pc,6)+" - ACIA reset");
@@ -140,6 +193,7 @@ void ASMCALL io_write_b(MEM_ADDRESS addr,BYTE io_src_b)
       }
     }
     break;
+    // SS: notice all the comments and code changes... MFP is a bitch
     case 0xfffa00:  //--------------------------------------- MFP
     {
       if (addr<0xfffa40){
@@ -256,6 +310,7 @@ void ASMCALL io_write_b(MEM_ADDRESS addr,BYTE io_src_b)
             }else if (n>=MFPR_SCR){
               RS232_WriteReg(n,io_src_b);
             }else{
+              ASSERT(n!=16);
               mfp_reg[n]=io_src_b;
             }
             // The MFP doesn't update for about 8 cycles, so we should execute the next
@@ -289,10 +344,26 @@ void ASMCALL io_write_b(MEM_ADDRESS addr,BYTE io_src_b)
       }
       exception(BOMBS_BUS_ERROR,EA_WRITE,addr);
       break;
+
     case 0xff8a00:      //----------------------------------- Blitter
       Blitter_IO_WriteB(addr,io_src_b);
+#if defined(STEVEN_SEAGAL) && defined(SS_VID_HATARI) && defined(SS_DEBUG)
+      {
+        int FrameCycles, HblCounterVideo, LineCycles;
+        Video_GetPosition_OnWriteAccess ( &FrameCycles , &HblCounterVideo , &LineCycles );
+        VideoEvents.Add( HblCounterVideo , LineCycles, 'B', io_src_b); 
+      }
+#endif
       break;
+
     case 0xff8900:      //----------------------------------- STE DMA Sound
+#if defined(STEVEN_SEAGAL) && defined(SS_STF)
+      if(ST_type==STF)
+      {
+        exception(BOMBS_BUS_ERROR,EA_WRITE,addr); // fixes PYM/ST-CNX & SoWatt
+        break;
+      }
+#endif
       if (addr>0xff893f){ //illegal range
         exception(BOMBS_BUS_ERROR,EA_WRITE,addr);
       }else{
@@ -616,79 +687,186 @@ void ASMCALL io_write_b(MEM_ADDRESS addr,BYTE io_src_b)
                      //----------------------------------------=--------------- shifter
                      //----------------------------------------=--------------- shifter
                      //----------------------------------------=--------------- shifter
-                     //----------------------------------------=--------------- shifter
-                     //----------------------------------------=--------------- shifter
+      //----------------------------------------=--------------- shifter
+      //----------------------------------------=--------------- shifter
       if ((addr>=0xff8210 && addr<0xff8240) || addr>=0xff8280){
         exception(BOMBS_BUS_ERROR,EA_WRITE,addr);
-      }else if (addr>=0xff8240 && addr<0xff8260){  //palette
-        int n=(addr-0xff8240) >> 1;
+      }
+      else if (addr>=0xff8240 && addr<0xff8260){  //palette
+        int n=(addr-0xff8240) >> 1; // SS word writes more frequent
         // Writing byte to palette writes that byte to both the low and high byte!
         WORD new_pal=MAKEWORD(io_src_b,io_src_b & 0xf);
+#if defined(STEVEN_SEAGAL) && defined(SS_VID_HATARI) && defined(SS_DEBUG)
+        Video_GetPosition_OnWriteAccess ( &FrameCycles , &HblCounterVideo , &LineCycles );
+        VideoEvents.Add( HblCounterVideo , LineCycles, 'Q', io_src_b); 
+#endif
+#if defined(STEVEN_SEAGAL) && defined(SS_STF)
+        if(ST_type==STF)
+          new_pal &= 0x0777;
+#endif
         if (STpal[n]!=new_pal){
+
           STpal[n]=new_pal;
           PAL_DPEEK(n*2)=new_pal;
           log_to(LOGSECTION_VIDEO,EasyStr("VIDEO: ")+HEXSl(old_pc,6)+" - Palette change at scan_y="+scan_y+" cycle "+(ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl));
+#if defined(STEVEN_SEAGAL) && defined(SS_VIDEO)
+          if(draw_lock) // notice +1
+            Shifter.DrawScanlineTo(ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl+1);
+#else // Steem 3.2
           if (draw_lock) draw_scanline_to((ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl)+1);
+#endif
           if (flashlight_flag==0 && draw_line_off==0 DEBUG_ONLY( && debug_cycle_colours==0) ){
             palette_convert(n);
           }
         }
-      }else{
+      }
+      else{
         switch(addr){
         case 0xff8201:  //high byte of screen memory address
+#if defined(STEVEN_SEAGAL) && defined(SS_VID_HATARI) && defined(SS_DEBUG)
+          Video_GetPosition_OnWriteAccess ( &FrameCycles , &HblCounterVideo , &LineCycles );
+          VideoEvents.Add( HblCounterVideo , LineCycles, 'v', io_src_b); 
+#endif
           if (mem_len<=FOUR_MEGS) io_src_b&=b00111111;
           DWORD_B_2(&xbios2)=io_src_b;
-          DWORD_B_0(&xbios2)=0;
+#if defined(STEVEN_SEAGAL) && defined(SS_STF)
+          if(ST_type==STE) 
+#endif
+            DWORD_B_0(&xbios2)=0; 
           log_to(LOGSECTION_VIDEO,EasyStr("VIDEO: ")+HEXSl(old_pc,6)+" - Set screen base to "+HEXSl(xbios2,6));
           break;
+
         case 0xff8203:  //mid byte of screen memory address
+#if defined(STEVEN_SEAGAL) && defined(SS_VID_HATARI) && defined(SS_DEBUG)
+          Video_GetPosition_OnWriteAccess ( &FrameCycles , &HblCounterVideo , &LineCycles );
+          VideoEvents.Add( HblCounterVideo , LineCycles, 'V', io_src_b); 
+#endif
           DWORD_B_1(&xbios2)=io_src_b;
-          DWORD_B_0(&xbios2)=0;
+#if defined(STEVEN_SEAGAL) && defined(SS_STF)
+          if(ST_type==STE) 
+#endif
+            DWORD_B_0(&xbios2)=0; 
           log_to(LOGSECTION_VIDEO,EasyStr("VIDEO: ")+HEXSl(old_pc,6)+" - Set screen base to "+HEXSl(xbios2,6));
           break;
+        ///////////////
+        // Write SDP //
+        ///////////////
         case 0xff8205:  //high byte of draw pointer
         case 0xff8207:  //mid byte of draw pointer
         case 0xff8209:  //low byte of draw pointer
         {
-//          int srp=scanline_raster_position();
+#if defined(STEVEN_SEAGAL) && defined(SS_STF)
+          if(ST_type==STF)
+            break; // fixes Nightdawn
+#endif
           int dst=ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl;
-          dst-=CYCLES_FROM_HBL_TO_LEFT_BORDER_OPEN;
+
+#if defined(STEVEN_SEAGAL) && defined(SS_VID_BORDERS_HACKS) && defined(SS_VID_TEKILA)
+          if(SideBorderSize>=LARGE_BORDER_SIDE && shifter_fetch_extra_words==4 
+            && shifter_hscroll)
+            dst-=4; // just a hack
+#endif            
+          dst-=CYCLES_FROM_HBL_TO_LEFT_BORDER_OPEN; // SS here we go again
           dst+=16;dst&=-16;
           dst+=CYCLES_FROM_HBL_TO_LEFT_BORDER_OPEN;
-
+#if defined(STEVEN_SEAGAL) && defined(SS_VID_HATARI) && defined(SS_DEBUG)
+          Video_GetPosition_OnWriteAccess ( &FrameCycles , &HblCounterVideo , &LineCycles );
+          VideoEvents.Add( HblCounterVideo , LineCycles, 'p', io_src_b); 
+#endif
+#if defined(STEVEN_SEAGAL) && defined(SS_VIDEO)
+          Shifter.DrawScanlineTo(dst);
+#else
           draw_scanline_to(dst); // This makes shifter_draw_pointer up to date
+#endif
           MEM_ADDRESS nsdp=shifter_draw_pointer;
-          if (mem_len<=FOUR_MEGS && addr==0xff8205) io_src_b&=b00111111;
+          //if (mem_len<=FOUR_MEGS && addr==0xff8205) io_src_b&=b00111111; // SS was commented out
           DWORD_B(&nsdp,(0xff8209-addr)/2)=io_src_b;
-
-/*
-          if (shifter_hscroll){
+            
+#if defined(STEVEN_SEAGAL) && defined(SS_VIDEO)       
+            /*            // Originally in Steem 3.2, but commented out:
+            if (shifter_hscroll){
             if (dst>=CYCLES_FROM_HBL_TO_LEFT_BORDER_OPEN-32 && dst<CYCLES_FROM_HBL_TO_LEFT_BORDER_OPEN+320-16){
-              log_to(LOGSECTION_VIDEO,Str("ATTANT: addr=")+HEXSl(addr,6));
-              if (addr==0xff8209){
-                // If you set low byte while on screen with hscroll on then sdp will
-                // be an extra raster ahead. Steem's sdp is always 1 raster ahead, so
-                // correct for that here.
-                nsdp-=8;
-              }
+            log_to(LOGSECTION_VIDEO,Str("ATTANT: addr=")+HEXSl(addr,6));
+            if (addr==0xff8209){
+            // If you set low byte while on screen with hscroll on then sdp will
+            // be an extra raster ahead. Steem's sdp is always 1 raster ahead, so
+            // correct for that here.
+            nsdp-=8;
             }
+            }
+            }
+            */
+            if(addr==0xff8209)
+            {
+              if(shifter_fetch_extra_words==4)
+              {
+#if defined(SS_VAR_PROG_ID)
+                SetProgram(TEKILA);
+#endif
+#if defined(SS_VID_TEKILA)
+                nsdp-=2; // fixes D4/Tekila
+#if defined(SS_VARIOUS)
+                if(SpecificHacks&&BorderSize)
+                  nsdp+=-16;
+#endif
+#endif
+              }
+#if defined(SS_VAR_PROG_ID) 
+              else if(shifter_fetch_extra_words==12)
+                SetProgram(MOLZ_SPIRAL);// no shift
+#endif
+            }
+#endif
+            shifter_draw_pointer_at_start_of_line-=shifter_draw_pointer;
+            shifter_draw_pointer_at_start_of_line+=nsdp;
+            shifter_draw_pointer=nsdp;
+            log_to(LOGSECTION_VIDEO,Str("VIDEO: ")+HEXSl(old_pc,6)+" - Set shifter draw pointer to "+
+              HEXSl(shifter_draw_pointer,6)+" at "+scanline_cycle_log()+", aligned to "+dst);
+            break;
           }
-*/
 
-//          int off=(get_shifter_draw_pointer(ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl)&-8)-shifter_draw_pointer;
-//          shifter_draw_pointer=nsdp-off;
-          shifter_draw_pointer_at_start_of_line-=shifter_draw_pointer;
-          shifter_draw_pointer_at_start_of_line+=nsdp;
-          shifter_draw_pointer=nsdp;
-
-          log_to(LOGSECTION_VIDEO,Str("VIDEO: ")+HEXSl(old_pc,6)+" - Set shifter draw pointer to "+
-                    HEXSl(shifter_draw_pointer,6)+" at "+scanline_cycle_log()+", aligned to "+dst);
-          break;
-        }
         case 0xff820d:  //low byte of screen memory address
+#if defined(STEVEN_SEAGAL) && defined(SS_STF)
+          if(ST_type==STF)
+            break; // fixes Lemmings 40, Lethal Xcess in STF mode
+#endif
+#if defined(STEVEN_SEAGAL) && defined(SS_VID_HATARI) && defined(SS_DEBUG)
+          Video_GetPosition_OnWriteAccess ( &FrameCycles , &HblCounterVideo , &LineCycles );
+          VideoEvents.Add( HblCounterVideo , LineCycles, 'v', io_src_b); 
+#endif
           DWORD_B_0(&xbios2)=io_src_b;
+
           log_to(LOGSECTION_VIDEO,EasyStr("VIDEO: ")+HEXSl(old_pc,6)+" - Set screen base to "+HEXSl(xbios2,6));
           break;
+
+#if defined(STEVEN_SEAGAL) && defined(SS_VIDEO)
+        case 0xff820a:  // sync, bit 1:  1:50 Hz 0:60 Hz
+        { 
+          Shifter.SetSync(io_src_b);
+          int new_freq= (io_src_b & 2) ? 50 : 60;
+          if(screen_res>=ST_HIGH_RES) 
+            new_freq=MONO_HZ;
+          if(shifter_freq!=new_freq) 
+          {
+            log_to(LOGSECTION_VIDEO,EasyStr("VIDEO: ")+HEXSl(old_pc,6)+" - Changed frequency to "+new_freq+
+              " at "+scanline_cycle_log());
+            shifter_freq_idx=Shifter.CalcFreqIdx(new_freq);
+            shifter_freq=new_freq;
+            if(shifter_freq_change[shifter_freq_change_idx]!=MONO_HZ)
+              Shifter.AddFreqChange(new_freq);
+            freq_change_this_scanline=TRUE;
+            if(FullScreen && border==BORDERS_AUTO_OFF)
+            {
+                int off=shifter_first_draw_line-draw_first_possible_line;
+                draw_first_possible_line+=off;
+                draw_last_possible_line+=off;
+            }
+          }
+        }
+          break;
+
+#else // Steem 3.2
+
         case 0xff820a:  //synchronization mode
         {
           int new_freq;
@@ -718,12 +896,29 @@ void ASMCALL io_write_b(MEM_ADDRESS addr,BYTE io_src_b)
           }
           break;
         }
-        case 0xff820f:   //int shifter_fetch_extra_words;
-          draw_scanline_to(ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl); // Update sdp if off right
+
+#endif
+
+	    case 0xff820f:   //int shifter_fetch_extra_words;
+#if defined(STEVEN_SEAGAL) && defined(SS_STF)
+          if(ST_type==STF)
+            break;
+#endif
+#if defined(STEVEN_SEAGAL) && defined(SS_VIDEO) 
+#if defined(SS_DEBUG) && defined(SS_VID_HATARI)
+          Video_GetPosition_OnWriteAccess ( &FrameCycles , &HblCounterVideo , &LineCycles );
+          VideoEvents.Add( HblCounterVideo , LineCycles, 'F', io_src_b); 
+#endif
+          Shifter.DrawScanlineTo(ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl); 
+#else
+          draw_scanline_to(ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl); // Update sdp if off right  
+#endif
+          ASSERT(io_src_b%4==0);
           shifter_fetch_extra_words=(BYTE)io_src_b;
           log_to(LOGSECTION_VIDEO,EasyStr("VIDEO: ")+HEXSl(old_pc,6)+" - Set shifter_fetch_extra_words to "+
                     (shifter_fetch_extra_words)+" at "+scanline_cycle_log());
-          break;
+		  break;
+
         case 0xff8264:  // Set hscroll and don't change line length
           // This is an odd register, when you change hscroll below to non-zero each
           // scanline becomes 4 words longer to allow for extra screen data. This register
@@ -731,37 +926,119 @@ void ASMCALL io_write_b(MEM_ADDRESS addr,BYTE io_src_b)
           // 16 pixels. If you have got hscroll extra fetch turned on then setting this
           // to 0 confuses the shifter and causes it to shrink the left border by 16 pixels.
         case 0xff8265:  // Hscroll
-        {
-          int cycles_in=int(ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl);
-/*
+#if defined(STEVEN_SEAGAL) && defined(SS_VID_HATARI) && defined(SS_DEBUG)
+          Video_GetPosition_OnWriteAccess ( &FrameCycles , &HblCounterVideo , &LineCycles );
+          VideoEvents.Add( HblCounterVideo , LineCycles, 'H', io_src_b); 
+#endif
+#if defined(STEVEN_SEAGAL) && defined(SS_STF)
+          if(ST_type==STE) // fixes Hyperforce
+#endif
+          {
+            int cycles_in=int(ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl);
+#if defined(STEVEN_SEAGAL) && defined(SS_VIDEO)
+            Shifter.DrawScanlineTo(cycles_in);
+#else
+            draw_scanline_to(cycles_in); // Update sdp if off right
+#endif
+            shifter_pixel-=shifter_hscroll;
+            shifter_hscroll=io_src_b & 0xf;
+            shifter_pixel+=shifter_hscroll;
+
+            log_to(LOGSECTION_VIDEO,EasyStr("VIDEO: ")+HEXSl(old_pc,6)+" - Set horizontal scroll ("+HEXSl(addr,6)+
+                    ") to "+(shifter_hscroll)+" at "+scanline_cycle_log());
+            if (addr==0xff8265) shifter_hscroll_extra_fetch=(shifter_hscroll!=0); //OK
+#if defined(STEVEN_SEAGAL) && defined(SS_VID_BORDERS)
+            if (cycles_in<=CYCLES_FROM_HBL_TO_LEFT_BORDER_OPEN-BORDER_SIDE){
+#else
+            if (cycles_in<=CYCLES_FROM_HBL_TO_LEFT_BORDER_OPEN-32){
+#endif
+              if (left_border>0){ // Don't do this if left border removed!
+                shifter_skip_raster_for_hscroll = shifter_hscroll!=0;
+                left_border=BORDER_SIDE;
+                if (shifter_hscroll) left_border+=16;
+                if (shifter_hscroll_extra_fetch) left_border-=16;
+              }
+            }
+#if defined(STEVEN_SEAGAL) && defined(SS_VIDEO)
+          } // correcting a little bug? or the bug is in my head?
+#endif
+          break;
+#if defined(STEVEN_SEAGAL) && defined(SS_VIDEO)
+#else
+        }
+#endif
+
+#if defined(STEVEN_SEAGAL) && defined(SS_VIDEO)
+        case 0xff8260: //resolution 0: Low; 1: Medium; 2: High (B/W)
+          if(screen_res>=ST_HIGH_RES
+            || emudetect_falcon_mode!=EMUD_FALC_MODE_OFF)
+            return; // if not, bad display in high resolution
+#ifndef NO_CRAZY_MONITOR
+          if(extended_monitor)
+          {
+             screen_res=BYTE(io_src_b & 1);
+             return;
+          }
+#endif
+          io_src_b&=3;
+          int cycles_in=(int)(ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl);
           int dst=cycles_in;
           dst-=CYCLES_FROM_HBL_TO_LEFT_BORDER_OPEN;
-          dst+=15;dst&=-16;
+          dst+=16;dst&=-16;
           dst+=CYCLES_FROM_HBL_TO_LEFT_BORDER_OPEN;
-*/
-//          log_write(Str("draw_scanline_to(")+Str(dst)+")");
-
-          draw_scanline_to(cycles_in); // Update sdp if off right
-          shifter_pixel-=shifter_hscroll;
-          shifter_hscroll=io_src_b & 0xf;
-          shifter_pixel+=shifter_hscroll;
-
-          log_to(LOGSECTION_VIDEO,EasyStr("VIDEO: ")+HEXSl(old_pc,6)+" - Set horizontal scroll ("+HEXSl(addr,6)+
-                    ") to "+(shifter_hscroll)+" at "+scanline_cycle_log());
-          if (addr==0xff8265) shifter_hscroll_extra_fetch=(shifter_hscroll!=0);
-
-          if (cycles_in<=CYCLES_FROM_HBL_TO_LEFT_BORDER_OPEN-32){
-            if (left_border>0){ // Don't do this if left border removed!
-              shifter_skip_raster_for_hscroll = shifter_hscroll!=0;
-              left_border=BORDER_SIDE;
-              if (shifter_hscroll) left_border+=16;
-              if (shifter_hscroll_extra_fetch) left_border-=16;
+          Shifter.SetRes(io_src_b);
+          Shifter.DrawScanlineTo(dst); 
+          log_to(LOGSECTION_VIDEO,EasyStr("VIDEO: ")+HEXSl(old_pc,6)+" - Changed screen res to "+
+                              io_src_b+" at scanline "+scan_y+", cycle "+cycles_in);
+          // we have a colour display?
+          if( mfp_gpip_no_interrupt & MFP_GPIP_COLOUR )
+          {	
+            if(io_src_b==ST_HIGH_RES) // going mono?
+            {
+              Shifter.AddFreqChange(MONO_HZ);	// add time & freq
+              freq_change_this_scanline=true;
+            }
+            else
+            {
+              // we're coming back from a switch to mono?
+              if(shifter_freq_change[shifter_freq_change_idx]==MONO_HZ)
+              {
+                Shifter.AddFreqChange(shifter_freq);	// add time & freq
+                freq_change_this_scanline=true;
+              }
+              int old_screen_res=screen_res;
+              screen_res=(BYTE)(io_src_b & 1);
+              if(screen_res!=old_screen_res)
+              {
+                shifter_x=(screen_res>0) ? 640 : 320;
+                if(draw_lock)
+                {
+                  if(screen_res==0) 
+                    draw_scanline=draw_scanline_lowres;
+                  if(screen_res==1) 
+                    draw_scanline=draw_scanline_medres;
+#ifdef WIN32
+                  if(draw_store_dest_ad)
+                  {
+                    draw_store_draw_scanline=draw_scanline;
+                    draw_scanline=draw_scanline_1_line[screen_res];
+                  }
+#endif
+                }
+                if(mixed_output==3 && (ABSOLUTE_CPU_TIME-cpu_timer_at_res_change<30))
+                  mixed_output=0; //cancel!
+                else if(!mixed_output)
+                  mixed_output=3;
+                else if(mixed_output<2)
+                  mixed_output=2;
+                cpu_timer_at_res_change=ABSOLUTE_CPU_TIME;
+              }
             }
           }
-
-
           break;
-        }
+        
+#else // Steem 3.2
+        
         case 0xff8260: //resolution
           if (screen_res>=2 || emudetect_falcon_mode!=EMUD_FALC_MODE_OFF) return;
 #ifndef NO_CRAZY_MONITOR
@@ -834,25 +1111,37 @@ void ASMCALL io_write_b(MEM_ADDRESS addr,BYTE io_src_b)
               }
             }
           }
-
           break;
-        }
-      }
-      break;
-    }
+#endif
+
+        }//sw
+      }//if
+    }//scope
+    break;//shifter
+
 #undef LOGSECTION
 #define LOGSECTION LOGSECTION_IO
     case 0xff8000:  //--------------------------------------- memory
     {
       if (addr==0xff8001){ //Memory Configuration
+#if defined(STEVEN_SEAGAL) && defined(SS_VAR_MMU_FIX) 
+        if (old_pc>=FOURTEEN_MEGS || mem_len<=FOUR_MEGS){
+#else
         if (old_pc>=FOURTEEN_MEGS && mem_len<=FOUR_MEGS){
-          // A program in user memory can't change config, with > 4MB this is always ignored        
+#endif
+//          TRACE("PC %X write %X to MMU\n",pc,io_src_b);
           mmu_memory_configuration=io_src_b;
           mmu_bank_length[0]=mmu_bank_length_from_config[(mmu_memory_configuration & b1100) >> 2];
           mmu_bank_length[1]=mmu_bank_length_from_config[(mmu_memory_configuration & b0011)];
           mmu_confused=false;
           if (bank_length[0]) if (mmu_bank_length[0]!=bank_length[0]) mmu_confused=true;
           if (bank_length[1]) if (mmu_bank_length[1]!=bank_length[1]) mmu_confused=true;
+#if defined(STEVEN_SEAGAL) && defined(SS_VAR_MMU_FIX)
+          // I don't know what mmu_confused is supposed to do, but I know that
+          // it shouldn't do its thing for the Neo Show
+          if(old_pc<FOURTEEN_MEGS)
+            mmu_confused=false;
+#endif
           himem=(MEM_ADDRESS)(mmu_confused ? 0:mem_len);
         }
       }else if (addr>0xff800f){
@@ -879,7 +1168,7 @@ void ASMCALL io_write_b(MEM_ADDRESS addr,BYTE io_src_b)
           // 100.l = create disk image
           case 0xffc104: emudetect_reset(); break;
 
-          case 0xffc105: new_n_cpu_cycles_per_second=min(max(int(io_src_b),8),128)*1000000; break;
+          case 0xffc105: new_n_cpu_cycles_per_second=min(max((int)(io_src_b),8),128)*1000000; break;
 
           case 0xffc108: // Run speed percent hi
           case 0xffc109: // Run speed percent low
@@ -887,11 +1176,11 @@ void ASMCALL io_write_b(MEM_ADDRESS addr,BYTE io_src_b)
             WORD percent=WORD(100000/run_speed_ticks_per_second);
             if (addr==0xffc108) WORD_B_1(&percent)=io_src_b; // High byte
             if (addr==0xffc109) WORD_B_0(&percent)=io_src_b; // Low byte
-            run_speed_ticks_per_second=100000 / max(int(percent),50);
+            run_speed_ticks_per_second=100000 / max((int)(percent),50);
             break;
           }
-          case 0xffc107: snapshot_loaded=bool(io_src_b); break;
-          case 0xffc11a: emudetect_write_logs_to_printer=bool(io_src_b); break;
+          case 0xffc107: snapshot_loaded=(bool)(io_src_b); break;
+          case 0xffc11a: emudetect_write_logs_to_printer=(bool)(io_src_b); break;
           case 0xffc11b:
             if (extended_monitor==0 && screen_res<2 && BytesPerPixel>1) emudetect_falcon_mode=BYTE(io_src_b);
             break;
@@ -914,6 +1203,10 @@ void ASMCALL io_write_b(MEM_ADDRESS addr,BYTE io_src_b)
       if (addr>0xff9001) exception(BOMBS_BUS_ERROR,EA_WRITE,addr);
       break;
     }case 0xff9200:{ //paddles
+#if defined(STEVEN_SEAGAL) && defined(SS_STF)
+       if(ST_type==STF)
+         break;  // or bombs?
+#endif
       if (addr==0xff9202){ // Doesn't work for high byte
         WORD_B_1(&paddles_ReadMask)=0;
       }else if (addr==0xff9203){
@@ -934,12 +1227,27 @@ void ASMCALL io_write_w(MEM_ADDRESS addr,WORD io_src_w)
   if (addr>=0xff8240 && addr<0xff8260){  //palette
     DEBUG_CHECK_WRITE_IO_W(addr,io_src_w);
     int n=(addr-0xff8240) >> 1;
-    io_src_w&=0xfff;
+#if defined(STEVEN_SEAGAL) && defined(SS_STF)
+    if(ST_type==STF)	
+      io_src_w&=0x0777; // fix #3 for Forest
+    else
+#endif
+      io_src_w&=0xfff;
     if (STpal[n]!=io_src_w){
       STpal[n]=io_src_w;
       PAL_DPEEK(n*2)=STpal[n];
       log_to(LOGSECTION_VIDEO,Str("VIDEO: ")+HEXSl(old_pc,6)+" - Palette change at scan_y="+scan_y+" cycles so far="+(ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl));
+#if defined(STEVEN_SEAGAL) && defined(SS_VID_HATARI) && defined(SS_DEBUG)
+      int FrameCycles, HblCounterVideo, LineCycles;
+      Video_GetPosition_OnWriteAccess ( &FrameCycles , &HblCounterVideo , &LineCycles );
+      VideoEvents.Add( HblCounterVideo , LineCycles, 'P', io_src_w); 
+#endif
+#if defined(STEVEN_SEAGAL) && defined(SS_VIDEO)
+      if(draw_lock) // notice +1
+        Shifter.DrawScanlineTo(ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl+1);
+#else // Steem 3.2
       if (draw_lock) draw_scanline_to((ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl)+1);
+#endif
       if (flashlight_flag==0 && draw_line_off==0 DEBUG_ONLY( && debug_cycle_colours==0) ){
         palette_convert(n);
       }
@@ -999,4 +1307,3 @@ void ASMCALL io_write_l(MEM_ADDRESS addr,LONG io_src_l)
 }
 
 #undef LOGSECTION
-

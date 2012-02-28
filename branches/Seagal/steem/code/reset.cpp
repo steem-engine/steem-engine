@@ -85,7 +85,9 @@ void power_on()
 void reset_peripherals(bool Cold)
 {
   log("***** reset peripherals ****");
-
+  TRACE("Reset peripherals (");
+  TRACE(Cold ? "cold)\n" : "warm)\n"); // bool -> int doesn't work
+	
 #ifndef NO_CRAZY_MONITOR
   if (extended_monitor){
     if (em_planes==1){
@@ -100,13 +102,34 @@ void reset_peripherals(bool Cold)
 
   if (COLOUR_MONITOR){
     screen_res=0;
-    shifter_freq=60;
+    shifter_freq=60; // SS notice reset freq=60hz
     shifter_freq_idx=1;
+#if defined(STEVEN_SEAGAL) && defined(SS_VID_HATARI)
+    bUseHighRes=FALSE; // don't stall on switch HI->Colour...
+#endif
   }else{
     screen_res=2;
     shifter_freq=MONO_HZ;
     shifter_freq_idx=2;
+#if defined(STEVEN_SEAGAL) && defined(SS_VID_HATARI)
+    bUseHighRes=TRUE;
+#endif
   }
+  
+#if defined(STEVEN_SEAGAL)
+
+#if defined(SS_VID_HATARI)
+  Video_Reset();
+#endif
+#if defined(SS_VAR_PROG_ID)
+  if(Cold)
+    // Not for warm resets because there are many reset tricks.
+    SetProgram(NONE);
+#endif
+
+#endif
+  
+  
   shifter_hscroll=0;
   shifter_hscroll_extra_fetch=0;
   shifter_fetch_extra_words=0; //unspecified
@@ -156,8 +179,20 @@ void reset_peripherals(bool Cold)
 
   ACIA_Reset(NUM_ACIA_IKBD,true);
 
+#if defined(STEVEN_SEAGAL) && defined(SS_IKBD_DRAGONNELS)
+/* This little trick "fixes" Dragonnels silly menu problem (in this Steem 
+   build) that you must move the mouse for the screen info to appear, without
+   having to mess in Hatari code.
+   It also works for the reset screen, and it doesn't break the
+   nice Plazma screen either.
+   It would kill Steem for most other programs (PC stack overflow)!
+*/
+  if(SpecificHacks && Program==DRAGONNELS && !Cold)
+    TRACE("Dragonnels ikbd reset hack\n");
+  ikbd_reset( (SpecificHacks && Program==DRAGONNELS) ? Cold : true ); 
+#else
   ikbd_reset(true); // Always cold reset, soft reset is different
-
+#endif
   ACIA_Reset(NUM_ACIA_MIDI,true);
 
   MIDIPort.Reset();
@@ -180,6 +215,9 @@ void reset_peripherals(bool Cold)
 //---------------------------------------------------------------------------
 void reset_st(DWORD flags)
 {
+#if defined(STEVEN_SEAGAL) && defined(SS_CPU_PREFETCH)
+  prefetched_2=FALSE;
+#endif
   bool Stop=bool(flags & RESET_NOSTOP)==0;
   bool Warm=bool(flags & RESET_WARM);
   bool ChangeSettings=bool(flags & RESET_NOCHANGESETTINGS)==0;

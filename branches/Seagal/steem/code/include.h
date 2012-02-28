@@ -9,7 +9,7 @@ bool enable_zip=false;
 #endif
 //---------------------------------------------------------------------------
 #ifdef WIN32
-HINSTANCE Inst;
+HINSTANCE Inst;	// this global variable is declared in this header SS
 #endif
 #define HInstance Inst
 //---------------------------------------------------------------------------

@@ -6,6 +6,7 @@ DESCRIPTION: The history list window in the debug build that shows a list of
 recently executed commands.
 ---------------------------------------------------------------------------*/
 
+
 //---------------------------------------------------------------------------
 THistoryList::THistoryList()
 {

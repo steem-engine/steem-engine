@@ -183,7 +183,11 @@ int TOptionBox::TOSLangToFlagIdx(int Lang)
     case 3: return 4;  //German
     case 11: return 5; //Italian
     case 13: return 6; //Swedish
+#if defined(STEVEN_SEAGAL) && defined(SS_VARIOUS) // from some dude
     case 39: return 9; //Russian-corrected
+#else
+    case 14: return 9; //Russian
+#endif
     case 17: return 7; //Swiss German
     case 27: return 8; //Dutch
   }
@@ -505,7 +509,6 @@ void TOptionBox::ChooseScreenShotFolder(HWND Win)
 void TOptionBox::UpdateForDSError()
 {
   if (Handle==NULL) return;
-
   for (int n=7099;n<7110;n++) if (GetDlgItem(Handle,n)) EnableWindow(GetDlgItem(Handle,n),0);
   for (int n=7049;n<7062;n++) if (GetDlgItem(Handle,n)) EnableWindow(GetDlgItem(Handle,n),0);
   for (int n=7200;n<7210;n++) if (GetDlgItem(Handle,n)) EnableWindow(GetDlgItem(Handle,n),0);
@@ -825,6 +828,18 @@ LRESULT __stdcall TOptionBox::WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lPar
             if (draw_grille_black<4) draw_grille_black=4;
           }
           break;
+
+#if defined(STEVEN_SEAGAL) && defined(SS_STF)
+          // option STF or STE 
+        case 211:
+          if (HIWORD(wPar)==CBN_SELENDOK)
+          {
+            ST_type=(EST_type)SendMessage(HWND(lPar),CB_GETCURSEL,0,0);
+            SwitchSTType(ST_type);
+          }
+	  break;
+#endif
+
         case 208:
           if (HIWORD(wPar)==BN_CLICKED){
             bool proceed=true;
@@ -944,6 +959,50 @@ LRESULT __stdcall TOptionBox::WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lPar
             SendMessage(HWND(lPar),BM_SETCHECK,Disp.ScreenShotMinSize,0);
           }
           break;
+
+#if defined(STEVEN_SEAGAL)
+
+        // My options!
+
+#if defined(SS_VID_BORDERS)
+
+          // Option Large borders
+        case 1026:
+          if (HIWORD(wPar)==CBN_SELENDOK)
+          {
+            BorderSize=SendMessage(HWND(lPar),CB_GETCURSEL,0,0);
+            ChangeBorderSize(BorderSize);
+            // in case player tries very large in fullscreen mode
+            SendMessage(HWND(lPar),CB_SETCURSEL,min((int)BorderSize,2),0); 
+          }
+	  break;
+
+#endif
+
+#if defined(SS_VARIOUS)
+
+          // Option Specific hacks
+        case 1027:
+          if(HIWORD(wPar)==BN_CLICKED)
+          {
+            SpecificHacks=!SpecificHacks;
+            SendMessage(HWND(lPar),BM_SETCHECK,SpecificHacks,0);
+          }
+          break;
+
+          // Option Capture mouse
+        case 1028:
+          if(HIWORD(wPar)==BN_CLICKED)
+          {
+            CaptureMouse=!CaptureMouse;
+            SendMessage(HWND(lPar),BM_SETCHECK,CaptureMouse,0);
+          }
+          break;
+
+#endif
+
+#endif//SS
+
         case 1051:
           if (HIWORD(wPar)==CBN_SELENDOK){
             Str Ext;
@@ -1212,6 +1271,25 @@ LRESULT __stdcall TOptionBox::WndProc(HWND Win,UINT Mess,WPARAM wPar,LPARAM lPar
             SendMessage(HWND(lPar),BM_SETCHECK,sound_internal_speaker,0);
           }
           break;
+
+#if defined(STEVEN_SEAGAL) && defined(SS_VARIOUS)
+        // Keyboard click on/off
+        case 7301:
+          if (HIWORD(wPar)==BN_CLICKED){
+            BOOL keyboard_click=( PEEK(0x484)&1 ); // current bit
+            keyboard_click=!keyboard_click; // reverse bit
+            if(keyboard_click) // pathetic, there must be a better way
+            {
+              PEEK(0x484)|=0x0001;
+            }
+            else
+            {
+              PEEK(0x484)&=0xFFFE;
+            }
+            SendMessage(HWND(lPar),BM_SETCHECK,keyboard_click,0);
+          }
+          break; 
+#endif
 
         case 8100: // Memory size
           if (HIWORD(wPar)==CBN_SELENDOK){

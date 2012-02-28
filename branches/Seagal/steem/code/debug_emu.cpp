@@ -28,7 +28,8 @@ void debug_update_drawing_position(int *pHorz)
       if (screen_res_at_start_of_vbl==1 || mixed_output || draw_med_low_double_height) horz_scale=2;
 
       int x=scanline_drawn_so_far;
-      if ((border & 1)==0) x=max(x-BORDER_SIDE,0);
+      if ((border & 1)==0) 
+        x=max(x-BORDER_SIDE,0);
       x*=horz_scale;
 
       draw_dest_ad+=x*BytesPerPixel;
@@ -61,9 +62,13 @@ void update_display_after_trace()
     int horz_scale=0;
     debug_update_drawing_position(&horz_scale);
 
+#if defined(STEVEN_SEAGAL) && defined(SS_VIDEO)
+    Shifter.DrawScanlineTo(ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl);
+#else
     draw_scanline_to(ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl);
-
+#endif
     if ((scanline_drawn_so_far < BORDER_SIDE+320+BORDER_SIDE) && horz_scale){
+
       int line_add=0;
       if (draw_med_low_double_height) line_add=draw_line_length;
       for (int i=0;i<horz_scale;i++){
@@ -109,7 +114,8 @@ void breakpoint_log()
   logline+="\r\n";
   log_write(logline);
 }
-//---------------------------------------------------------------------------
+
+//---------------------------------------------------------------------------
 void breakpoint_check()
 {
   if (runstate!=RUNSTATE_RUNNING) return;
@@ -131,7 +137,12 @@ void debug_update_cycle_counts()
 {
   debug_cycles_since_VBL=ABSOLUTE_CPU_TIME-cpu_time_of_last_vbl;
   debug_cycles_since_HBL=ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl;
+#if defined(STEVEN_SEAGAL) && defined(SS_VIDEO)
+  debug_VAP=Shifter.ReadSDP(ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl);
+#else
   debug_VAP=get_shifter_draw_pointer(ABSOLUTE_CPU_TIME-cpu_timer_at_start_of_hbl);
+#endif
+
   for (int t=0;t<4;t++){
     if (mfp_timer_enabled[t]){
       debug_time_to_timer_timeout[t]=mfp_timer_timeout[t]-ABSOLUTE_CPU_TIME;
@@ -147,8 +158,11 @@ extern WORD d2_dpeek(MEM_ADDRESS);
 void debug_hit_mon(MEM_ADDRESS ad,int read)
 {
   if (mode!=STEM_MODE_CPU) return;
-
+#if defined(STEVEN_SEAGAL)
+  WORD mask=debug_get_ad_mask(ad,TRUE);
+#else
   WORD mask=debug_get_ad_mask(ad,read);
+#endif
   int bytes=2;
   if (mask==0xff00) bytes=1;
   if (mask==0x00ff) bytes=1, ad++;
@@ -177,8 +191,11 @@ void debug_hit_mon(MEM_ADDRESS ad,int read)
 void debug_hit_io_mon_write(MEM_ADDRESS ad,int val)
 {
   if (mode!=STEM_MODE_CPU) return;
-
+#if defined(STEVEN_SEAGAL)
+  WORD mask=debug_get_ad_mask(ad,TRUE);
+#else
   WORD mask=debug_get_ad_mask(ad,read);
+#endif
   int bytes=2;
   if (mask==0xff00) bytes=1;
   if (mask==0x00ff) bytes=1, ad++;
@@ -300,4 +317,5 @@ int __stdcall debug_plugin_write_mem(DWORD ad,BYTE *buf,int len)
   return n_bytes;
 }
 //---------------------------------------------------------------------------
+
 

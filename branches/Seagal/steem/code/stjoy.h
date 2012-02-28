@@ -241,7 +241,6 @@ public:
 TJoystick::TJoystick()
 {
   ToggleKey=0;
-
   for (int n=0;n<6;n++) DirID[n]=0xffff;
   DeadZone=50;
   AutoFireSpeed=0;

@@ -7,27 +7,125 @@ the code for Steem's agenda system that schedules tasks to be performed at
 the end of scanlines.
 ---------------------------------------------------------------------------*/
 
+// Default is STE
+
+#if defined(STEVEN_SEAGAL) && defined(SS_MFP_RATIO)
+double CpuMfpRatio=(double)CPU_STE_TH/(double)MFP_CLK_LE_EXACT; // STE
+//double CpuMfpRatio=(double)CPU_STF_PAL/(double)MFP_CLK_TH_EXACT; // STF
+DWORD CpuNormalHz=CPU_STE_TH; // STE
+//long CpuNormalHz=CPU_STF_PAL; // STF
+#endif
+
+#if defined(STEVEN_SEAGAL) && defined(SS_STF)
+
+EST_type ST_type=STE;
+
+EST_type SwitchSTType(EST_type new_type) {
+  // Adapt to ST type (STF (0) or STE (1)).
+  ASSERT(new_type==STE||new_type==STF);
+  ST_type=new_type;
+#if defined(SS_VID_HATARI)
+  Video_SetSystemTimings();
+#endif
+  if(ST_type==STF)
+  {
+    stfm_borders=4; // was already in Steem 3.2
+#if defined(SS_VID_HATARI)
+    ConfigureParams.System.nMachineType = MACHINE_ST ;
+#endif
+#if defined(SS_MFP_RATIO)
+    CpuMfpRatio=(double)CPU_STF_PAL/(double)MFP_CLK_TH_EXACT;
+    CpuNormalHz=CPU_STF_PAL;
+#endif
+  }
+  else // STE
+  {
+    stfm_borders=0;
+#if defined(SS_VID_HATARI)
+    ConfigureParams.System.nMachineType = MACHINE_STE ;
+#endif
+#if defined(SS_MFP_RATIO)
+    CpuMfpRatio=(double)CPU_STE_TH/(double)MFP_CLK_LE_EXACT;
+    CpuNormalHz=CPU_STE_TH;
+#endif
+  }
+  return ST_type;
+}
+
+#endif
+
+
+#if defined(STEVEN_SEAGAL) && defined(SS_VARIOUS)
+
+// Converting #define CHECK_AGENDA in an inline function
+// to make debugging easier.
+// It is used only twice in the listing, in run.cpp,
+// at the end of a scanline (event_hbl() or event_scanline()).
+inline void CheckAgenda() {
+  if((hbl_count++)==agenda_next_time)
+  {                           
+    if(agenda_length)
+    {                                           
+      WIN_ONLY( EnterCriticalSection(&agenda_cs); )               
+//TODO      log(EasyStr("TASKS: Executing agenda action at ")+hbl_count);      
+      if(agenda_length) // twice?
+      {                                         
+        while ((signed int)(hbl_count-agenda[agenda_length-1].time)>=0)
+        { 
+          agenda_length--;                                        
+          if (agenda[agenda_length].perform!=NULL) 
+            agenda[agenda_length].perform(agenda[agenda_length].param); 
+          if (agenda_length)
+          {                                     
+            agenda_next_time=agenda[agenda_length-1].time;        
+          }
+          else
+          {                                                  
+            agenda_next_time=hbl_count-1; /*wait 42 hours*/       
+            break;                                                
+          }                                                       
+        }                                                         
+      }                                                           
+      WIN_ONLY( LeaveCriticalSection(&agenda_cs); )               
+    }                                                             
+  }
+}
+
+#endif//SS_VARIOUS
+
+
 //---------------------------------------------------------------------------
 void init_timings()
 {
+  // SS: called once at power on, at load
   // don't do anything to agendas here!
 
   disk_light_off_time=timeGetTime()+DisableDiskLightAfter;
 
   fdc_str&=BYTE(~FDC_STR_MOTOR_ON);
-  shifter_first_draw_line=0;
+  shifter_first_draw_line=0;	// SS: 0-199 = normal display
   shifter_last_draw_line=shifter_y;
   if (COLOUR_MONITOR==0) shifter_freq=MONO_HZ;
-  CALC_SHIFTER_FREQ_IDX;
-  CALC_CYCLES_FROM_HBL_TO_TIMER_B(shifter_freq);
 
+#if defined(STEVEN_SEAGAL) && defined(SS_VIDEO)
+  shifter_freq_idx=Shifter.CalcFreqIdx(shifter_freq);
+#else
+  CALC_SHIFTER_FREQ_IDX;
+#endif
+  
+  CALC_CYCLES_FROM_HBL_TO_TIMER_B(shifter_freq);
+  
   screen_res_at_start_of_vbl=screen_res;
   shifter_freq_at_start_of_vbl=shifter_freq;
   scanline_time_in_cpu_cycles_at_start_of_vbl=scanline_time_in_cpu_cycles[shifter_freq_idx];
   hbl_pending=true;
 
   cpu_time_of_start_of_event_plan=0; //0x7f000000; // test overflow
+#if defined(STEVEN_SEAGAL) && defined(SS_MFP_RATIO)
+  if (n_cpu_cycles_per_second>CpuNormalHz){
+#else
   if (n_cpu_cycles_per_second>8000000){
+#endif
     screen_event_pointer=event_plan_boosted[shifter_freq_idx];
   }else{
     screen_event_pointer=event_plan[shifter_freq_idx];
@@ -40,6 +138,7 @@ void init_timings()
   cpu_time_of_last_vbl=ABSOLUTE_CPU_TIME;
   time_of_next_timer_b=cpu_time_of_last_vbl+160000;
   scan_y=-scanlines_above_screen[shifter_freq_idx];
+
   time_of_last_hbl_interrupt=ABSOLUTE_CPU_TIME;
 
   cpu_time_of_first_mfp_tick=ABSOLUTE_CPU_TIME;
@@ -82,7 +181,12 @@ void init_timings()
   dma_sound_channel_buf_last_write_t=0;
 
 #if USE_PASTI
+#if defined(STEVEN_SEAGAL) && defined(SS_MFP_RATIO)
+  pasti_update_time=ABSOLUTE_CPU_TIME+CpuNormalHz;
+
+#else
   pasti_update_time=ABSOLUTE_CPU_TIME+8000000;
+#endif
 #endif
 
   hbl_count=0;
@@ -172,7 +276,12 @@ void intercept_bios()
     if (d>=2){
       if (stemdos_check_mount(d)){
         r[0]=0; // Hasn't changed - everything ignores this anyway
+
+#if defined(STEVEN_SEAGAL) && defined(SS_CPU)
+        m68k_perform_rte(); // no function to call
+#else
         M68K_PERFORM_RTE(;);  //don't need to check interrupts because sr won't actually have changed
+#endif
       }
     }
   }
@@ -197,14 +306,20 @@ void intercept_xbios()
     areg[0]=0xffc100;
     emudetect_called=true;
     emudetect_init();
-
+#if defined(STEVEN_SEAGAL) && defined(SS_CPU)
+    m68k_perform_rte(); // no function to call
+#else
     M68K_PERFORM_RTE(;);  //don't need to check interrupts because sr won't actually have changed
+#endif
   }else if (m68k_dpeek(sp)==23 && stemdos_intercept_datetime){ // Get clock time
     time_t timer=time(NULL);
     struct tm *lpTime=localtime(&timer);
     r[0]=TMToDOSDateTime(lpTime);
-
+#if defined(STEVEN_SEAGAL) && defined(SS_CPU)
+    m68k_perform_rte(); // no function to call
+#else
     M68K_PERFORM_RTE(;);  //don't need to check interrupts because sr won't actually have changed
+#endif
 /*
   }else if (m68k_dpeek(sp)==4 && extended_monitor){
     /// Getrez returns different values in TT modes
@@ -234,9 +349,9 @@ int ACIAClockToHBLS(int ClockDivide,bool MIDI_In)
     }
   }else{
     if (ClockDivide==1){ // Divide by 16 (31250 bits per second)
-      HBLs=int(HBLS_PER_SECOND_AVE/(500000.0/16.0/9.0) + 1);
+      HBLs=(int)(HBLS_PER_SECOND_AVE/(500000.0/16.0/9.0) + 1);
     }else if (ClockDivide==2){ // Divide by 64 (7812.5 bits per second)
-      HBLs=int(HBLS_PER_SECOND_AVE/(500000.0/64.0/9.0) + 1);
+      HBLs=(int)(HBLS_PER_SECOND_AVE/(500000.0/64.0/9.0) + 1);
     }
   }
   if (MIDI_In && MIDI_in_speed!=100){
@@ -292,6 +407,7 @@ void agenda_add(LPAGENDAPROC action,int pause,int param)
 {
   if (agenda_length>=MAX_AGENDA_LENGTH){
     log_write("AARRRGGGHH!: Agenda full, can't add!");
+    TRACE("AARRRGGGHH!: Agenda full, can't add!\n");
     return;
   }
 
@@ -304,7 +420,7 @@ void agenda_add(LPAGENDAPROC action,int pause,int param)
   for (int nn=agenda_length;nn>n;nn--){
     agenda[nn]=agenda[nn-1];
   }
-  agenda[n].perform=action;
+  agenda[n].perform=action; // SS pointer to the function to call
   agenda[n].time=target_time;
   agenda[n].param=param;
   agenda_next_time=agenda[agenda_length].time;
@@ -345,12 +461,25 @@ int agenda_get_queue_pos(LPAGENDAPROC job)
   return n;
 }
 //---------------------------------------------------------------------------
+#if defined(STEVEN_SEAGAL) && defined(SS_IKBD)
+void agenda_acia_tx_delay_IKBD(int)
+{
+  ACIA_IKBD.tx_flag=0; //finished transmitting
+  if(ACIA_IKBD.tx_irq_enabled)
+  {
+    TRACE("agenda_acia_tx_delay_IKBD setting IRQ at %d\n",ABSOLUTE_CPU_TIME);
+    ACIA_IKBD.irq=true;
+  }
+  mfp_gpip_set_bit(MFP_GPIP_ACIA_BIT,!(ACIA_IKBD.irq || ACIA_MIDI.irq));
+}
+#else
 void agenda_acia_tx_delay_IKBD(int)
 {
   ACIA_IKBD.tx_flag=0; //finished transmitting
   if (ACIA_IKBD.tx_irq_enabled) ACIA_IKBD.irq=true;
   mfp_gpip_set_bit(MFP_GPIP_ACIA_BIT,!(ACIA_IKBD.irq || ACIA_MIDI.irq));
 }
+#endif
 //---------------------------------------------------------------------------
 void agenda_acia_tx_delay_MIDI(int)
 {

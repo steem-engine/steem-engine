@@ -20,7 +20,23 @@ void TOptionBox::CreatePage(int n)
 //---------------------------------------------------------------------------
 void TOptionBox::CreateMachinePage()
 {
-	int y=10;
+  int y=10;
+
+#if defined(STEVEN_SEAGAL) && defined(SS_STF)
+  // Switch STF/STE
+  st_type_label.create(XD,page_p,page_l,y,0,25,NULL,this,
+          					BT_LABEL,T("ST Model"),0,BkCol);
+  st_type_dd.make_empty();
+  st_type_dd.additem(T("STF"));
+  st_type_dd.additem(T("STE"));
+  st_type_dd.changesel(ST_type);
+
+  st_type_dd.create(XD,page_p,page_l+5+bo_label.w,y,
+  						page_w-(5+bo_label.w),210,dd_notify_proc,this);
+  y+=35;
+
+#endif
+
   int Wid=hxc::get_text_width(XD,T("ST CPU speed"));
 	cpu_boost_label.create(XD,page_p,page_l,y,Wid,25,NULL,this,BT_STATIC | BT_TEXT,T("ST CPU speed"),0,BkCol);
   cpu_boost_dd.id=8;
@@ -58,7 +74,7 @@ void TOptionBox::CreateMachinePage()
   cpu_boost_dd.create(XD,page_p,page_l+5+Wid,y,400-(15+Wid+10),350,dd_notify_proc,this);
   y+=35;
 
-	memory_label.create(XD,page_p,page_l,y,0,25,NULL,this,BT_LABEL,T("Memory size"),0,BkCol);
+  memory_label.create(XD,page_p,page_l,y,0,25,NULL,this,BT_LABEL,T("Memory size"),0,BkCol);
 
   memory_dd.id=910;
   memory_dd.make_empty();
@@ -83,10 +99,10 @@ void TOptionBox::CreateMachinePage()
   }
 #endif
 
-	monitor_dd.create(XD,page_p,page_l+5+monitor_label.w,y,page_w-(5+monitor_label.w),200,dd_notify_proc,this);
-	y+=35;
+  monitor_dd.create(XD,page_p,page_l+5+monitor_label.w,y,page_w-(5+monitor_label.w),200,dd_notify_proc,this);
+  y+=35;
 
-	hxc_button *kg=new hxc_button(XD,page_p,page_l,y,page_w,85,NULL,this,
+  hxc_button *kg=new hxc_button(XD,page_p,page_l,y,page_w,85,NULL,this,
 					BT_GROUPBOX,T("Keyboard"),0,hxc::col_bk);
 
   keyboard_language_dd.id=940;
@@ -113,26 +129,26 @@ void TOptionBox::CreateMachinePage()
 																	T("Language"),0,BkCol);
   keyboard_language_dd.create(XD,kg->handle,15+Wid,20,page_w-20-(5+Wid),200,dd_notify_proc,this);
 
-	keyboard_sc_but.set_check(EnableShiftSwitching);
-	keyboard_sc_but.create(XD,kg->handle,10,50,0,25,button_notify_proc,this,
-             BT_CHECKBOX,T("Shift and alternate correction"),960,BkCol);
+  keyboard_sc_but.set_check(EnableShiftSwitching);
+  keyboard_sc_but.create(XD,kg->handle,10,50,0,25,button_notify_proc,this,
+    BT_CHECKBOX,T("Shift and alternate correction"),960,BkCol);
   hints.add(keyboard_sc_but.handle,T("When checked this allows Steem to emulate all keys correctly, it does this by changing the shift and alternate state of the ST when you press them.")+" "+
                               T("This could interfere with games and other programs, only use it if you are doing lots of typing.")+" "+
                               T("Please note that instead of pressing Alt-Gr or Control to access characters on the right-hand side of a key, you have to press Alt or Alt+Shift (this is how it was done on an ST)."),
                               page_p);
   y+=95;
 
-	cart_group.create(XD,page_p,page_l,y,page_w,90,NULL,this,BT_GROUPBOX,T("Cartridge"),0,BkCol);
+  cart_group.create(XD,page_p,page_l,y,page_w,90,NULL,this,BT_GROUPBOX,T("Cartridge"),0,BkCol);
 
-	cart_display.create(XD,cart_group.handle,10,25,
-		page_w-20,25,NULL,this,BT_STATIC|BT_TEXT|BT_BORDER_INDENT|BT_TEXT_PATH,
-		CartFile.Text,0,WhiteCol);
+  cart_display.create(XD,cart_group.handle,10,25,
+    page_w-20,25,NULL,this,BT_STATIC|BT_TEXT|BT_BORDER_INDENT|BT_TEXT_PATH,
+    CartFile.Text,0,WhiteCol);
 
-	cart_change_but.create(XD,cart_group.handle,10,55,
-		page_w/2-10-5,25,button_notify_proc,this,BT_TEXT,T("Choose"),737,BkCol);
+  cart_change_but.create(XD,cart_group.handle,10,55,
+    page_w/2-10-5,25,button_notify_proc,this,BT_TEXT,T("Choose"),737,BkCol);
 
-	cart_remove_but.create(XD,cart_group.handle,page_w/2+5,55,
-		page_w/2-10-5,25,button_notify_proc,this,BT_TEXT,T("Remove"),747,BkCol);
+  cart_remove_but.create(XD,cart_group.handle,page_w/2+5,55,
+    page_w/2-10-5,25,button_notify_proc,this,BT_TEXT,T("Remove"),747,BkCol);
   y+=100;
 
   mustreset_td.text=T("Memory and monitor changes don't take effect until the next cold reset of the ST");
@@ -510,6 +526,18 @@ void TOptionBox::CreateGeneralPage()
   hints.add(start_click_but.handle,T("When this option is ticked clicking a mouse button on Steem's main window will start emulation."),
               page_p);
 
+#if defined(STEVEN_SEAGAL) && defined(SS_VARIOUS)
+  // Option Specific hacks
+  y+=30;
+  specific_hacks_but.create(XD,page_p,page_l,y,0,25,
+          button_notify_proc,this,BT_CHECKBOX,
+          T("Hacks"),160,BkCol);
+  specific_hacks_but.set_check(SpecificHacks);
+  hints.add(specific_hacks_but.handle,T("If checked, specific hacks targetting known programs are used. Those hacks may break other programs."),
+              page_p);
+
+#endif
+
   XFlush(XD);
 }
 //---------------------------------------------------------------------------
@@ -625,13 +653,19 @@ void TOptionBox::CreateSoundPage()
 											WAVOutputFile,0,WhiteCol);
 
 	overwrite_ask_but.create(XD,record_group.handle,10,55,0,25,button_notify_proc,this,
-											BT_CHECKBOX,T("Warn before overwrite"),5102,BkCol);
+				BT_CHECKBOX,T("Warn before overwrite"),5102,BkCol);
 	overwrite_ask_but.set_check(RecordWarnOverwrite);
 	y+=100;
 
 	internal_speaker_but.create(XD,page_p,page_l,y,0,25,button_notify_proc,this,
-											BT_CHECKBOX,T("Internal speaker sound"),5300,BkCol);
+					BT_CHECKBOX,T("Internal speaker sound"),5300,BkCol);
 	internal_speaker_but.set_check(sound_internal_speaker);
+
+#if defined(STEVEN_SEAGAL) && defined(SS_VARIOUS)
+	keyboard_click_but.create(XD,page_p,page_l,y,0,25,button_notify_proc,this,
+					BT_CHECKBOX,T("Keyboard click"),5301,BkCol);
+	keyboard_click_but.set_check(mute_keyboard_click);
+#endif
 
   XFlush(XD);
 }
@@ -697,6 +731,21 @@ void TOptionBox::CreateDisplayPage()
 {
 	int y=10;
 
+#if defined(STEVEN_SEAGAL) && defined(SS_VID_BORDERS)
+  // Option large border
+ border_size_label.create(XD,page_p,page_l,y,0,25,NULL,this,
+          					BT_LABEL,T("Border size"),0,BkCol);
+  border_size_dd.make_empty();
+  border_size_dd.additem(T("Normal (384x270)"));
+  border_size_dd.additem(T("Large (400x275)"));
+  border_size_dd.additem(T("Very large (416x280)"));
+  border_size_dd.changesel(BorderSize);
+  border_size_dd.create(XD,page_p,page_l+5+bo_label.w,y,
+  						page_w-(5+bo_label.w),170,dd_notify_proc,this);
+  y+=35;
+
+#endif
+
   fs_label.create(XD,page_p,page_l,y,0,25,
 				          NULL,this,BT_LABEL,T("Frameskip"),0,BkCol);
 
@@ -708,7 +757,8 @@ void TOptionBox::CreateDisplayPage()
   frameskip_dd.additem(T("Auto Frameskip"));
   frameskip_dd.changesel(min(frameskip-1,4));
 
-  frameskip_dd.create(XD,page_p,page_l+5+fs_label.w,y,page_w-(5+fs_label.w),200,dd_notify_proc,this);
+  frameskip_dd.create(XD,page_p,page_l+5+fs_label.w,y,page_w-(5+fs_label.w),
+	  200,dd_notify_proc,this);
 	y+=35;
 
   bo_label.create(XD,page_p,page_l,y,0,25,NULL,this,
@@ -721,8 +771,12 @@ void TOptionBox::CreateDisplayPage()
   border_dd.changesel(min(border,2));
 
   border_dd.create(XD,page_p,page_l+5+bo_label.w,y,
-  									page_w-(5+bo_label.w),210,dd_notify_proc,this);
+  						page_w-(5+bo_label.w),210,dd_notify_proc,this);
   y+=35;
+
+
+
+
 
   hxc_button *p_but=new hxc_button(XD,page_p,page_l,y,0,25,button_notify_proc,this,
                   BT_CHECKBOX,T("Scanline Grille"),210,BkCol);

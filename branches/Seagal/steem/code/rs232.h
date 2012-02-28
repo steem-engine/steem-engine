@@ -4,7 +4,8 @@
 #else
 #define EXT extern
 #define INIT(s)
-#endif
+
+#endif
 
 extern void RS232_VBL(int DEFVAL(0));
 extern void RS232_CalculateBaud(bool,BYTE,bool);
