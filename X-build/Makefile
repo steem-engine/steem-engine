@@ -55,16 +55,13 @@ OBJS=./obj/asm_draw.o ./obj/emu.o ./obj/asm_osd.o ./obj/main.o ./obj/helper.o ./
 
 # Targets
 
-all:	asm
-	mkdir -p obj output
-	$(MAKE) res
-	$(MAKE) helper
-	$(MAKE) main
-	$(MAKE) emu
-	$(MAKE) link
+all:	directories asm res helper main emu link
+
+directories:
+	mkdir -p obj output && touch $@
 
 clean:
-	rm -rf obj output
+	rm -rf obj output directories
 
 fresh:
 	$(MAKE) clean
@@ -95,12 +92,17 @@ emu:
 	$(CC) -o ./obj/emu.o -c $(ROOT)/steem/emu.cpp $(CFLAGS) $(STEEMFLAGS)
 
 
-asm:
-	mkdir -p ./obj
+asm:	./obj/asm_draw.o ./obj/asm_osd.o
+
+./obj/asm_draw.o:	$(ROOT)/steem/asm/asm_draw.asm
 	nasm -felf -o./obj/asm_draw.o -i$(ROOT)/steem/asm/ $(ROOT)/steem/asm/asm_draw.asm
+
+./obj/asm_osd.o:	$(ROOT)/steem/asm/asm_osd_draw.asm
 	nasm -felf -o./obj/asm_osd.o -i$(ROOT)/steem/asm/ $(ROOT)/steem/asm/asm_osd_draw.asm
 
-res:
+res:	./obj/resource.o
+
+./obj/resource.o:	$(ROOT)/steem/rc/resource.asm
 	nasm -felf -o./obj/resource.o -i$(ROOT)/steem/ $(ROOT)/steem/rc/resource.asm
 
 link: 
