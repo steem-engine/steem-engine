@@ -8,7 +8,7 @@ systems, which follows the Windows version pretty closely.
 
 ---- DISTRIBUTION ----
 
-Steem is freeware, but not open-source.
+Steem is open source, licensed under GPL3.
 
 At the moment we are distributing XSteem as pre-compiled
 binaries for use on 486-compatible Linux systems. We hope
