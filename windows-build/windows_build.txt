@@ -1,4 +1,6 @@
 
+Licence: GPL3 http://www.gnu.org/licenses/gpl-3.0.en.html
+
 Download unrarlib from http://www.unrarlib.org/download.html and extract to 3rdparty.
 Rename folder unrarlib040 to unrarlib
 
