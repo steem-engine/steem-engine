@@ -1,2 +1,9 @@
 X-build/directories
 X-build/obj/
+3rdparty/*.tgz
+3rdparty/*.tar.bz2
+3rdparty/*.tar.gz
+3rdparty/portaudio*
+3rdparty/rtaudio*
+3rdparty/unrarlib*
+3rdparty/zlib*
