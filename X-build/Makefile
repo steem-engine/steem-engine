@@ -55,16 +55,13 @@ OBJS=./obj/asm_draw.o ./obj/emu.o ./obj/asm_osd.o ./obj/main.o ./obj/helper.o ./
 
 # Targets
 
-all:	asm
-	mkdir -p obj output
-	$(MAKE) res
-	$(MAKE) helper
-	$(MAKE) main
-	$(MAKE) emu
-	$(MAKE) link
+all:	directories asm res helper main emu link
+
+directories:
+	mkdir -p obj output && touch $@
 
 clean:
-	rm -rf obj output
+	rm -rf obj output directories
 
 fresh:
 	$(MAKE) clean
@@ -95,12 +92,17 @@ emu:
 	$(CC) -o ./obj/emu.o -c $(ROOT)/steem/emu.cpp $(CFLAGS) $(STEEMFLAGS)
 
 
-asm:
-	mkdir -p ./obj
+asm:	./obj/asm_draw.o ./obj/asm_osd.o
+
+./obj/asm_draw.o:	$(ROOT)/steem/asm/asm_draw.asm
 	nasm -felf -o./obj/asm_draw.o -i$(ROOT)/steem/asm/ $(ROOT)/steem/asm/asm_draw.asm
+
+./obj/asm_osd.o:	$(ROOT)/steem/asm/asm_osd_draw.asm
 	nasm -felf -o./obj/asm_osd.o -i$(ROOT)/steem/asm/ $(ROOT)/steem/asm/asm_osd_draw.asm
 
-res:
+res:	./obj/resource.o
+
+./obj/resource.o:	$(ROOT)/steem/rc/resource.asm
 	nasm -felf -o./obj/resource.o -i$(ROOT)/steem/ $(ROOT)/steem/rc/resource.asm
 
 link: 
@@ -112,18 +114,46 @@ link_static:
 
 3rdparty:	zlib unrarlib portaudio rtaudio
 
-unrarlib:
-	gcc -c $(ROOT)/3rdparty/unrarlib/unrarlib/unrarlib.c $(CFLAGS) -o$(ROOT)/3rdparty/unrarlib/unrarlib/unrarlib.o
+unrarlib:	$(ROOT)/3rdparty/unrarlib/unrarlib/unrarlib.o
 
-zlib:
-	cd $(ROOT)/3rdparty/zlib; sh configure; make test
-	cd $(ROOT)/3rdparty/zlib/contrib/minizip; make all
+$(ROOT)/3rdparty/unrarlib/unrarlib/unrarlib.o:	$(ROOT)/3rdparty/unrarlib/unrarlib/unrarlib.c
+	$(CC) -c $(ROOT)/3rdparty/unrarlib/unrarlib/unrarlib.c $(CFLAGS) -o$(ROOT)/3rdparty/unrarlib/unrarlib/unrarlib.o
 
-portaudio:
-	cd $(ROOT)/3rdparty/portaudio; \
-	sh configure; \
-	make
+$(ROOT)/3rdparty/unrarlib/unrarlib/unrarlib.c:	download3rdparty
 
-rtaudio:
-	cd $(ROOT)/3rdparty/rtaudio; sh configure --with-oss; cd tests; make
+zlib:	$(ROOT)/3rdparty/zlib/crc32.o $(ROOT)/3rdparty/zlib/contrib/minizip/unzip.o
 
+$(ROOT)/3rdparty/zlib/crc32.o:	$(ROOT)/3rdparty/zlib/Makefile
+	$(MAKE) -C $(ROOT)/3rdparty/zlib test
+
+$(ROOT)/3rdparty/zlib/contrib/minizip/unzip.o:	$(ROOT)/3rdparty/zlib/Makefile
+	$(MAKE) -C $(ROOT)/3rdparty/zlib/contrib/minizip all
+
+$(ROOT)/3rdparty/zlib/Makefile: $(ROOT)/3rdparty/zlib/configure
+	cd $(ROOT)/3rdparty/zlib && sh configure
+
+$(ROOT)/3rdparty/zlib/configure:	download3rdparty
+
+portaudio: $(ROOT)/3rdparty/portaudio/lib/libportaudio.la
+
+$(ROOT)/3rdparty/portaudio/lib/libportaudio.la:	$(ROOT)/3rdparty/portaudio/Makefile
+	$(MAKE) -C $(ROOT)/3rdparty/portaudio
+
+$(ROOT)/3rdparty/portaudio/Makefile:	$(ROOT)/3rdparty/portaudio/configure
+	cd $(ROOT)/3rdparty/portaudio && \
+	sh configure
+
+$(ROOT)/3rdparty/portaudio/configure:	download3rdparty
+
+rtaudio:	$(ROOT)/3rdparty/rtaudio/RtAudio.o
+
+$(ROOT)/3rdparty/rtaudio/RtAudio.o:	$(ROOT)/3rdparty/rtaudio/configure
+	cd $(ROOT)/3rdparty/rtaudio && \
+	sh configure --with-oss && \
+	cd tests && make
+#sh configure --with-oss
+
+$(ROOT)/3rdparty/rtaudio/configure:	download3rdparty
+
+download3rdparty:
+	$(MAKE) -C $(ROOT)/3rdparty
