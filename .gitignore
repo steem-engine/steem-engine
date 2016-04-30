@@ -1,5 +1,6 @@
 X-build/directories
 X-build/obj/
+X-build/output/
 3rdparty/*.tgz
 3rdparty/*.tar.bz2
 3rdparty/*.tar.gz
