@@ -148,14 +148,23 @@ void hxc::load_res(Display*XD)
 
     font=NULL;
     for (int f=0;f<font_sl.NumStrings;f++){
+      printf("Trying to load font %s\n", font_sl[f].String);
       font=XLoadQueryFont(XD,font_sl[f].String);
       if (font) break;
     }
     if (font==NULL) {
       printf("WARNING: Could not load any pre-configured font - choosing a random font\n");
-      int fontCount = 0;
-      char** fontList = XListFonts(XD, "*", 1, &fontCount);
-      font = XLoadQueryFont(XD,fontList[0]);
+      int fontCount = 0, i;
+      char** fontList = XListFonts(XD, "*iso8859-1", 1, &fontCount);
+      if(fontList) {
+        for(i = 0; font == NULL && i < fontCount; i++) {
+          printf("Trying to load font %s\n", fontList[i]);
+          font = XLoadQueryFont(XD,fontList[i]);
+        }
+        XFreeFontNames(fontList);
+      } else {
+        printf("cannot find any font to load\n");
+      }
     }
     XSetFont(XD,gc,font->fid);
     cModal=XUniqueContext();
