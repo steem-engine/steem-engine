@@ -747,7 +747,7 @@ LONG m68k_read_dest_l(){
   DEBUG_ONLY( debug_first_instruction=0 );
 
 #define LOGSECTION LOGSECTION_TRACE
-extern "C" ASMCALL void m68k_trace() //execute instruction with trace bit set
+extern "C" void ASMCALL m68k_trace() //execute instruction with trace bit set
 {
 #ifdef _DEBUG_BUILD
   pc_history[pc_history_idx++]=pc;
