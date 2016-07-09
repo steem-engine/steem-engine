@@ -16,8 +16,8 @@
     <Filter Include="Third Party">
       <UniqueIdentifier>{d887cd2e-09f9-4842-9094-de5dc7673ae8}</UniqueIdentifier>
     </Filter>
-    <Filter Include="Object Files">
-      <UniqueIdentifier>{69df1f0e-f88d-4019-8457-c52ff183773c}</UniqueIdentifier>
+    <Filter Include="Assembly files">
+      <UniqueIdentifier>{f73d920e-cff2-43c6-880b-f724c56226ad}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
@@ -35,19 +35,16 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <Object Include="..\asm\asm_draw_VC.obj">
-      <Filter>Object Files</Filter>
-    </Object>
-    <Object Include="..\asm\asm_osd_VC.obj">
-      <Filter>Object Files</Filter>
-    </Object>
-    <Object Include="..\..\..\include\asm\portio_vc.obj">
-      <Filter>Object Files</Filter>
-    </Object>
-  </ItemGroup>
-  <ItemGroup>
     <ResourceCompile Include="..\..\steem\rc\resource.rc">
       <Filter>Resource Files</Filter>
     </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="..\..\steem\asm\asm_draw.asm">
+      <Filter>Assembly files</Filter>
+    </CustomBuild>
+    <CustomBuild Include="..\..\steem\asm\asm_osd_draw.asm">
+      <Filter>Assembly files</Filter>
+    </CustomBuild>
   </ItemGroup>
 </Project>

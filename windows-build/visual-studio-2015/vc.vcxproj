@@ -103,12 +103,25 @@
     <ClCompile Include="..\..\steem\Steem.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <Object Include="..\..\..\include\asm\portio_vc.obj" />
-    <Object Include="..\asm\asm_draw_VC.obj" />
-    <Object Include="..\asm\asm_osd_VC.obj" />
+    <ResourceCompile Include="..\..\steem\rc\resource.rc" />
   </ItemGroup>
   <ItemGroup>
-    <ResourceCompile Include="..\..\steem\rc\resource.rc" />
+    <CustomBuild Include="..\..\steem\asm\asm_draw.asm">
+      <FileType>Document</FileType>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">nasm -fwin32 -dWIN32 -d_VC_BUILD -i%(RelativeDir) -o$(IntermediateOutputPath)%(Filename).obj -w+macro-params -w+macro-selfref -w+orphan-labels %(Identity)</Command>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(IntermediateOutputPath)%(Filename).obj</Outputs>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">nasm -fwin32 -dWIN32 -d_VC_BUILD -i%(RelativeDir) -o$(IntermediateOutputPath)%(Filename).obj -w+macro-params -w+macro-selfref -w+orphan-labels %(Identity)</Command>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(IntermediateOutputPath)%(Filename).obj</Outputs>
+    </CustomBuild>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="..\..\steem\asm\asm_osd_draw.asm">
+      <FileType>Document</FileType>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">nasm -fwin32 -dWIN32 -d_VC_BUILD -i%(RelativeDir) -o$(IntermediateOutputPath)%(Filename).obj -w+macro-params -w+macro-selfref -w+orphan-labels %(Identity)</Command>
+      <Command Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">nasm -fwin32 -dWIN32 -d_VC_BUILD -i%(RelativeDir) -o$(IntermediateOutputPath)%(Filename).obj -w+macro-params -w+macro-selfref -w+orphan-labels %(Identity)</Command>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">$(IntermediateOutputPath)%(Filename).obj</Outputs>
+      <Outputs Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">$(IntermediateOutputPath)%(Filename).obj</Outputs>
+    </CustomBuild>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
