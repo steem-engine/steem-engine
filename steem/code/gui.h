@@ -17,7 +17,7 @@
 #define PEEKED_NOTHING 2
 #define PEEKED_RUN 3
 
-extern "C" ASMCALL int PeekEvent();
+extern "C" int ASMCALL PeekEvent();
 
 UNIX_ONLY( EXT void PostRunMessage(); )
 

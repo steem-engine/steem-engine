@@ -1,0 +1,50 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="Source Files">
+      <UniqueIdentifier>{66ff2e4e-9f04-42d7-a207-e57ce4bd3011}</UniqueIdentifier>
+      <Extensions>cpp;c;cxx;def;odl;idl;hpj;bat;asm</Extensions>
+    </Filter>
+    <Filter Include="Header Files">
+      <UniqueIdentifier>{033f7cc2-97ee-4a38-8646-c68342b0fc7e}</UniqueIdentifier>
+      <Extensions>h;hpp;hxx;hm;inl;inc</Extensions>
+    </Filter>
+    <Filter Include="Resource Files">
+      <UniqueIdentifier>{e17e270b-6fe9-4459-ba56-8ff34d180baa}</UniqueIdentifier>
+      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe</Extensions>
+    </Filter>
+    <Filter Include="Third Party">
+      <UniqueIdentifier>{d887cd2e-09f9-4842-9094-de5dc7673ae8}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Assembly files">
+      <UniqueIdentifier>{f73d920e-cff2-43c6-880b-f724c56226ad}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="..\..\steem\emu.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\steem\helper.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\steem\Steem.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\3rdparty\unrarlib\unrarlib.c">
+      <Filter>Third Party</Filter>
+    </ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ResourceCompile Include="..\..\steem\rc\resource.rc">
+      <Filter>Resource Files</Filter>
+    </ResourceCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <CustomBuild Include="..\..\steem\asm\asm_draw.asm">
+      <Filter>Assembly files</Filter>
+    </CustomBuild>
+    <CustomBuild Include="..\..\steem\asm\asm_osd_draw.asm">
+      <Filter>Assembly files</Filter>
+    </CustomBuild>
+  </ItemGroup>
+</Project>

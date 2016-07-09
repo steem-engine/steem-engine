@@ -9,3 +9,10 @@ X-build/output/
 3rdparty/unrarlib*
 3rdparty/zlib*
 Thumbs.db
+
+windows-build/visual-studio-2015/.vs
+windows-build/visual-studio-2015/Debug
+windows-build/visual-studio-2015/Release
+windows-build/visual-studio-2015/*.db
+windows-build/visual-studio-2015/*.opendb
+windows-build/visual-studio-2015/*.user
