@@ -192,9 +192,6 @@ USEFILE("code\midi.cpp");
 
 USERC("rc\resource.rc");
 //---------------------------------------------------------------------------
-#define IN_MAIN
-
-#include "conditions.h"
 
 #include "main.cpp"
 
